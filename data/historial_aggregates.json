@@ -1,0 +1,346 @@
+{
+  "source": "shopify:drinkingpartnerschile (analytics MCP, refresh 2026-05-06)",
+  "shop": {
+    "name": "Drinking Partners Chile",
+    "domain": "www.drinkingpartnerschile.cl",
+    "currency": "CLP",
+    "country": "Chile"
+  },
+  "updated_at": "2026-05-06T19:30:00Z",
+  "orders": [],
+  "monthly_aggregates": [
+    {
+      "month": "2023-05",
+      "orders": 1,
+      "gross_sales": 9990.0,
+      "net_sales": 9990.0
+    },
+    {
+      "month": "2023-06",
+      "orders": 0,
+      "gross_sales": 0.0,
+      "net_sales": 0.0
+    },
+    {
+      "month": "2023-07",
+      "orders": 0,
+      "gross_sales": 0.0,
+      "net_sales": 0.0
+    },
+    {
+      "month": "2023-08",
+      "orders": 2,
+      "gross_sales": 36980.0,
+      "net_sales": 33282.0
+    },
+    {
+      "month": "2023-09",
+      "orders": 7,
+      "gross_sales": 117940.0,
+      "net_sales": 117940.0
+    },
+    {
+      "month": "2023-10",
+      "orders": 6,
+      "gross_sales": 470400.0,
+      "net_sales": 485380.0
+    },
+    {
+      "month": "2023-11",
+      "orders": 21,
+      "gross_sales": 305200.0,
+      "net_sales": 243221.0
+    },
+    {
+      "month": "2023-12",
+      "orders": 19,
+      "gross_sales": 1044150.0,
+      "net_sales": 1030002.0
+    },
+    {
+      "month": "2024-01",
+      "orders": 6,
+      "gross_sales": 74420.0,
+      "net_sales": 72430.0
+    },
+    {
+      "month": "2024-02",
+      "orders": 6,
+      "gross_sales": 137870.0,
+      "net_sales": 135880.0
+    },
+    {
+      "month": "2024-03",
+      "orders": 3,
+      "gross_sales": 48960.0,
+      "net_sales": 48960.0
+    },
+    {
+      "month": "2024-04",
+      "orders": 10,
+      "gross_sales": 249330.0,
+      "net_sales": 241370.0
+    },
+    {
+      "month": "2024-05",
+      "orders": 29,
+      "gross_sales": 674010.0,
+      "net_sales": 488220.0
+    },
+    {
+      "month": "2024-06",
+      "orders": 21,
+      "gross_sales": 389200.0,
+      "net_sales": 285182.0
+    },
+    {
+      "month": "2024-07",
+      "orders": 18,
+      "gross_sales": 413730.0,
+      "net_sales": 353777.0
+    },
+    {
+      "month": "2024-08",
+      "orders": 48,
+      "gross_sales": 920380.0,
+      "net_sales": 684040.0
+    },
+    {
+      "month": "2024-09",
+      "orders": 27,
+      "gross_sales": 661120.0,
+      "net_sales": 535720.0
+    },
+    {
+      "month": "2024-10",
+      "orders": 44,
+      "gross_sales": 986230.0,
+      "net_sales": 670882.0
+    },
+    {
+      "month": "2024-11",
+      "orders": 36,
+      "gross_sales": 1006390.0,
+      "net_sales": 678648.0
+    },
+    {
+      "month": "2024-12",
+      "orders": 38,
+      "gross_sales": 1912150.0,
+      "net_sales": 1246677.0
+    },
+    {
+      "month": "2025-01",
+      "orders": 18,
+      "gross_sales": 334200.0,
+      "net_sales": 270780.0
+    },
+    {
+      "month": "2025-02",
+      "orders": 62,
+      "gross_sales": 806160.0,
+      "net_sales": 191340.0
+    },
+    {
+      "month": "2025-03",
+      "orders": 9,
+      "gross_sales": 169360.0,
+      "net_sales": 148380.0
+    },
+    {
+      "month": "2025-04",
+      "orders": 14,
+      "gross_sales": 418180.0,
+      "net_sales": 242820.0
+    },
+    {
+      "month": "2025-05",
+      "orders": 17,
+      "gross_sales": 622620.0,
+      "net_sales": 319810.0
+    },
+    {
+      "month": "2025-06",
+      "orders": 10,
+      "gross_sales": 190850.0,
+      "net_sales": 80940.0
+    },
+    {
+      "month": "2025-07",
+      "orders": 18,
+      "gross_sales": 566336.0,
+      "net_sales": 458948.0
+    },
+    {
+      "month": "2025-08",
+      "orders": 32,
+      "gross_sales": 729222.0,
+      "net_sales": 365700.0
+    },
+    {
+      "month": "2025-09",
+      "orders": 16,
+      "gross_sales": 293760.0,
+      "net_sales": 226310.0
+    },
+    {
+      "month": "2025-10",
+      "orders": 44,
+      "gross_sales": 810300.0,
+      "net_sales": 532560.0
+    },
+    {
+      "month": "2025-11",
+      "orders": 15,
+      "gross_sales": 557707.0,
+      "net_sales": 267917.0
+    },
+    {
+      "month": "2025-12",
+      "orders": 22,
+      "gross_sales": 594345.0,
+      "net_sales": 499925.0
+    },
+    {
+      "month": "2026-01",
+      "orders": 6,
+      "gross_sales": 154860.0,
+      "net_sales": 142370.0
+    },
+    {
+      "month": "2026-02",
+      "orders": 7,
+      "gross_sales": 107930.0,
+      "net_sales": 63960.0
+    },
+    {
+      "month": "2026-03",
+      "orders": 10,
+      "gross_sales": 336383.0,
+      "net_sales": 336383.0
+    },
+    {
+      "month": "2026-04",
+      "orders": 24,
+      "gross_sales": 613950.0,
+      "net_sales": 130292.0
+    },
+    {
+      "month": "2026-05",
+      "orders": 0,
+      "gross_sales": 0.0,
+      "net_sales": 0.0
+    }
+  ],
+  "catalog": [
+    {
+      "title": "Cámara Desechable Online",
+      "type": "Fotografia para eventos",
+      "minPrice": 5990,
+      "maxPrice": 161990
+    },
+    {
+      "title": "Embudo Drinking Partners Chile",
+      "type": "Juegos de fiesta",
+      "minPrice": 17490,
+      "maxPrice": 17490
+    },
+    {
+      "title": "Herramienta Turbo chela Multiproposito",
+      "type": "",
+      "minPrice": 3990,
+      "maxPrice": 6490
+    },
+    {
+      "title": "Jenga XL Drinking Partners Chile",
+      "type": "Juegos de fiesta",
+      "minPrice": 79990,
+      "maxPrice": 84990
+    },
+    {
+      "title": "Juego Chupilca Love",
+      "type": "Juegos de mesa",
+      "minPrice": 11490,
+      "maxPrice": 11490
+    },
+    {
+      "title": "Juego Chupilca Origen",
+      "type": "Juegos de mesa",
+      "minPrice": 11490,
+      "maxPrice": 11490
+    },
+    {
+      "title": "Juego Chupilca Yo Nunca Hot",
+      "type": "Juegos de mesa",
+      "minPrice": 11490,
+      "maxPrice": 11490
+    },
+    {
+      "title": "Mesa de Beerpong Chile Hielera (5ta generación)",
+      "type": "",
+      "minPrice": 124990,
+      "maxPrice": 124990
+    },
+    {
+      "title": "Mesa de Beerpong Chile LED (5ta generación)",
+      "type": "",
+      "minPrice": 124990,
+      "maxPrice": 124990
+    },
+    {
+      "title": "Oferta Arriendo de Jenga XL",
+      "type": "Juegos de fiesta",
+      "minPrice": 12490,
+      "maxPrice": 13490
+    },
+    {
+      "title": "Oferta Arriendo Embudo DPC",
+      "type": "",
+      "minPrice": 3990,
+      "maxPrice": 3990
+    },
+    {
+      "title": "Oferta Arriendo mesa de Beerpong Chile para empresas",
+      "type": "",
+      "minPrice": 17990,
+      "maxPrice": 22490
+    },
+    {
+      "title": "Oferta Arriendo mesa de Beerpong Drinking Partners Chile",
+      "type": "Juegos de fiesta",
+      "minPrice": 16990,
+      "maxPrice": 20980
+    },
+    {
+      "title": "Oferta Arriendo Pack carrete de cumpleaños",
+      "type": "Juegos de fiesta",
+      "minPrice": 37022,
+      "maxPrice": 133817
+    },
+    {
+      "title": "Oferta Arriendo Pack carrete de cumpleaños ¡Con todo sino para que!",
+      "type": "Juegos de fiesta",
+      "minPrice": 84522,
+      "maxPrice": 124849
+    },
+    {
+      "title": "OFERTA ARRIENDO Pack Mesa Beerpong + Jenga XL",
+      "type": "Juegos de fiesta",
+      "minPrice": 29980,
+      "maxPrice": 34970
+    },
+    {
+      "title": "Pack Embudo DPC + 2 herramientas Turbochela",
+      "type": "",
+      "minPrice": 21990,
+      "maxPrice": 21990
+    },
+    {
+      "title": "Pack vasos y pelotas + stickers",
+      "type": "Juegos de fiesta",
+      "minPrice": 4490,
+      "maxPrice": 4490
+    }
+  ],
+  "_keep_existing_orders": true
+}

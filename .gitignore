@@ -1,0 +1,37 @@
+# Dependencies (npm install las reinstala con package.json)
+node_modules/
+
+# Build outputs
+dist/
+build/Release/
+*.dmg
+*.exe
+*.app
+*.zip
+
+# Secrets / env
+.env
+.env.local
+.env.*.local
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+
+# Auto-update artifacts
+update.log
+
+# Sensitive (no commitear nunca)
+*.pfx
+*.p12
+*-private.key
