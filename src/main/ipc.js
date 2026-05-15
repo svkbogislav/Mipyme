@@ -48,6 +48,8 @@ function register({ getMainWindow }) {
   ipcMain.handle('app:checkRemoteUpdate',    async () => updater.checkRemoteUpdate(win()));
   ipcMain.handle('app:downloadRemoteUpdate', async () => updater.downloadRemoteUpdate());
   ipcMain.handle('app:quitAndInstallRemote', async () => updater.quitAndInstallRemote());
+  // Instalación manual (bypass Squirrel.Mac, funciona sin firma de Apple)
+  ipcMain.handle('app:descargarInstalarManual', async (_e, ver) => updater.descargarEInstalarManual(win(), ver));
 
   // === Filesystem helpers ===
   ipcMain.handle('app:openEnvFolder',   async () => env.openEnvFolder());

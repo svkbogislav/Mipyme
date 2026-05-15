@@ -6647,7 +6647,7 @@ function saltarVersionUpdate() {
 }
 
 async function actualizarDesdePopup() {
-  if (!(window.electronAPI && window.electronAPI.downloadRemoteUpdate)) return;
+  if (!(window.electronAPI && window.electronAPI.descargarInstalarManual)) return;
   const btn = document.getElementById('btnUpdatePopupActualizar');
   const progressWrap = document.getElementById('modalUpdateProgress');
   const progressBar = document.getElementById('modalUpdateProgressBar');
@@ -6668,9 +6668,9 @@ async function actualizarDesdePopup() {
     } else if (type === 'remote:downloaded') {
       progressBar.style.width = '100%';
       progressPct.textContent = '100 %';
-      progressLbl.textContent = '✓ Descarga lista. Reiniciando…';
-      btn.textContent = 'Reiniciando…';
-      setTimeout(() => window.electronAPI.quitAndInstallRemote(), 1200);
+      progressLbl.textContent = '✓ Descarga lista. Cerrando para instalar…';
+      btn.textContent = 'Instalando…';
+      // El main process ya lanzó el script de swap + va a cerrar la app.
     } else if (type === 'remote:error') {
       progressLbl.textContent = '❌ ' + (data && data.message || 'Error');
       btn.disabled = false;
@@ -6678,11 +6678,29 @@ async function actualizarDesdePopup() {
     }
   });
 
-  const r = await window.electronAPI.downloadRemoteUpdate();
-  if (!r.ok) {
+  // Flujo manual (bypass Squirrel.Mac): el main descarga el zip, hace el swap
+  // del .app y reabre. Funciona sin firma de Apple. Le pasamos la versión a
+  // instalar (la detectada en el check).
+  const ver = _updateInfoActual && _updateInfoActual.latestVersion;
+  const r = await window.electronAPI.descargarInstalarManual(ver);
+  if (r && !r.ok && r.error !== 'manual-solo-mac') {
     progressLbl.textContent = '❌ ' + (r.error || 'desconocido');
     btn.disabled = false;
     btn.textContent = 'Reintentar';
+  } else if (r && r.error === 'manual-solo-mac') {
+    // En Windows usamos el flujo Squirrel normal (NSIS funciona sin firma).
+    const d = await window.electronAPI.downloadRemoteUpdate();
+    if (!d.ok) {
+      progressLbl.textContent = '❌ ' + (d.error || 'desconocido');
+      btn.disabled = false; btn.textContent = 'Reintentar';
+    } else {
+      // Esperar 'remote:downloaded' del flujo Squirrel y aplicar
+      const sub = window.electronAPI.onUpdateProgress(({ type }) => {
+        if (type === 'remote:downloaded') {
+          setTimeout(() => window.electronAPI.quitAndInstallRemote(), 1000);
+        }
+      });
+    }
   }
 }
 

@@ -43,6 +43,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkRemoteUpdate:    () => ipcRenderer.invoke('app:checkRemoteUpdate'),
   downloadRemoteUpdate: () => ipcRenderer.invoke('app:downloadRemoteUpdate'),
   quitAndInstallRemote: () => ipcRenderer.invoke('app:quitAndInstallRemote'),
+  // Instalación manual sin firma (descarga zip + swap + relaunch). Recibe la
+  // versión a instalar. Usado en Mac (sin Apple Developer ID).
+  descargarInstalarManual: (ver) => ipcRenderer.invoke('app:descargarInstalarManual', ver),
   // Suscribirse a eventos de progreso del update. callback recibe { type, data, ts }
   // type local: start, stdout, stderr, error, exit
   // type remoto: remote:checking, remote:available, remote:not-available,

@@ -266,6 +266,131 @@ function quitAndInstallRemote() {
   return { ok: true };
 }
 
+// ─── Instalación MANUAL (bypass Squirrel.Mac) ───────────────────────────
+// Squirrel.Mac valida la firma de código antes de aplicar el update y, si la
+// app está SIN firmar (sin Apple Developer ID), falla con
+// "code signature did not pass validation".
+//
+// Esta ruta evita Squirrel por completo: descarga el .zip del release de
+// GitHub a mano, lo extrae, reemplaza el bundle .app instalado y reabre.
+// Funciona sin firma. Es el approach estándar para apps Electron unsigned
+// que igual quieren auto-update.
+
+function _readAppUpdateYml() {
+  try {
+    const ymlPath = path.join(process.resourcesPath || '', 'app-update.yml');
+    const content = fs.readFileSync(ymlPath, 'utf8');
+    const owner = (content.match(/owner:\s*(\S+)/) || [])[1];
+    const repo = (content.match(/repo:\s*(\S+)/) || [])[1];
+    return { owner, repo };
+  } catch (e) { return {}; }
+}
+
+// Descarga una URL siguiendo redirects (GitHub redirige a objects.githubusercontent).
+function _descargarArchivo(url, destPath, onProgress) {
+  return new Promise((resolve, reject) => {
+    const https = require('node:https');
+    const file = fs.createWriteStream(destPath);
+    const req = (u, redirects) => {
+      if (redirects > 6) return reject(new Error('Demasiados redirects'));
+      https.get(u, { headers: { 'User-Agent': 'Mipyme-Updater' } }, res => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume();
+          return req(res.headers.location, redirects + 1);
+        }
+        if (res.statusCode !== 200) {
+          res.resume();
+          return reject(new Error(`HTTP ${res.statusCode} al descargar update`));
+        }
+        const total = parseInt(res.headers['content-length'] || '0', 10);
+        let recibido = 0;
+        res.on('data', chunk => {
+          recibido += chunk.length;
+          if (onProgress && total) onProgress({ percent: (recibido / total) * 100, transferred: recibido, total });
+        });
+        res.pipe(file);
+        file.on('finish', () => file.close(() => resolve()));
+      }).on('error', err => { try { fs.unlinkSync(destPath); } catch {} reject(err); });
+    };
+    req(url, 0);
+  });
+}
+
+// Path del .app que está corriendo. exe = .../Mipyme.app/Contents/MacOS/Mipyme
+function _appBundlePath() {
+  const exe = app.getPath('exe');
+  // subir 3 niveles: MacOS → Contents → Mipyme.app
+  return path.resolve(path.dirname(exe), '..', '..');
+}
+
+async function descargarEInstalarManual(mainWindow, latestVersion) {
+  if (!app.isPackaged) return { ok: false, error: 'No aplica en modo desarrollo' };
+  if (process.platform !== 'darwin') {
+    // En Windows el flujo Squirrel sí funciona sin firma (NSIS); usar el normal.
+    return { ok: false, error: 'manual-solo-mac' };
+  }
+  const send = (type, data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try { mainWindow.webContents.send('app:updateProgress', { type, data, ts: Date.now() }); } catch {}
+    }
+  };
+  try {
+    const { owner, repo } = _readAppUpdateYml();
+    if (!owner || !repo) return { ok: false, error: 'No pude leer owner/repo de app-update.yml' };
+    const ver = latestVersion || app.getVersion();
+    const prod = app.getName(); // "Mipyme"
+    // electron-builder nombra: {prod}-{ver}-arm64-mac.zip (arm64) | {prod}-{ver}-mac.zip (x64)
+    const archSuffix = process.arch === 'arm64' ? '-arm64' : '';
+    const zipName = `${prod}-${ver}${archSuffix}-mac.zip`;
+    const url = `https://github.com/${owner}/${repo}/releases/download/v${ver}/${encodeURIComponent(zipName)}`;
+
+    const tmpDir = path.join(os.tmpdir(), `mipyme-update-${Date.now()}`);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const zipPath = path.join(tmpDir, zipName);
+
+    send('remote:checking', {});
+    await _descargarArchivo(url, zipPath, p => send('remote:download-progress', p));
+    send('remote:downloaded', { version: ver });
+
+    // Script detached: espera que la app cierre, swap del bundle, relaunch.
+    const appPath = _appBundlePath();
+    const appName = path.basename(appPath); // Mipyme.app
+    const extractDir = path.join(tmpDir, 'extract');
+    const scriptPath = path.join(tmpDir, 'swap.sh');
+    const myPid = process.pid;
+    const script = `#!/bin/bash
+set -e
+# Esperar a que la app actual cierre
+while kill -0 ${myPid} 2>/dev/null; do sleep 0.4; done
+sleep 1
+mkdir -p "${extractDir}"
+/usr/bin/ditto -x -k "${zipPath}" "${extractDir}"
+NEWAPP="${extractDir}/${appName}"
+if [ ! -d "$NEWAPP" ]; then
+  # algunos zips traen el .app en la raíz con otro nombre; tomar el primer .app
+  NEWAPP=$(find "${extractDir}" -maxdepth 1 -name "*.app" | head -1)
+fi
+rm -rf "${appPath}"
+/bin/mv "$NEWAPP" "${appPath}"
+/usr/bin/xattr -cr "${appPath}" 2>/dev/null || true
+/usr/bin/open "${appPath}"
+rm -rf "${tmpDir}" 2>/dev/null || true
+`;
+    fs.writeFileSync(scriptPath, script, { mode: 0o755 });
+    const child = spawn('/bin/bash', [scriptPath], {
+      detached: true,
+      stdio: 'ignore'
+    });
+    child.unref();
+    // Dar tiempo al IPC y cerrar la app para que el script haga el swap.
+    setImmediate(() => { app.quit(); });
+    return { ok: true };
+  } catch (err) {
+    send('remote:error', { message: err.message || String(err) });
+    return { ok: false, error: err.message || String(err) };
+  }
+}
+
 module.exports = {
   findProjectSourcePath,
   setProjectSourcePath,
@@ -276,5 +401,6 @@ module.exports = {
   checkRemoteUpdate,
   downloadRemoteUpdate,
   quitAndInstallRemote,
+  descargarEInstalarManual,
   wireRemoteUpdater,
 };
