@@ -6549,29 +6549,12 @@ async function iniciarActualizacionRemota() {
     return;
   }
 
-  // Hay update — pedir confirmación con release notes
-  const notes = r.releaseNotes ? `\n\nNovedades:\n${typeof r.releaseNotes === 'string' ? r.releaseNotes.slice(0, 500) : ''}` : '';
-  const ok = confirm(
-    `Nueva versión disponible: v${r.latestVersion}\n` +
-    `Tu versión: v${r.currentVersion}\n\n` +
-    `Se descargará en segundo plano y la app se reiniciará para aplicarla.${notes}\n\n¿Continuar?`
-  );
-  if (!ok) {
-    appendLogLine('Cancelado por el usuario.', 'info');
-    if (btn) { btn.disabled = false; btn.textContent = 'Buscar actualizaciones'; }
-    if (phaseLbl) phaseLbl.textContent = 'Cancelado';
-    return;
-  }
-
-  if (phaseLbl) phaseLbl.textContent = 'Descargando…';
-  if (btn) btn.textContent = 'Descargando…';
-  const d = await window.electronAPI.downloadRemoteUpdate();
-  if (!d.ok) {
-    appendLogLine('❌ ' + (d.error || 'desconocido'), 'err');
-    if (phaseLbl) phaseLbl.textContent = '❌ ' + (d.error || 'Error');
-    if (btn) { btn.disabled = false; btn.textContent = 'Reintentar'; }
-  }
-  // Los eventos remote:download-progress / remote:downloaded manejan el resto.
+  // Hay update — abrir el modal bonito (formatea bien las release notes,
+  // muestra progreso, maneja descarga+reinstalación). Reusamos el mismo
+  // modal que el chequeo automático del boot para consistencia visual.
+  if (btn) { btn.disabled = false; btn.textContent = 'Buscar actualizaciones'; }
+  if (phaseLbl) phaseLbl.textContent = '';
+  mostrarPopupActualizacion(r);
 }
 
 function formatBytes(b) {
@@ -6601,14 +6584,32 @@ function _formatearReleaseNotes(notas) {
   if (Array.isArray(notas)) {
     notas = notas.map(n => (typeof n === 'string' ? n : (n.note || n.text || ''))).join('\n\n');
   }
-  let html = escapeHtml(String(notas));
-  // Encabezados ##
+  let s = String(notas);
+
+  // GitHub auto-genera las release notes en HTML (<p>, <ul>, <li>, <a>...).
+  // Las convertimos a texto plano legible ANTES de re-formatear, para no
+  // mostrar tags crudos como "<p>...</p>".
+  s = s
+    .replace(/<\/(p|div|h[1-6]|li|ul|ol)>/gi, '\n')      // cierres → salto de línea
+    .replace(/<li[^>]*>/gi, '• ')                         // <li> → bullet
+    .replace(/<br\s*\/?>/gi, '\n')                        // <br> → salto
+    .replace(/<h[1-6][^>]*>/gi, '\n')                     // headings → salto
+    .replace(/<a [^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/gi, '$2') // links → solo texto
+    .replace(/<[^>]+>/g, '')                              // cualquier otro tag → fuera
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')                           // colapsar saltos múltiples
+    .trim();
+
+  let html = escapeHtml(s);
+  // Encabezados markdown ## (por si las notas son markdown plano)
   html = html.replace(/^##\s+(.+)$/gm, '<div style="font-weight:600; margin:8px 0 4px; color:var(--text)">$1</div>');
-  // Bullets - o *
-  html = html.replace(/^[\-\*]\s+(.+)$/gm, '<div style="padding-left:14px; position:relative">• $1</div>');
+  // Bullets - o * (markdown) — el • ya viene de <li>
+  html = html.replace(/^[\-\*]\s+(.+)$/gm, '<div style="padding-left:14px">• $1</div>');
+  html = html.replace(/^•\s+(.+)$/gm, '<div style="padding-left:14px">• $1</div>');
   // Saltos de línea
   html = html.replace(/\n\n+/g, '<div style="height:8px"></div>').replace(/\n/g, '<br>');
-  return html;
+  return html || '<em style="color:var(--text-muted)">Sin notas de versión.</em>';
 }
 
 function mostrarPopupActualizacion(info) {
