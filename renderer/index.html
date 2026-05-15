@@ -1773,27 +1773,6 @@
         </div>
       </div>
 
-      <!-- Importadores demo DPCL: snapshot Shopify histórico + gastos fijos
-           típicos del brief. Acción manual, opt-in por el usuario. Útil para
-           el desarrollador (Sebastián) que quiere reconstruir el state DPCL
-           original en un negocio recién creado, o para hacer demos rápidas. -->
-      <div class="card">
-        <h3>🍻 Datos demo Drinking Partners Chile</h3>
-        <div class="card-sub">Snapshot histórico del negocio original (30 órdenes recientes + agregados 2023-2026 + catálogo) y los 6 gastos fijos mensuales típicos del brief. Útil para demostrar la app con datos reales sin conectar Shopify.</div>
-        <div style="margin-top:12px; padding:10px 12px; background:var(--warning-soft); border:1px solid var(--warning); border-radius:8px; font-size:12px; color:var(--text)">
-          ⚠️ <strong>Importa al negocio activo.</strong> Si quieres recrear DPCL, crea primero un negocio nuevo o asegúrate de tener el correcto seleccionado en el switcher de arriba.
-        </div>
-        <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap">
-          <button class="btn" onclick="importarShopifyDemoDPCL()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-            Importar snapshot Shopify DPCL
-          </button>
-          <button class="btn" onclick="importarGastosFijosDPCL()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-            Agregar gastos fijos DPCL
-          </button>
-        </div>
-      </div>
     </section>
 
     <section class="view" id="view-gastos">
@@ -4348,11 +4327,6 @@ function renderChecklistInicio() {
   if (state.config._onboardingChecklistDone === true) { card.style.display = 'none'; return; }
   // No mostrar si todavía no completó el wizard (se ve después)
   if (!state.config._onboardingDone) { card.style.display = 'none'; return; }
-  // No mostrar en DPCL (Sebastián ya tiene la app llena)
-  if (typeof esBusinessDPCL === 'function' && esBusinessDPCL(getCurrentBusiness())) {
-    card.style.display = 'none';
-    return;
-  }
 
   // Calcular qué items están done
   const hayCuentaConSaldo = ((state.config.cuentas || []).some(c => Number(c.saldo_inicial || 0) > 0))
@@ -7359,7 +7333,7 @@ function toast(msg, kind = '') {
 /* =================================================================
    DATOS REALES INCRUSTADOS (de tu Shopify, snapshot al momento de generar la app)
    ================================================================= */
-const EMBEDDED_SHOPIFY = JSON.parse(`{"source":"shopify:drinkingpartnerschile","shop":{"name":"Drinking Partners Chile","domain":"www.drinkingpartnerschile.cl","currency":"CLP","country":"Chile"},"updated_at":"2026-05-06T13:50:00Z","count":30,"orders":[{"id":7002513572143,"order_number":"1695","name":"#1695","created_at":"2026-04-24T18:38:07Z","cancelled_at":null,"financial_status":"paid","fulfillment_status":null,"currency":"CLP","total_price":37872,"subtotal_price":18882,"total_tax":0,"total_discounts":2098,"customer":"Clemente Acevedo Leighton","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":20980,"sku":""}]},{"id":7001089900847,"order_number":"1694","name":"#1694","created_at":"2026-04-23T20:08:56Z","cancelled_at":null,"financial_status":"paid","fulfillment_status":null,"currency":"CLP","total_price":17490,"subtotal_price":17490,"total_tax":0,"total_discounts":0,"customer":"seba von koeller","line_items":[{"title":"Embudo Drinking Partners Chile","quantity":1,"price":17490,"sku":""}]},{"id":7000856232239,"order_number":"1693","name":"#1693","created_at":"2026-04-23T17:38:45Z","cancelled_at":"2026-04-24T03:19:15Z","financial_status":"voided","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":0,"customer":"seba von koeller","line_items":[{"title":"OFERTA ARRIENDO Pack Mesa Beerpong + Jenga XL","quantity":1,"price":34970,"sku":""}]},{"id":7000647467311,"order_number":"1692","name":"#1692","created_at":"2026-04-23T15:12:01Z","cancelled_at":"2026-04-24T03:19:14Z","financial_status":"voided","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":0,"customer":"seba von koeller","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":20980,"sku":""}]},{"id":7000634097967,"order_number":"1691","name":"#1691","created_at":"2026-04-23T15:01:02Z","cancelled_at":null,"financial_status":"paid","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":20980,"customer":"Jacinta Ballivián Campos","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":20980,"sku":""}]},{"id":6999135715631,"order_number":"1690","name":"#1690","created_at":"2026-04-22T15:00:48Z","cancelled_at":"2026-04-23T13:14:34Z","financial_status":"refunded","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":0,"customer":"seba von koeller","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":2,"price":20980,"sku":""}]},{"id":6998163357999,"order_number":"1689","name":"#1689","created_at":"2026-04-21T23:23:17Z","cancelled_at":"2026-04-23T13:14:32Z","financial_status":"voided","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":0,"customer":"María José gumucio Gumucio","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":20980,"sku":""}]},{"id":6998027534639,"order_number":"1688","name":"#1688","created_at":"2026-04-21T21:57:07Z","cancelled_at":"2026-04-22T00:11:26Z","financial_status":"refunded","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":0,"customer":"María José gumucio Gumucio","line_items":[{"title":"OFERTA ARRIENDO Pack Mesa Beerpong + Jenga XL","quantity":1,"price":34970,"sku":""}]},{"id":6997799829807,"order_number":"1687","name":"#1687","created_at":"2026-04-21T19:45:44Z","cancelled_at":"2026-04-22T00:11:25Z","financial_status":"refunded","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":0,"customer":"seba von koeller","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":20980,"sku":""}]},{"id":6997780791599,"order_number":"1686","name":"#1686","created_at":"2026-04-21T19:35:00Z","cancelled_at":"2026-04-22T00:11:24Z","financial_status":"refunded","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":0,"customer":"seba von koeller","line_items":[{"title":"Oferta Arriendo de Jenga XL","quantity":1,"price":13490,"sku":""}]},{"id":6995860914479,"order_number":"1685","name":"#1685","created_at":"2026-04-20T19:43:42Z","cancelled_at":"2026-04-22T00:11:22Z","financial_status":"refunded","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":0,"customer":"seba von koeller","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":20980,"sku":""}]},{"id":6995634061615,"order_number":"1684","name":"#1684","created_at":"2026-04-20T17:01:22Z","cancelled_at":"2026-04-20T19:23:19Z","financial_status":"voided","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":0,"customer":"seba von koeller","line_items":[{"title":"Oferta Arriendo de Jenga XL","quantity":1,"price":13490,"sku":""}]},{"id":6995579404591,"order_number":"1683","name":"#1683","created_at":"2026-04-20T16:23:43Z","cancelled_at":"2026-04-20T19:23:17Z","financial_status":"refunded","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":0,"customer":"seba von koeller","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":20980,"sku":""}]},{"id":6994963661103,"order_number":"1682","name":"#1682","created_at":"2026-04-20T05:41:12Z","cancelled_at":"2026-04-20T05:53:15Z","financial_status":"voided","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":0,"customer":"seba von koeller","line_items":[{"title":"OFERTA ARRIENDO Pack Mesa Beerpong + Jenga XL","quantity":1,"price":34970,"sku":""}]},{"id":6994935742767,"order_number":"1681","name":"#1681","created_at":"2026-04-20T05:01:08Z","cancelled_at":"2026-04-20T05:53:13Z","financial_status":"refunded","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":0,"customer":"seba von koeller","line_items":[{"title":"OFERTA ARRIENDO Pack Mesa Beerpong + Jenga XL","quantity":1,"price":34970,"sku":""}]},{"id":6994912477487,"order_number":"1680","name":"#1680","created_at":"2026-04-20T04:30:54Z","cancelled_at":"2026-04-20T05:53:11Z","financial_status":"refunded","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":2098,"customer":"seba von koeller","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":20980,"sku":""}]},{"id":6994525847855,"order_number":"1679","name":"#1679","created_at":"2026-04-19T21:50:43Z","cancelled_at":"2026-04-20T02:52:09Z","financial_status":"voided","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":0,"customer":"seba von koeller","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":3,"price":20980,"sku":""}]},{"id":6994422137135,"order_number":"1678","name":"#1678","created_at":"2026-04-19T20:28:09Z","cancelled_at":"2026-04-20T02:52:07Z","financial_status":"refunded","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":0,"customer":"seba von koeller","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":20980,"sku":""}]},{"id":6994418008367,"order_number":"1677","name":"#1677","created_at":"2026-04-19T20:24:58Z","cancelled_at":"2026-04-20T02:52:05Z","financial_status":"refunded","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":0,"customer":"seba von koeller","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":20980,"sku":""}]},{"id":6991395422511,"order_number":"1676","name":"#1676","created_at":"2026-04-17T19:33:41Z","cancelled_at":"2026-04-20T02:52:04Z","financial_status":"refunded","fulfillment_status":null,"currency":"CLP","total_price":0,"subtotal_price":0,"total_tax":0,"total_discounts":0,"customer":"seba von koeller","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":20980,"sku":""}]},{"id":6989544423727,"order_number":"1675","name":"#1675","created_at":"2026-04-16T15:39:06Z","cancelled_at":null,"financial_status":"paid","fulfillment_status":null,"currency":"CLP","total_price":50960,"subtotal_price":34970,"total_tax":0,"total_discounts":0,"customer":"Camilo Silva torres","line_items":[{"title":"OFERTA ARRIENDO Pack Mesa Beerpong + Jenga XL","quantity":1,"price":34970,"sku":""}]},{"id":6979705110831,"order_number":"1674","name":"#1674","created_at":"2026-04-09T20:58:12Z","cancelled_at":null,"financial_status":"paid","fulfillment_status":null,"currency":"CLP","total_price":20980,"subtotal_price":20980,"total_tax":0,"total_discounts":0,"customer":"Ignacio López Davidson","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":20980,"sku":""}]},{"id":6978241102127,"order_number":"1673","name":"#1673","created_at":"2026-04-08T21:29:35Z","cancelled_at":null,"financial_status":"paid","fulfillment_status":null,"currency":"CLP","total_price":16990,"subtotal_price":16990,"total_tax":0,"total_discounts":0,"customer":"Bárbara Estrada","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":16990,"sku":""}]},{"id":6968714068271,"order_number":"1672","name":"#1672","created_at":"2026-04-03T00:43:53Z","cancelled_at":null,"financial_status":"paid","fulfillment_status":null,"currency":"CLP","total_price":20980,"subtotal_price":20980,"total_tax":0,"total_discounts":0,"customer":"Narea Fuchslocher aguilera","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":20980,"sku":""}]},{"id":6948808884527,"order_number":"1671","name":"#1671","created_at":"2026-03-20T21:12:55Z","cancelled_at":null,"financial_status":"paid","fulfillment_status":null,"currency":"CLP","total_price":20980,"subtotal_price":20980,"total_tax":0,"total_discounts":0,"customer":"Rodrigo Bitran","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":20980,"sku":""}]},{"id":6943005442351,"order_number":"1670","name":"#1670","created_at":"2026-03-16T17:56:35Z","cancelled_at":null,"financial_status":"paid","fulfillment_status":null,"currency":"CLP","total_price":42970,"subtotal_price":30980,"total_tax":0,"total_discounts":0,"customer":"Maria Jesus Leon Cox","line_items":[{"title":"OFERTA ARRIENDO Pack Mesa Beerpong + Jenga XL","quantity":1,"price":30980,"sku":""}]},{"id":6939025015087,"order_number":"1669","name":"#1669","created_at":"2026-03-13T22:29:36Z","cancelled_at":null,"financial_status":"paid","fulfillment_status":null,"currency":"CLP","total_price":34470,"subtotal_price":34470,"total_tax":0,"total_discounts":0,"customer":"Ximena Trujillo","line_items":[{"title":"Oferta Arriendo de Jenga XL","quantity":1,"price":13490,"sku":""},{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":20980,"sku":""}]},{"id":6938994835759,"order_number":"1668","name":"#1668","created_at":"2026-03-13T22:04:54Z","cancelled_at":null,"financial_status":"paid","fulfillment_status":null,"currency":"CLP","total_price":32970,"subtotal_price":20980,"total_tax":0,"total_discounts":0,"customer":"María Inés Cid naciff","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":20980,"sku":""}]},{"id":6938833551663,"order_number":"1667","name":"#1667","created_at":"2026-03-13T20:08:02Z","cancelled_at":null,"financial_status":"paid","fulfillment_status":null,"currency":"CLP","total_price":44470,"subtotal_price":29480,"total_tax":0,"total_discounts":0,"customer":"Antonia Mejias Castillo","line_items":[{"title":"Oferta Arriendo de Jenga XL","quantity":1,"price":12490,"sku":""},{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":1,"price":16990,"sku":""}]},{"id":6932541407535,"order_number":"1666","name":"#1666","created_at":"2026-03-09T15:36:44Z","cancelled_at":null,"financial_status":"paid","fulfillment_status":null,"currency":"CLP","total_price":67960,"subtotal_price":67960,"total_tax":0,"total_discounts":0,"customer":"Matías Clemente Vargas Balcells","line_items":[{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","quantity":4,"price":16990,"sku":""}]}],"monthly_aggregates":[{"month":"2023-05","orders":1,"gross_sales":9990.0,"net_sales":9990.0},{"month":"2023-06","orders":0,"gross_sales":0.0,"net_sales":0.0},{"month":"2023-07","orders":0,"gross_sales":0.0,"net_sales":0.0},{"month":"2023-08","orders":2,"gross_sales":36980.0,"net_sales":33282.0},{"month":"2023-09","orders":7,"gross_sales":117940.0,"net_sales":117940.0},{"month":"2023-10","orders":6,"gross_sales":470400.0,"net_sales":485380.0},{"month":"2023-11","orders":21,"gross_sales":305200.0,"net_sales":243221.0},{"month":"2023-12","orders":19,"gross_sales":1044150.0,"net_sales":1030002.0},{"month":"2024-01","orders":6,"gross_sales":74420.0,"net_sales":72430.0},{"month":"2024-02","orders":6,"gross_sales":137870.0,"net_sales":135880.0},{"month":"2024-03","orders":3,"gross_sales":48960.0,"net_sales":48960.0},{"month":"2024-04","orders":10,"gross_sales":249330.0,"net_sales":241370.0},{"month":"2024-05","orders":29,"gross_sales":674010.0,"net_sales":488220.0},{"month":"2024-06","orders":21,"gross_sales":389200.0,"net_sales":285182.0},{"month":"2024-07","orders":18,"gross_sales":413730.0,"net_sales":353777.0},{"month":"2024-08","orders":48,"gross_sales":920380.0,"net_sales":684040.0},{"month":"2024-09","orders":27,"gross_sales":661120.0,"net_sales":535720.0},{"month":"2024-10","orders":44,"gross_sales":986230.0,"net_sales":670882.0},{"month":"2024-11","orders":36,"gross_sales":1006390.0,"net_sales":678648.0},{"month":"2024-12","orders":38,"gross_sales":1912150.0,"net_sales":1246677.0},{"month":"2025-01","orders":18,"gross_sales":334200.0,"net_sales":270780.0},{"month":"2025-02","orders":62,"gross_sales":806160.0,"net_sales":191340.0},{"month":"2025-03","orders":9,"gross_sales":169360.0,"net_sales":148380.0},{"month":"2025-04","orders":14,"gross_sales":418180.0,"net_sales":242820.0},{"month":"2025-05","orders":17,"gross_sales":622620.0,"net_sales":319810.0},{"month":"2025-06","orders":10,"gross_sales":190850.0,"net_sales":80940.0},{"month":"2025-07","orders":18,"gross_sales":566336.0,"net_sales":458948.0},{"month":"2025-08","orders":32,"gross_sales":729222.0,"net_sales":365700.0},{"month":"2025-09","orders":16,"gross_sales":293760.0,"net_sales":226310.0},{"month":"2025-10","orders":44,"gross_sales":810300.0,"net_sales":532560.0},{"month":"2025-11","orders":15,"gross_sales":557707.0,"net_sales":267917.0},{"month":"2025-12","orders":22,"gross_sales":594345.0,"net_sales":499925.0},{"month":"2026-01","orders":6,"gross_sales":154860.0,"net_sales":142370.0},{"month":"2026-02","orders":7,"gross_sales":107930.0,"net_sales":63960.0},{"month":"2026-03","orders":10,"gross_sales":336383.0,"net_sales":336383.0},{"month":"2026-04","orders":24,"gross_sales":613950.0,"net_sales":130292.0},{"month":"2026-05","orders":0,"gross_sales":0.0,"net_sales":0.0}],"catalog":[{"title":"Cámara Desechable Online","type":"Fotografia para eventos","minPrice":5990,"maxPrice":161990},{"title":"Embudo Drinking Partners Chile","type":"Juegos de fiesta","minPrice":17490,"maxPrice":17490},{"title":"Herramienta Turbo chela Multiproposito","type":"","minPrice":3990,"maxPrice":6490},{"title":"Jenga XL Drinking Partners Chile","type":"Juegos de fiesta","minPrice":79990,"maxPrice":84990},{"title":"Juego Chupilca Love","type":"Juegos de mesa","minPrice":11490,"maxPrice":11490},{"title":"Juego Chupilca Origen","type":"Juegos de mesa","minPrice":11490,"maxPrice":11490},{"title":"Juego Chupilca Yo Nunca Hot","type":"Juegos de mesa","minPrice":11490,"maxPrice":11490},{"title":"Mesa de Beerpong Chile Hielera (5ta generación)","type":"","minPrice":124990,"maxPrice":124990},{"title":"Mesa de Beerpong Chile LED (5ta generación)","type":"","minPrice":124990,"maxPrice":124990},{"title":"Oferta Arriendo de Jenga XL","type":"Juegos de fiesta","minPrice":12490,"maxPrice":13490},{"title":"Oferta Arriendo Embudo DPC","type":"","minPrice":3990,"maxPrice":3990},{"title":"Oferta Arriendo mesa de Beerpong Chile para empresas","type":"","minPrice":17990,"maxPrice":22490},{"title":"Oferta Arriendo mesa de Beerpong Drinking Partners Chile","type":"Juegos de fiesta","minPrice":16990,"maxPrice":20980},{"title":"Oferta Arriendo Pack carrete de cumpleaños","type":"Juegos de fiesta","minPrice":37022,"maxPrice":133817},{"title":"Oferta Arriendo Pack carrete de cumpleaños ¡Con todo sino para que!","type":"Juegos de fiesta","minPrice":84522,"maxPrice":124849},{"title":"OFERTA ARRIENDO Pack Mesa Beerpong + Jenga XL","type":"Juegos de fiesta","minPrice":29980,"maxPrice":34970},{"title":"Pack Embudo DPC + 2 herramientas Turbochela","type":"","minPrice":21990,"maxPrice":21990},{"title":"Pack vasos y pelotas + stickers","type":"Juegos de fiesta","minPrice":4490,"maxPrice":4490}]}`);
+const EMBEDDED_SHOPIFY = { source: "none", shop: null, updated_at: null, count: 0, orders: [], monthly_aggregates: [], catalog: [] }; // Vaciado por seguridad: la data real del dueno NO se distribuye. Para datos propios, importa tu shopify_data.json o respaldo via la vista Subir.
 
 /* =================================================================
    MULTI-EMPRENDIMIENTO: gestión de negocios
@@ -7645,18 +7619,12 @@ function aplicarBusinessUI() {
   if (!b) return;
   if (logo) {
     logo.style.fontSize = '';
-    if (esBusinessDPCL(b)) {
-      // SVG inline para DPCL (logo oficial)
-      logo.innerHTML = getDPCLLogoSVG();
-      logo.style.background = 'transparent';
-      logo.style.borderRadius = '50%';
-    } else {
-      // Resto de negocios: iniciales + color (sistema clásico)
-      logo.innerHTML = '';
-      logo.textContent = b.initials || b.nombre.slice(0, 2).toUpperCase();
-      logo.style.background = BUSINESS_COLORS[b.color || 'indigo'] || BUSINESS_COLORS.indigo;
-      logo.style.borderRadius = '9px';
-    }
+    // Identidad por negocio: iniciales + color elegido. Igual para todos
+    // (sin casos especiales por nombre).
+    logo.innerHTML = '';
+    logo.textContent = b.initials || b.nombre.slice(0, 2).toUpperCase();
+    logo.style.background = BUSINESS_COLORS[b.color || 'indigo'] || BUSINESS_COLORS.indigo;
+    logo.style.borderRadius = '9px';
   }
   if (text) text.textContent = b.nombre;
 }
@@ -7923,163 +7891,15 @@ function bootstrapDatos() {
     saveState();
   }
 
-  // Migración one-time para el negocio DPCL: la primera vez que abre la
-  // versión nueva (sin auto-seeds), poblamos los datos históricos del
-  // dueño (Sebastián) tal cual los habría ingresado por la UI. Después
-  // marcamos un flag para no repetir. El resultado: state idéntico a si
-  // hubiera ingresado los datos a mano vía los importadores manuales,
-  // pero sin que tenga que hacer click.
-  if (esBusinessDPCL(getCurrentBusiness()) && !state.config._dpcl_demo_imported_v1) {
-    _importarDemoDPCLSilencioso();
-    state.config._dpcl_demo_imported_v1 = true;
-    saveState();
-  }
+  // (Sin auto-import: la app NO carga datos de ningún negocio según su
+  // nombre. Cada usuario importa sus propios datos vía Subir → Shopify JSON
+  // o respaldo. La data del dueño vive en un archivo local privado, fuera
+  // del binario distribuido.)
 }
 
-// Versión silenciosa de los importadores. No pide confirmación, no muestra
-// toast — corre transparente en boot para DPCL la primera vez. Las entradas
-// quedan como user-data normal (sin flag auto_seeded), indistinguibles de
-// las que el usuario hubiera ingresado vía el botón "Agregar gasto
-// recurrente".
-function _importarDemoDPCLSilencioso() {
-  // Shopify snapshot — solo si no hay datos ya importados.
-  const sinDatos = !shopify.orders || shopify.orders.length === 0;
-  const esDemo = shopify.source === 'demo';
-  if (sinDatos || esDemo) {
-    const cachePrev = shopify.historicalOrdersCache || [];
-    const cacheConSeed = (typeof fusionarOrdersEnCache === 'function')
-      ? fusionarOrdersEnCache(cachePrev, EMBEDDED_SHOPIFY.orders || [])
-      : (cachePrev.length > 0 ? cachePrev : (EMBEDDED_SHOPIFY.orders || []));
-    shopify = {
-      orders: EMBEDDED_SHOPIFY.orders || [],
-      historicalOrdersCache: cacheConSeed,
-      updated_at: EMBEDDED_SHOPIFY.updated_at,
-      source: EMBEDDED_SHOPIFY.source,
-      shop: EMBEDDED_SHOPIFY.shop,
-      monthly_aggregates: EMBEDDED_SHOPIFY.monthly_aggregates || [],
-      catalog: EMBEDDED_SHOPIFY.catalog || []
-    };
-    saveShopify();
-  }
-  // Gastos fijos del brief — agregar solo los que NO existen ya por descripción.
-  if (!state.config.recurrentes) state.config.recurrentes = [];
-  const yaExistePor = (palabra) => (state.config.recurrentes || []).some(r =>
-    (r.proveedor || '').toLowerCase().includes(palabra.toLowerCase()) ||
-    (r.descripcion || '').toLowerCase().includes(palabra.toLowerCase())
-  );
-  const recs = [
-    { match: 'shopify',  descripcion: 'Shopify Basic + app (~$51 USD/mes)',     monto: 46155,  categoria: 'Apps / Software',    proveedor: 'Shopify',           metodo: 'Tarjeta crédito' },
-    { match: 'bodega',   descripcion: 'Bodega de almacenamiento (Vitacura)',    monto: 200000, categoria: 'Arriendo',           proveedor: 'Bodega',            metodo: 'Transferencia' },
-    { match: 'meta',     descripcion: 'Ad spend Meta + Google',                 monto: 300000, categoria: 'Marketing',          proveedor: 'Meta + Google Ads', metodo: 'Transferencia' },
-    { match: 'contador', descripcion: 'Honorarios contador externo',            monto: 80000,  categoria: 'Honorarios',         proveedor: 'Contador externo',  metodo: 'Transferencia' },
-    { match: 'seguro',   descripcion: 'Seguros del negocio',                    monto: 25000,  categoria: 'Servicios básicos',  proveedor: 'Seguros',           metodo: 'Transferencia' },
-    { match: 'fijos varios', descripcion: 'Gastos fijos varios (otros)',        monto: 30000,  categoria: 'Otros',              proveedor: 'Varios',            metodo: 'Transferencia' }
-  ];
-  recs.forEach(s => {
-    if (!yaExistePor(s.match)) {
-      state.config.recurrentes.push({
-        id: uid(),
-        descripcion: s.descripcion,
-        monto: s.monto,
-        categoria: s.categoria,
-        proveedor: s.proveedor,
-        frecuencia: 'mensual',
-        dia: 1,
-        diaSemana: 1,
-        desde: '2023-05',
-        hasta: null,
-        metodo: s.metodo
-      });
-    }
-  });
-  // Patrones de pedido test del dueño — para que el análisis no contamine
-  // con sus propias órdenes de prueba.
-  if (!Array.isArray(state.config.testCustomers) || state.config.testCustomers.length === 0) {
-    state.config.testCustomers = ['seba von koeller', 'sebavonkoeller@gmail.com', 'sebastian von koeller'];
-  }
-}
-
-/* =================================================================
-   IMPORTADORES MANUALES — datos demo de Drinking Partners Chile
-   Estos datos vivían como auto-seed para el negocio DPCL. Ahora se
-   exponen como acciones explícitas que el usuario gatilla cuando
-   quiera (botón en Subir → "Importar datos demo DPCL").
-   ================================================================= */
-
-// Importa la snapshot de Shopify de DPCL (orders + aggregates + catalog)
-// al negocio ACTUALMENTE activo. Sobreescribe el shopify state actual.
-function importarShopifyDemoDPCL() {
-  if (!confirm(
-    'Esto va a IMPORTAR el snapshot histórico de Shopify de Drinking Partners ' +
-    'Chile (30 órdenes recientes + agregados mensuales 2023-2026 + catálogo) ' +
-    'al negocio activo.\n\nReemplazará los datos de Shopify que tengas en este ' +
-    'negocio. ¿Continuar?'
-  )) return;
-  const cachePrev = shopify.historicalOrdersCache || [];
-  const cacheConSeed = (typeof fusionarOrdersEnCache === 'function')
-    ? fusionarOrdersEnCache(cachePrev, EMBEDDED_SHOPIFY.orders || [])
-    : (cachePrev.length > 0 ? cachePrev : (EMBEDDED_SHOPIFY.orders || []));
-  shopify = {
-    orders: EMBEDDED_SHOPIFY.orders || [],
-    historicalOrdersCache: cacheConSeed,
-    updated_at: EMBEDDED_SHOPIFY.updated_at,
-    source: EMBEDDED_SHOPIFY.source,
-    shop: EMBEDDED_SHOPIFY.shop,
-    monthly_aggregates: EMBEDDED_SHOPIFY.monthly_aggregates || [],
-    catalog: EMBEDDED_SHOPIFY.catalog || []
-  };
-  saveShopify();
-  toast('✓ Snapshot Shopify DPCL importado', 'success');
-  // Re-render del dashboard si está visible
-  if (typeof renderDashboard === 'function') renderDashboard();
-}
-
-// Importa los 5 gastos fijos del brief DPCL (bodega, ads, contador, seguros,
-// varios) como recurrentes mensuales desde 2023-05 en el negocio activo.
-function importarGastosFijosDPCL() {
-  if (!confirm(
-    'Esto va a AGREGAR 6 gastos fijos mensuales típicos de Drinking Partners ' +
-    'Chile (Shopify, bodega, ad spend, contador, seguros, fijos varios) como ' +
-    'recurrentes desde 2023-05 al negocio activo.\n\nPodrás editarlos o ' +
-    'eliminarlos individualmente después. ¿Continuar?'
-  )) return;
-  if (!state.config.recurrentes) state.config.recurrentes = [];
-  const yaExistePor = (palabra) => (state.config.recurrentes || []).some(r =>
-    (r.proveedor || '').toLowerCase().includes(palabra.toLowerCase()) ||
-    (r.descripcion || '').toLowerCase().includes(palabra.toLowerCase())
-  );
-  const seeds = [
-    { match: 'shopify',  descripcion: 'Shopify Basic + app (~$51 USD/mes)',     monto: 46155,  categoria: 'Apps / Software',    proveedor: 'Shopify',           metodo: 'Tarjeta crédito' },
-    { match: 'bodega',   descripcion: 'Bodega de almacenamiento (Vitacura)',    monto: 200000, categoria: 'Arriendo',           proveedor: 'Bodega',            metodo: 'Transferencia' },
-    { match: 'meta',     descripcion: 'Ad spend Meta + Google',                 monto: 300000, categoria: 'Marketing',          proveedor: 'Meta + Google Ads', metodo: 'Transferencia' },
-    { match: 'contador', descripcion: 'Honorarios contador externo',            monto: 80000,  categoria: 'Honorarios',         proveedor: 'Contador externo',  metodo: 'Transferencia' },
-    { match: 'seguro',   descripcion: 'Seguros del negocio',                    monto: 25000,  categoria: 'Servicios básicos',  proveedor: 'Seguros',           metodo: 'Transferencia' },
-    { match: 'fijos varios', descripcion: 'Gastos fijos varios (otros)',        monto: 30000,  categoria: 'Otros',              proveedor: 'Varios',            metodo: 'Transferencia' }
-  ];
-  let agregados = 0;
-  seeds.forEach(s => {
-    if (!yaExistePor(s.match)) {
-      state.config.recurrentes.push({
-        id: uid(),
-        descripcion: s.descripcion,
-        monto: s.monto,
-        categoria: s.categoria,
-        proveedor: s.proveedor,
-        frecuencia: 'mensual',
-        dia: 1,
-        diaSemana: 1,
-        desde: '2023-05',
-        hasta: null,
-        metodo: s.metodo
-      });
-      agregados++;
-    }
-  });
-  saveState();
-  if (typeof generarGastosRecurrentes === 'function') generarGastosRecurrentes();
-  toast(`✓ ${agregados} gastos fijos DPCL agregados`, 'success');
-  if (typeof renderDashboard === 'function') renderDashboard();
-}
+// (Importadores DPCL eliminados: la app ya no trae datos de ningún
+// negocio. Para usar tus propios datos, importa tu shopify_data.json o
+// respaldo desde la vista Subir.)
 
 /* =================================================================
    VISTA CUENTAS
@@ -8802,17 +8622,9 @@ function renderListaRecurrentes() {
     if (f === 'diario') return 'Diario';
     return f;
   };
-  // Banner si hay seeds — el usuario puede borrarlos en bloque. Solo se
-  // muestra cuando el negocio activo es DPCL (los seeds del brief solo se
-  // siembran ahí; para otros negocios este texto no aplica).
-  const seededCount = recs.filter(r => r.auto_seeded).length;
-  const esDPCL = esBusinessDPCL(getCurrentBusiness());
-  const bannerHTML = (seededCount > 0 && esDPCL)
-    ? `<div style="margin-bottom:12px; padding:10px 12px; background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; font-size:12px; color:#92400e">
-        <strong>ℹ️ ${seededCount} de ${recs.length} recurrentes son auto-sembrados</strong> (basados en estimaciones del brief de DPCL: bodega, ad spend, contador, etc, desde 2023-05). Identificalos por el badge <span style="display:inline-block; padding:1px 6px; border-radius:4px; background:#fef3c7; color:#92400e; border:1px solid #d97706; font-size:10px; font-weight:600">auto</span>. Editalos para ajustar montos/fechas a la realidad, o borralos si no aplican (eso elimina TODOS los gastos generados por ellos).
-        <button class="btn sm ghost" onclick="eliminarTodosLosSeeds()" style="margin-left:8px; color:var(--danger); font-size:11px">Eliminar todos los auto-sembrados</button>
-      </div>`
-    : '';
+  // (Sin banner de auto-seeds: la app ya no auto-siembra recurrentes de
+  // ningún negocio. Todos los recurrentes son ingresados por el usuario.)
+  const bannerHTML = '';
   wrap.innerHTML = bannerHTML + `<table>
     <thead><tr>
       <th>Descripción</th><th>Categoría</th><th>Frecuencia</th><th class="num">Monto</th><th>Desde</th><th>Hasta</th><th></th>
@@ -12522,12 +12334,6 @@ let _wizardTipoSeleccionado = null;
 
 function intentarMostrarOnboarding() {
   if (state.config._onboardingDone) return;
-  // Belt+suspenders: el negocio original DPCL no ve el wizard (es Sebastián).
-  if (typeof esBusinessDPCL === 'function' && esBusinessDPCL(getCurrentBusiness())) {
-    state.config._onboardingDone = true;
-    saveState();
-    return;
-  }
   abrirOnboarding();
 }
 

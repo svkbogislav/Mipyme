@@ -35,3 +35,7 @@ update.log
 *.pfx
 *.p12
 *-private.key
+
+# Data privada del dueño (NO se distribuye ni sube — solo local)
+data/*PRIVADO*
+data/dpcl-snapshot*.json
