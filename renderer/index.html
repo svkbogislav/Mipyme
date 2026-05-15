@@ -6112,28 +6112,31 @@ function eliminarGasto(id) {
   const g = state.gastos.find(x => x.id === id);
   if (!g) return;
   if (g.recurring_id) {
-    // Es parte de una serie recurrente
-    const opcion = prompt(
-      'Este gasto es parte de una serie recurrente.\n\n' +
-      'Escribe:\n' +
-      '  "1" → eliminar solo este mes\n' +
-      '  "2" → eliminar la serie completa (todos los meses + la regla recurrente)\n' +
-      '  cualquier otra cosa → cancelar',
-      '1'
+    // Es parte de una serie recurrente. Electron NO soporta prompt(), así que
+    // usamos dos confirm() encadenados (ambos soportados en Electron):
+    //   1er confirm → OK = borrar la serie COMPLETA
+    //   si Cancela  → 2do confirm → OK = borrar solo este mes
+    const serieCompleta = confirm(
+      'Este gasto es parte de una serie recurrente (se repite cada mes).\n\n' +
+      'Aceptar  → eliminar la SERIE COMPLETA (todos los meses + la regla recurrente)\n' +
+      'Cancelar → te pregunto si quieres borrar solo este mes'
     );
-    if (opcion === '1') {
-      state.gastos = state.gastos.filter(x => x.id !== id);
-      saveState();
-      renderGastos();
-      toast('Gasto del mes eliminado (la serie recurrente sigue activa)');
-    } else if (opcion === '2') {
+    if (serieCompleta) {
       const recId = g.recurring_id;
       state.gastos = state.gastos.filter(x => x.recurring_id !== recId);
       state.config.recurrentes = (state.config.recurrentes || []).filter(r => r.id !== recId);
       saveState();
       renderGastos();
-      if (document.getElementById('view-config').classList.contains('active')) renderListaRecurrentes();
+      if (typeof renderListaRecurrentes === 'function') renderListaRecurrentes();
       toast('Serie recurrente eliminada completa', 'success');
+      return;
+    }
+    // No quiso la serie completa → ofrecer borrar solo este mes
+    if (confirm('¿Eliminar solo el gasto de este mes? (la serie recurrente sigue activa y volverá a generarlo)')) {
+      state.gastos = state.gastos.filter(x => x.id !== id);
+      saveState();
+      renderGastos();
+      toast('Gasto del mes eliminado (la serie sigue activa)');
     }
     return;
   }
