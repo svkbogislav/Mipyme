@@ -174,23 +174,21 @@ function wireRemoteUpdater(mainWindow) {
   autoUpdater.on('update-downloaded', info => send('remote:downloaded', info));
 }
 
-// Lee la config publish del package.json bundleado. Devuelve { owner, repo }
-// o null si no está configurada.
-function _leerPublishConfig() {
-  try {
-    const pkg = require('../../package.json');
-    const p = pkg && pkg.build && pkg.build.publish;
-    if (!p || !p.owner || !p.repo) return null;
-    return { owner: p.owner, repo: p.repo };
-  } catch (e) { return null; }
-}
-
-// Detecta si el repo está sin configurar (placeholders del package.json del
-// repo). Útil para no llamar al API de GitHub y devolver un mensaje claro.
+// Detecta si el repo está sin configurar. IMPORTANTE: electron-builder borra
+// el campo `build` del package.json al empaquetar, así que NO podemos leer
+// build.publish desde el package.json bundleado. La config real vive en
+// `app-update.yml` (generado por electron-builder, va en Resources/). Leemos
+// ese archivo y buscamos placeholders. En dev el archivo no existe → asumimos
+// configurado (igual checkRemoteUpdate hace early-return por !isPackaged).
 function _publishEstaSinConfigurar() {
-  const pc = _leerPublishConfig();
-  if (!pc) return true;
-  return (pc.owner || '').includes('PLACEHOLDER') || (pc.repo || '').includes('PLACEHOLDER');
+  try {
+    const ymlPath = path.join(process.resourcesPath || '', 'app-update.yml');
+    if (!fs.existsSync(ymlPath)) return false; // sin archivo → no bloqueamos
+    const content = fs.readFileSync(ymlPath, 'utf8');
+    return content.includes('PLACEHOLDER');
+  } catch (e) {
+    return false; // ante la duda, dejamos que electron-updater intente
+  }
 }
 
 // Reduce un error largo de electron-updater (que a veces incluye headers
