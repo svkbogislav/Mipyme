@@ -33,7 +33,7 @@ jobs:
           cache: npm
 
       - name: Instalar dependencias
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Build + publicar (Mac, zip arm64 + x64)
         run: npm run release:mac
@@ -58,7 +58,7 @@ jobs:
           cache: npm
 
       - name: Instalar dependencias
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Build + publicar (Windows, NSIS x64)
         run: npm run release:win
