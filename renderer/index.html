@@ -1796,6 +1796,7 @@
       <!-- Sub-tabs: lista (vista principal) y configuración (categorías / test) -->
       <div class="ana-subtabs" id="gastosSubtabs" style="margin-bottom:14px">
         <button class="ana-subtab active" data-gastotab="lista" onclick="cambiarGastosSubTab('lista')">📋 Lista de gastos</button>
+        <button class="ana-subtab" data-gastotab="periodicos" onclick="cambiarGastosSubTab('periodicos')">🔁 Periódicos</button>
         <button class="ana-subtab" data-gastotab="config" onclick="cambiarGastosSubTab('config')">⚙️ Configuración</button>
       </div>
 
@@ -1829,6 +1830,19 @@
       </div>
 
       <!-- ============ TAB: CONFIGURACIÓN (categorías, pedidos test) ============ -->
+      <!-- ============ TAB: PERIÓDICOS (gastos recurrentes) ============ -->
+      <div class="gastos-tab-content" id="gastos-tab-periodicos" style="display:none">
+        <div class="card">
+          <h3>Gastos periódicos</h3>
+          <div class="card-sub">Cargos que se repiten siempre: arriendo, sueldos, contador, suscripciones, etc. La app los registra solo cada mes (o la frecuencia que elijas) desde la fecha de inicio — no tienes que cargarlos a mano cada vez. Aparecen en la Lista de gastos con el badge ↻.</div>
+          <div class="table-wrap js-recurrentes-list" style="margin-top:12px"></div>
+          <button class="btn primary" style="margin-top:12px" onclick="abrirModalRecurrente()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            Agregar gasto periódico
+          </button>
+        </div>
+      </div>
+
       <div class="gastos-tab-content" id="gastos-tab-config" style="display:none">
         <div class="card" style="margin-bottom:14px">
           <h3>Categorías de gastos</h3>
@@ -2103,12 +2117,12 @@
       </div>
 
       <div class="card" style="margin-bottom:14px">
-        <h3>Gastos fijos mensuales</h3>
-        <div class="card-sub">Suscripciones y cargos que pagas todos los meses (Shopify, internet, contador, arriendo, etc.). La app los carga automáticamente como gastos cada mes desde la fecha de inicio.</div>
-        <div class="table-wrap" id="recurrentesList" style="margin-top:10px"></div>
+        <h3>Gastos periódicos</h3>
+        <div class="card-sub">Suscripciones y cargos que pagas siempre (arriendo, sueldos, contador, etc.). Se cargan solos cada mes. También los administras en <strong>Gastos → Periódicos</strong>.</div>
+        <div class="table-wrap js-recurrentes-list" style="margin-top:10px"></div>
         <button class="btn primary" style="margin-top:10px" onclick="abrirModalRecurrente()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-          Agregar gasto recurrente
+          Agregar gasto periódico
         </button>
       </div>
 
@@ -5767,6 +5781,9 @@ function cambiarGastosSubTab(tab) {
     renderListaCategorias();
     renderListaTestCustomers();
   }
+  if (tab === 'periodicos' && typeof renderListaRecurrentes === 'function') {
+    renderListaRecurrentes();
+  }
 }
 
 function renderGastos() {
@@ -8614,14 +8631,15 @@ function migrarMarcaSeeded() {
 
 function renderListaRecurrentes() {
   migrarMarcaSeeded();
-  // El nodo ahora vive en la vista Presupuesto (antes estaba en Configuración).
-  // Si el usuario no ha entrado todavía a la vista, el nodo no existe — salimos
-  // silenciosamente para no romper renderConfig() ni los otros callers.
-  const wrap = document.getElementById('recurrentesList');
-  if (!wrap) return;
+  // La lista de recurrentes aparece en VARIOS lugares (Presupuesto + pestaña
+  // "Gastos periódicos" en la vista Gastos). Renderizamos en TODOS los
+  // contenedores con la clase .js-recurrentes-list. Si no hay ninguno
+  // montado (el usuario no entró a esas vistas), salimos silenciosamente.
+  const wraps = document.querySelectorAll('.js-recurrentes-list');
+  if (!wraps.length) return;
   const recs = state.config.recurrentes || [];
   if (recs.length === 0) {
-    wrap.innerHTML = '<div class="empty"><h4>Sin gastos recurrentes</h4>Agrega Shopify, internet, contador, suscripciones, etc.</div>';
+    wraps.forEach(w => { w.innerHTML = '<div class="empty"><h4>Sin gastos periódicos</h4>Agrega arriendo, sueldos, suscripciones, contador, etc. Se cargan solos cada mes.</div>'; });
     return;
   }
   const fmtFreq = (r) => {
@@ -8643,16 +8661,14 @@ function renderListaRecurrentes() {
   };
   // (Sin banner de auto-seeds: la app ya no auto-siembra recurrentes de
   // ningún negocio. Todos los recurrentes son ingresados por el usuario.)
-  const bannerHTML = '';
-  wrap.innerHTML = bannerHTML + `<table>
+  const tablaHTML = `<table>
     <thead><tr>
       <th>Descripción</th><th>Categoría</th><th>Frecuencia</th><th class="num">Monto</th><th>Desde</th><th>Hasta</th><th></th>
     </tr></thead>
     <tbody>
-      ${recs.map(r => `<tr ${r.auto_seeded ? 'style="background:#fffbf0"' : ''}>
+      ${recs.map(r => `<tr>
         <td>
           <strong>${escapeHtml(r.descripcion)}</strong>
-          ${r.auto_seeded ? ' <span style="display:inline-block; padding:1px 6px; border-radius:4px; background:#fef3c7; color:#92400e; border:1px solid #d97706; font-size:10px; font-weight:600; vertical-align:middle" title="Sembrado automáticamente por la app desde estimaciones del brief — editalo si tu cifra real es distinta">auto</span>' : ''}
           <br><span style="font-size:11px;color:var(--text-muted)">${escapeHtml(r.proveedor || '')}</span>
         </td>
         <td><span class="badge">${escapeHtml(r.categoria)}</span></td>
@@ -8666,6 +8682,7 @@ function renderListaRecurrentes() {
       </tr>`).join('')}
     </tbody>
   </table>`;
+  wraps.forEach(w => { w.innerHTML = tablaHTML; });
 }
 
 // Elimina TODOS los recurrentes auto-sembrados + sus gastos generados.
