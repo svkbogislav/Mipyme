@@ -394,14 +394,25 @@
   /* Toast */
   .toast {
     position: fixed; bottom: 24px; right: 24px;
-    background: var(--text); color: white;
+    /* Fondo fijo oscuro (NO var(--text), que en dark mode es claro y dejaba
+       el texto blanco ilegible). Funciona en ambos temas. */
+    background: #1f2433; color: #ffffff;
     padding: 10px 16px; border-radius: 9px; font-size: 13px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
     opacity: 0; transform: translateY(8px); transition: all 0.2s;
     z-index: 200; pointer-events: none;
   }
+  /* En dark mode, un poco más claro que el fondo de página + borde sutil
+     para que el toast se despegue visualmente. */
+  html[data-theme="dark"] .toast {
+    background: #2d3340; color: #f4f4f5;
+    border: 1px solid #3f4654;
+  }
   .toast.show { opacity: 1; transform: none; }
-  .toast.error { background: var(--danger); }
-  .toast.success { background: var(--success); }
+  .toast.error   { background: var(--danger);  color: #fff; }
+  .toast.success { background: var(--success); color: #fff; }
+  html[data-theme="dark"] .toast.error   { background: var(--danger);  border-color: transparent; }
+  html[data-theme="dark"] .toast.success { background: var(--success); border-color: transparent; }
 
   .chart-wrap { position: relative; height: 300px; }
   .chart-wrap.tall { height: 360px; }
