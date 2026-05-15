@@ -7238,21 +7238,35 @@ function exportarReporteVentas() {
   toast('Ventas exportadas', 'success');
 }
 
-function abrirReportePnL() {
+async function abrirReportePnL() {
   const periodo = _periodoReporteSeleccionado();
   const html = Reportes.htmlPnL(state, shopify, getTestPatterns(), periodo);
-  // Abrir una ventana nueva para que el usuario use Cmd+P. about:blank +
-  // document.write evita problemas de Same-Origin con file:// y blob:.
-  const win = window.open('', '_blank', 'width=900,height=900');
-  if (!win) {
-    toast('Tu navegador bloqueó la ventana. Permite popups y reintenta.', 'error');
+  const nombre = `PnL_${(state.config && state.config.nombre) || 'negocio'}_${periodo || 'todo'}`;
+
+  // Vía confiable (app empaquetada/Electron): escribir a archivo temp y abrir
+  // en el navegador del sistema. window.open()+document.write es inestable en
+  // Electron (URL vacía resuelve al propio index.html → "muestra cualquier
+  // cosa"). En el browser real, además, Cmd+P → Guardar como PDF funciona.
+  if (window.electronAPI && window.electronAPI.abrirReporteHTML) {
+    const r = await window.electronAPI.abrirReporteHTML(html, nombre);
+    if (r && r.ok) {
+      toast('Reporte abierto en tu navegador. Usa Cmd+P → Guardar como PDF.', 'success');
+    } else {
+      toast('No se pudo abrir el reporte: ' + (r && r.error || 'error'), 'error');
+    }
     return;
   }
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-  // Pequeño delay para que el documento renderice antes de invocar print.
-  setTimeout(() => { try { win.focus(); } catch {} }, 200);
+
+  // Fallback (modo web/dev sin electronAPI): blob URL — más confiable que ''.
+  try {
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, '_blank');
+    if (!win) { toast('Permite popups para ver el reporte', 'error'); return; }
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  } catch (e) {
+    toast('No se pudo generar el reporte: ' + e.message, 'error');
+  }
 }
 
 function importarBackup(ev) {

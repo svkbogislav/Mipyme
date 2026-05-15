@@ -27,6 +27,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Abrir un attachment con la app por defecto
   openAttachment: (filePath) => ipcRenderer.invoke('app:openAttachment', filePath),
 
+  // Abre un reporte HTML (P&L) en el navegador del sistema vía archivo temp.
+  // Más confiable que window.open()+document.write en Electron.
+  abrirReporteHTML: (html, nombre) => ipcRenderer.invoke('app:abrirReporteHTML', { html, nombre }),
+
   // OAuth flow Shopify: abre navegador, captura callback, devuelve token
   shopifyOAuthStart: (params) => ipcRenderer.invoke('shopify:oauth-start', params),
   shopifyOAuthPort: () => ipcRenderer.invoke('shopify:oauth-port'),

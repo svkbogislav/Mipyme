@@ -39,6 +39,7 @@ function register({ getMainWindow }) {
   // === Attachments ===
   ipcMain.handle('app:attachFile',     async ()            => attachments.attachFile(win()));
   ipcMain.handle('app:openAttachment', async (_e, p)       => attachments.openAttachment(p));
+  ipcMain.handle('app:abrirReporteHTML', async (_e, args)  => attachments.abrirHTMLEnNavegador(args && args.html, args && args.nombre));
 
   // === Auto-update (dev: script local · prod: electron-updater) ===
   ipcMain.handle('app:getVersion',        async ()  => updater.getVersion());

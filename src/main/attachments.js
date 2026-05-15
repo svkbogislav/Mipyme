@@ -50,7 +50,28 @@ async function openAttachment(filePath) {
   return { ok: true };
 }
 
+// Escribe un HTML a un archivo temporal y lo abre con el navegador por
+// defecto del sistema. Se usa para el reporte P&L imprimible: window.open()
+// + document.write es poco confiable en Electron (URL vacía resuelve al
+// propio index.html → "muestra cualquier cosa"). Un .html abierto en el
+// browser real es 100% confiable y ahí Cmd+P → "Guardar como PDF" anda.
+async function abrirHTMLEnNavegador(html, nombreBase) {
+  try {
+    const dir = path.join(app.getPath('temp'), 'mipyme-reportes');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const safe = String(nombreBase || 'reporte').replace(/[^a-z0-9\-_]+/gi, '_').slice(0, 60);
+    const file = path.join(dir, `${safe}_${Date.now()}.html`);
+    fs.writeFileSync(file, String(html || ''), 'utf8');
+    const err = await shell.openPath(file);
+    if (err) return { ok: false, error: err };
+    return { ok: true, path: file };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+}
+
 module.exports = {
   attachFile,
   openAttachment,
+  abrirHTMLEnNavegador,
 };
