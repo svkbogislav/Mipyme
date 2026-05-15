@@ -10057,7 +10057,9 @@ function refrescarCacheHistoricoUI() {
   const desdeFmt = cs.desdeFecha ? fmtFechaCorta.format(new Date(cs.desdeFecha)) : null;
   const hastaFmt = cs.hastaFecha ? fmtFechaCorta.format(new Date(cs.hastaFecha)) : null;
   if (cs.total === 0) {
-    wrap.innerHTML = `<div style="padding:10px 12px; background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; font-size:12px; color:#92400e">
+    // Caja informativa: usa --warning-soft (se adapta: amarillo claro en
+    // light, ámbar oscuro en dark) + var(--text) que también se adapta.
+    wrap.innerHTML = `<div style="padding:10px 12px; background:var(--warning-soft); border:1px solid var(--warning); border-radius:8px; font-size:12px; color:var(--text)">
       ℹ️ <strong>Cache vacío</strong> — el análisis profundo usa solo los últimos 60 días del API. Cada sync acumula los pedidos nuevos. En 6 meses tendrás historial detallado completo para análisis de productos, clientes y patrones.
     </div>`;
   } else {
@@ -10065,7 +10067,9 @@ function refrescarCacheHistoricoUI() {
     const diasRango = (cs.desdeFecha && cs.hastaFecha)
       ? Math.round((new Date(cs.hastaFecha) - new Date(cs.desdeFecha)) / 86400000)
       : 0;
-    wrap.innerHTML = `<div style="padding:12px 14px; background:#dbeafe; border:1px solid #93c5fd; border-radius:8px; font-size:13px; color:#1e40af">
+    // Caja: --primary-soft se adapta (lavanda claro / violeta oscuro) y
+    // var(--text)/var(--text-muted) también → legible en ambos temas.
+    wrap.innerHTML = `<div style="padding:12px 14px; background:var(--primary-soft); border:1px solid var(--primary); border-radius:8px; font-size:13px">
       <div style="display:grid; grid-template-columns: auto 1fr; gap:10px 18px; align-items:baseline">
         <span style="color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:0.4px; font-weight:600">Pedidos</span>
         <strong style="font-size:18px; color:var(--text)">📦 ${fmtNum.format(cs.total)} en cache</strong>
