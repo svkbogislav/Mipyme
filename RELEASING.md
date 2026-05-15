@@ -1,6 +1,47 @@
 # Release flow — Mac + Windows + auto-update
 
-Esta app está configurada para distribuirse como **DMG (Mac)** y **EXE (Windows)** con **auto-update remoto vía GitHub Releases**. El usuario final solo descarga el instalador una vez; futuras versiones se actualizan automáticamente desde dentro de la app.
+Esta app se distribuye como **ZIP (Mac)** y **EXE (Windows)** con **auto-update remoto vía GitHub Releases**. El usuario final descarga el instalador una vez; futuras versiones se actualizan automáticamente desde dentro de la app.
+
+---
+
+## 🚀 Flujo automático (recomendado — GitHub Actions)
+
+**Sacar una versión nueva = UN solo comando:**
+
+```bash
+cd ~/Documents/mipyme
+npm run ship          # patch: 1.0.79 → 1.0.80   (o npm run ship:minor)
+```
+
+Eso hace `npm version patch` + `git push --follow-tags`. Al subir el tag `v*.*.*`, **GitHub Actions compila y publica solo** en sus servidores limpios:
+
+- ✅ Mac (zip arm64 + x64) — runner macOS limpio, **sin los errores de hdiutil/Google Drive/volúmenes**
+- ✅ Windows (.exe NSIS) — runner Windows real, **sin Wine**
+- ✅ `latest-mac.yml` / `latest.yml` generados → auto-update funcional
+- ⏱️ ~10-15 min, sin tu Mac involucrado
+
+**Ver el progreso:** GitHub → repo → pestaña **Actions** → el run "Release". Cuando termina (✓ verde), el release aparece en **Releases** con todos los archivos.
+
+No necesitas `GH_TOKEN` local ni que tu Mac esté prendido. El workflow usa el `GITHUB_TOKEN` que GitHub provee solo.
+
+> El workflow vive en `.github/workflows/release.yml`. Se dispara con cualquier tag `vX.Y.Z`, o a mano desde la pestaña Actions (botón "Run workflow").
+
+---
+
+## 🛠️ Flujo manual (fallback, compila en tu Mac)
+
+Solo si Actions falla o quieres compilar local. Requiere `GH_TOKEN` exportado:
+
+```bash
+cd ~/Documents/mipyme
+npm version patch
+git push --follow-tags
+npm run release:mac     # solo Mac, ~3 min (zip-only)
+```
+
+---
+
+## Notas de arquitectura
 
 ## Setup inicial (una sola vez)
 

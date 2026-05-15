@@ -17,6 +17,8 @@
     "release": "electron-builder --mac --arm64 --x64 --win --x64 --publish always",
     "release:mac": "electron-builder --mac --arm64 --x64 --publish always",
     "release:win": "electron-builder --win --x64 --publish always",
+    "ship": "npm version patch && git push --follow-tags",
+    "ship:minor": "npm version minor && git push --follow-tags",
     "pack": "electron-builder --dir"
   },
   "devDependencies": {

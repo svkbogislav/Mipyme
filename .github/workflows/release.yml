@@ -1,0 +1,66 @@
+name: Release
+
+# Se dispara cuando subes un tag de versión (ej: v1.0.80).
+# Flujo del dev: `npm version patch && git push --follow-tags` → GitHub
+# compila y publica el release automáticamente en sus servidores limpios
+# (sin los problemas de hdiutil/Google Drive/volúmenes del Mac local).
+#
+# Permite también compilar Windows "gratis" (runner Windows de GitHub),
+# algo que desde un Mac requeriría Wine.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  # Permite dispararlo a mano desde la pestaña Actions de GitHub también.
+  workflow_dispatch:
+
+permissions:
+  contents: write   # necesario para que electron-builder cree el Release
+
+jobs:
+  # ─────────────────────────────  macOS  ─────────────────────────────
+  release-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Build + publicar (Mac, zip arm64 + x64)
+        run: npm run release:mac
+        env:
+          # GitHub provee este token automáticamente — no hay que crear secret.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ────────────────────────────  Windows  ────────────────────────────
+  # Bonus: compila el .exe en un runner Windows real (sin Wine).
+  # Publica al MISMO release que el job de Mac (electron-builder agrega
+  # los assets al release existente del tag).
+  release-win:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Build + publicar (Windows, NSIS x64)
+        run: npm run release:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
