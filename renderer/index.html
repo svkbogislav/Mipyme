@@ -7866,13 +7866,29 @@ function bootstrapDatos() {
   // brief histórico) NO se siembran automáticamente — están disponibles
   // como acciones manuales en Subir → "Importar datos demo DPCL".
   //
-  // Defensivo: si el negocio activo tiene restos de auto-seeds de versiones
-  // anteriores, los limpiamos. Es idempotente y solo actúa si hay basura.
+  // Defensivo: limpiar restos del auto-seed viejo (versiones anteriores
+  // sembraban 6 gastos fijos del brief DPCL + sus gastos generados). Los
+  // detectamos por dos vías:
+  //   1. flag auto_seeded === true (seeds marcados)
+  //   2. firma EXACTA descripción + monto de los 6 seeds conocidos (el
+  //      importador silencioso los creaba SIN flag, "como user-data")
+  // Idempotente: corre cada boot, solo borra si encuentra coincidencia exacta.
   if (Array.isArray(state.config.recurrentes)) {
-    const seeds = state.config.recurrentes.filter(r => r.auto_seeded);
+    const FIRMAS_SEED = [
+      { d: 'Shopify Basic + app (~$51 USD/mes)', m: 46155 },
+      { d: 'Bodega de almacenamiento (Vitacura)', m: 200000 },
+      { d: 'Ad spend Meta + Google', m: 300000 },
+      { d: 'Honorarios contador externo', m: 80000 },
+      { d: 'Seguros del negocio', m: 25000 },
+      { d: 'Gastos fijos varios (otros)', m: 30000 }
+    ];
+    const esSeed = (r) =>
+      r.auto_seeded === true ||
+      FIRMAS_SEED.some(f => (r.descripcion || '').trim() === f.d && Number(r.monto) === f.m);
+    const seeds = state.config.recurrentes.filter(esSeed);
     if (seeds.length > 0) {
       const seedIds = new Set(seeds.map(r => r.id));
-      state.config.recurrentes = state.config.recurrentes.filter(r => !r.auto_seeded);
+      state.config.recurrentes = state.config.recurrentes.filter(r => !esSeed(r));
       state.gastos = (state.gastos || []).filter(g => !seedIds.has(g.recurring_id));
       saveState();
     }
