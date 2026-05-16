@@ -2084,8 +2084,8 @@
     <section class="view" id="view-presupuesto">
       <div class="topbar">
         <div>
-          <h1>Presupuesto</h1>
-          <div class="sub">Porcentajes recomendados por categoría según industria, comparados con tu gasto real</div>
+          <h1>Plan del mes</h1>
+          <div class="sub">Cuánto puedes gastar este mes sin quedarte corto — y cómo vas hasta ahora</div>
         </div>
         <div class="topbar-actions">
           <button class="btn ghost sm" onclick="abrirConfigVista('presupuesto')" title="Configurar esta sección">
@@ -2093,58 +2093,80 @@
             Configurar
           </button>
           <select id="presupuestoBase" style="width:240px" onchange="renderPresupuesto()">
-            <option value="avg12">Promedio últimos 12 meses</option>
-            <option value="avg6">Promedio últimos 6 meses</option>
-            <option value="avg3" selected>Promedio últimos 3 meses</option>
-            <option value="actual">Mes actual</option>
-            <option value="custom">Monto personalizado</option>
+            <option value="avg3" selected>Ingreso típico (prom. 3 meses)</option>
+            <option value="avg6">Ingreso típico (prom. 6 meses)</option>
+            <option value="avg12">Ingreso típico (prom. 12 meses)</option>
+            <option value="actual">Lo vendido este mes</option>
+            <option value="custom">Monto que yo defina</option>
           </select>
           <input id="presupuestoCustom" type="number" placeholder="Ingreso CLP" style="width:160px; display:none" oninput="renderPresupuesto()" />
-          <label style="display:inline-flex; align-items:center; gap:6px; margin:0; cursor:pointer; font-size:13px; padding:8px 10px; border:1px solid var(--border); border-radius:9px; background: var(--surface)">
-            <input type="checkbox" id="autoAjustePct" style="width:auto; margin:0" checked onchange="guardarAutoAjuste()" />
-            Auto-ajustar otros %
-          </label>
-          <button class="btn" onclick="resetearPresupuestoDefaults()">Volver a recomendados</button>
         </div>
       </div>
 
-      <div class="kpi-grid">
-        <div class="kpi"><div class="kpi-label">Ingreso mensual</div><div class="kpi-value" id="presBase">$0</div><div class="kpi-delta" id="presBaseSub" style="color:var(--text-muted)"></div></div>
-        <div class="kpi"><div class="kpi-label">Costos fijos /mes</div><div class="kpi-value num-neg" id="presFijos">$0</div><div class="kpi-delta" id="presFijosPct" style="color:var(--text-muted)"></div></div>
-        <div class="kpi"><div class="kpi-label">Presupuesto variable</div><div class="kpi-value num-neg" id="presVar">$0</div><div class="kpi-delta" id="presVarPct" style="color:var(--text-muted)"></div></div>
-        <div class="kpi"><div class="kpi-label">Utilidad proyectada</div><div class="kpi-value" id="presUtilidad">$0</div><div class="kpi-delta" id="presUtilidadPct"></div></div>
+      <!-- HERO: el número grande -->
+      <div class="card" id="presHeroCard" style="margin-bottom:14px; text-align:center; padding:26px 20px">
+        <div style="font-size:14px; color:var(--text-muted); margin-bottom:6px">Este mes puedes gastar hasta</div>
+        <div id="presPuedesGastar" style="font-size:46px; font-weight:800; line-height:1.05; color:var(--primary)">$0</div>
+        <div id="presPuedesGastarSub" style="font-size:13px; color:var(--text-muted); margin-top:8px"></div>
       </div>
 
-      <!-- Veredicto en lenguaje simple -->
-      <div class="card" id="presVeredicto" style="margin-bottom:14px; display:none"></div>
+      <!-- TRACKER: cómo vas este mes -->
+      <div class="card" id="presTrackCard" style="margin-bottom:14px">
+        <h3 style="margin:0 0 4px">¿Cómo vas este mes?</h3>
+        <div class="card-sub" style="margin-bottom:14px">Gasto variable acumulado. No cuenta los fijos: esos ya están comprometidos.</div>
+        <div id="presTrackResumen" style="font-size:15px; font-weight:600; margin-bottom:8px">—</div>
+        <div style="background:var(--surface-2); border-radius:999px; height:16px; overflow:hidden; margin-bottom:10px">
+          <div id="presTrackBar" style="height:100%; width:0%; border-radius:999px; transition:width .3s; background:var(--success)"></div>
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:18px; font-size:13px; color:var(--text-muted); align-items:center">
+          <div>Te quedan <strong id="presTrackRestante" style="color:var(--text)">$0</strong></div>
+          <div><strong id="presTrackDias" style="color:var(--text)">0</strong> días restantes del mes</div>
+          <div id="presTrackRitmo"></div>
+        </div>
+      </div>
 
-      <!-- 1) Costos fijos: automáticos desde Gastos Periódicos -->
+      <!-- VENTA MÍNIMA -->
+      <div class="card" id="presVentaCard" style="margin-bottom:14px">
+        <h3 style="margin:0 0 4px">¿Cuánto necesitas vender?</h3>
+        <div class="card-sub" style="margin-bottom:14px">El piso de ventas para no perder plata</div>
+        <div class="kpi-grid" style="margin-bottom:12px">
+          <div class="kpi"><div class="kpi-label">Solo para cubrir los fijos</div><div class="kpi-value" id="presVentaFijos">$0</div><div class="kpi-delta" id="presVentaFijosDia" style="color:var(--text-muted)"></div></div>
+          <div class="kpi"><div class="kpi-label">Fijos + gasto variable típico</div><div class="kpi-value" id="presVentaTotal">$0</div><div class="kpi-delta" id="presVentaTotalDia" style="color:var(--text-muted)"></div></div>
+        </div>
+        <div id="presVentaEstado" style="font-size:13px; line-height:1.6"></div>
+      </div>
+
+      <!-- COSTOS FIJOS (read-only, auto desde Periódicos) -->
       <div class="card" style="margin-bottom:14px">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:6px">
           <div>
-            <h3 style="margin:0">1 · Costos fijos comprometidos</h3>
-            <div class="card-sub" style="margin-top:4px">Lo que pagas SIEMPRE pase lo que pase (arriendo, sueldos, contador, suscripciones). Sale automático de tus <strong>Gastos Periódicos</strong> — no tienes que estimarlo.</div>
+            <h3 style="margin:0">Tus costos fijos</h3>
+            <div class="card-sub" style="margin-top:4px">Lo que pagas SIEMPRE (arriendo, sueldos, contador, suscripciones). Sale automático de tus <strong>Gastos Periódicos</strong> — no tienes que estimarlo.</div>
           </div>
           <button class="btn ghost sm" onclick="document.querySelector('.nav-item[data-view=gastos]').click(); setTimeout(()=>cambiarGastosSubTab('periodicos'),120)">Editar periódicos →</button>
         </div>
         <div class="table-wrap" id="presFijosTabla" style="margin-top:10px"></div>
       </div>
 
-      <!-- 2) Presupuesto variable por categoría (% editable) -->
-      <div class="card" style="margin-bottom:14px">
-        <div style="margin-bottom:6px">
-          <h3 style="margin:0">2 · Presupuesto variable (lo que sí controlas)</h3>
-          <div class="card-sub" style="margin-top:4px">Gastos que varían mes a mes: insumos, marketing, logística, comisiones. Define qué <strong>% de tu ingreso</strong> quieres destinar a cada uno. La app compara contra lo que gastaste de verdad (sin contar los fijos de arriba).</div>
+      <!-- DETALLE AVANZADO (opcional, colapsado) -->
+      <details class="card" style="margin-bottom:14px">
+        <summary style="cursor:pointer; font-weight:600; font-size:15px">Detalle por categoría <span style="font-weight:400; color:var(--text-muted); font-size:13px">— opcional, para repartir el gasto variable por tipo</span></summary>
+        <div style="margin-top:14px">
+          <label style="display:inline-flex; align-items:center; gap:6px; margin:0; cursor:pointer; font-size:13px">
+            <input type="checkbox" id="autoAjustePct" style="width:auto; margin:0" checked onchange="guardarAutoAjuste()" />
+            Auto-ajustar otros % al cambiar uno
+          </label>
+          <button class="btn sm" style="margin-left:12px" onclick="resetearPresupuestoDefaults()">Volver a recomendados</button>
+          <div class="table-wrap" style="margin-top:12px"><table id="tablaPresupuesto"></table></div>
         </div>
-        <div class="table-wrap"><table id="tablaPresupuesto"></table></div>
-      </div>
+      </details>
 
       <div class="card">
-        <h3>Cómo leer esto</h3>
+        <h3>Cómo funciona</h3>
         <div style="font-size:13px; color:var(--text-muted); line-height:1.6">
-          <strong>Ingreso − Costos fijos − Variable = Utilidad.</strong> Los fijos ya están comprometidos (no los discutes mes a mes). El variable es donde decides: cuánto a marketing, a insumos, etc.
-          Una PyME sana apunta a <strong>10-20% de utilidad</strong> sobre ingresos. Si tu utilidad proyectada da rojo, tienes que: subir ventas, bajar un fijo, o recortar variable.
-          El semáforo de cada categoría: <span class="badge success">En meta</span> gastas lo presupuestado · <span class="badge danger">Sobre</span> te pasaste · <span class="badge warning">Bajo</span> gastaste menos (¿oportunidad o subregistro?).
+          <strong>Puedes gastar = Ingreso esperado − Costos fijos.</strong> Los fijos ya están comprometidos, así que lo que sobra es lo que tienes para gastos variables (insumos, marketing, etc.) sin meterte en problemas.
+          El semáforo te dice si vas bien: <span style="color:var(--success); font-weight:600">verde</span> tranquilo · <span style="color:var(--warning); font-weight:600">amarillo</span> ojo, vas rápido · <span style="color:var(--danger); font-weight:600">rojo</span> te pasaste.
+          Si tus ventas no llegan al piso de "cubrir los fijos", ese mes pierdes plata: hay que vender más o bajar un fijo.
         </div>
       </div>
     </section>
