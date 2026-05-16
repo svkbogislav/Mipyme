@@ -194,8 +194,8 @@
         else b = '<span class="badge">Sin gasto</span>';
         const catEsc = escapeHtml(cat).replace(/'/g, "&#39;");
         const input = modo === 'pct'
-          ? `<input type="number" min="0" max="100" step="0.5" value="${Number(presup[cat] || 0)}" style="width:74px; text-align:right" onchange="actualizarPresupuestoPct('${catEsc}', this.value)" /> %`
-          : `$ <input type="number" min="0" step="1000" value="${Number(presClp[cat] || 0)}" style="width:110px; text-align:right" onchange="actualizarPresupuestoCLP('${catEsc}', this.value)" />`;
+          ? `<span style="white-space:nowrap; display:inline-flex; align-items:center; gap:4px; justify-content:flex-end"><input type="number" min="0" max="100" step="0.5" value="${Number(presup[cat] || 0)}" style="width:74px; text-align:right" onchange="actualizarPresupuestoPct('${catEsc}', this.value)" />%</span>`
+          : `<span style="white-space:nowrap; display:inline-flex; align-items:center; gap:4px; justify-content:flex-end">$<input type="number" min="0" step="1000" value="${Number(presClp[cat] || 0)}" style="width:110px; text-align:right" onchange="actualizarPresupuestoCLP('${catEsc}', this.value)" /></span>`;
         return `<tr>
           <td><strong>${escapeHtml(cat)}</strong></td>
           <td class="num">${input}</td>
