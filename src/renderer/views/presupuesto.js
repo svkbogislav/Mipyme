@@ -151,51 +151,141 @@
       }
     }
 
-    // ── Tabla % por categoría (avanzado, dentro de <details>) ──
+    // ── Presupuesto por categoría (asignable en $ o en %) ──
+    const modo = state.config._presupModo === 'pct' ? 'pct' : 'clp';
+    const presup = state.config.presupuesto || (state.config.presupuesto = {});
+    const presClp = state.config.presupuestoCLP || (state.config.presupuestoCLP = {});
+    const cats = state.config.categorias.slice();
+    cats.forEach(c => {
+      if (presup[c] === undefined) presup[c] = 0;
+      if (presClp[c] === undefined) presClp[c] = base > 0 ? Math.round(base * Number(presup[c] || 0) / 100) : 0;
+    });
+
+    // Toggle visual del switch $ / % + auto-ajuste solo aplica en modo %
+    const bClp = document.getElementById('presModoClp');
+    const bPct = document.getElementById('presModoPct');
+    if (bClp && bPct) {
+      const on = el => { el.style.background = 'var(--primary)'; el.style.color = '#fff'; };
+      const off = el => { el.style.background = ''; el.style.color = ''; };
+      (modo === 'clp' ? on : off)(bClp);
+      (modo === 'pct' ? on : off)(bPct);
+    }
+    const aaWrap = document.getElementById('presAutoAjusteWrap');
+    if (aaWrap) aaWrap.style.display = modo === 'pct' ? 'inline-flex' : 'none';
+
+    const totalRealVar = gastoPromedio(mesesParaGasto, null, { excluirRecurrentes: true });
     const tableEl = document.getElementById('tablaPresupuesto');
     if (tableEl) {
-      const presup = state.config.presupuesto;
-      const cats = state.config.categorias.slice();
-      cats.forEach(c => { if (presup[c] === undefined) presup[c] = 0; });
-      const totalPctVar = Object.values(presup).reduce((s, v) => s + Number(v || 0), 0);
-      if (base <= 0) {
-        tableEl.innerHTML = '<tbody><tr><td style="padding:14px; color:var(--text-muted)">Sin ingreso base para calcular targets por categoría.</td></tr></tbody>';
-      } else {
-        const ordenadas = cats.slice().sort((a, b) => (presup[b] || 0) - (presup[a] || 0));
-        tableEl.innerHTML = `
-          <thead><tr><th>Categoría</th><th class="num" style="width:120px">% objetivo</th><th class="num">Target /mes</th><th class="num">Gasto real</th><th class="num">Diferencia</th><th style="width:90px">Estado</th></tr></thead>
-          <tbody>${ordenadas.map(cat => {
-            const p = Number(presup[cat] || 0);
-            const target = base * (p / 100);
-            const real = gastoPromedio(mesesParaGasto, cat, { excluirRecurrentes: true });
-            const diff = target - real;
-            const ratio = target > 0 ? real / target : (real > 0 ? 99 : 0);
-            let b = '';
-            if (target === 0 && real === 0) b = '<span class="badge">—</span>';
-            else if (ratio > 1.10) b = '<span class="badge danger">Sobre</span>';
-            else if (ratio >= 0.85) b = '<span class="badge success">En meta</span>';
-            else if (real > 0) b = '<span class="badge warning">Bajo</span>';
-            else b = '<span class="badge">Sin gasto</span>';
-            return `<tr>
-              <td><strong>${escapeHtml(cat)}</strong></td>
-              <td class="num"><input type="number" min="0" max="100" step="0.5" value="${p}" style="width:78px; text-align:right" onchange="actualizarPresupuestoPct('${escapeHtml(cat).replace(/'/g, "&#39;")}', this.value)" /> %</td>
-              <td class="num">${clp(target)}</td>
-              <td class="num ${real > target ? 'num-neg' : ''}">${clp(real)}</td>
-              <td class="num ${diff < 0 ? 'num-neg' : 'num-pos'}">${diff >= 0 ? '+' : ''}${clp(diff)}</td>
-              <td>${b}</td>
-            </tr>`;
-          }).join('')}</tbody>
-          <tfoot><tr style="font-weight:600; background:var(--surface-2)">
-            <td>Total variable</td>
-            <td class="num">${totalPctVar.toFixed(1)} %</td>
-            <td class="num">${clp(base * totalPctVar / 100)}</td>
-            <td class="num">${clp(gastoPromedio(mesesParaGasto, null, { excluirRecurrentes: true }))}</td>
-            <td></td><td></td>
-          </tr></tfoot>`;
-      }
+      const targetDe = cat => modo === 'pct' ? base * Number(presup[cat] || 0) / 100 : Number(presClp[cat] || 0);
+      const ordenadas = cats.slice().sort((a, b) => targetDe(b) - targetDe(a));
+      let sumTarget = 0;
+      const filas = ordenadas.map(cat => {
+        const target = targetDe(cat);
+        sumTarget += target;
+        const real = gastoPromedio(mesesParaGasto, cat, { excluirRecurrentes: true });
+        const diff = target - real;
+        const ratio = target > 0 ? real / target : (real > 0 ? 99 : 0);
+        const shareReal = totalRealVar > 0 ? (real / totalRealVar) * 100 : 0;
+        let b = '';
+        if (target === 0 && real === 0) b = '<span class="badge">—</span>';
+        else if (ratio > 1.10) b = '<span class="badge danger">Sobre</span>';
+        else if (ratio >= 0.85) b = '<span class="badge success">En meta</span>';
+        else if (real > 0) b = '<span class="badge warning">Bajo</span>';
+        else b = '<span class="badge">Sin gasto</span>';
+        const catEsc = escapeHtml(cat).replace(/'/g, "&#39;");
+        const input = modo === 'pct'
+          ? `<input type="number" min="0" max="100" step="0.5" value="${Number(presup[cat] || 0)}" style="width:74px; text-align:right" onchange="actualizarPresupuestoPct('${catEsc}', this.value)" /> %`
+          : `$ <input type="number" min="0" step="1000" value="${Number(presClp[cat] || 0)}" style="width:110px; text-align:right" onchange="actualizarPresupuestoCLP('${catEsc}', this.value)" />`;
+        return `<tr>
+          <td><strong>${escapeHtml(cat)}</strong></td>
+          <td class="num">${input}</td>
+          <td class="num">${clp(target)}</td>
+          <td class="num ${real > target ? 'num-neg' : ''}">${clp(real)}</td>
+          <td class="num" style="color:var(--text-muted)">${shareReal.toFixed(0)}%</td>
+          <td class="num ${diff < 0 ? 'num-neg' : 'num-pos'}">${diff >= 0 ? '+' : ''}${clp(diff)}</td>
+          <td>${b}</td>
+        </tr>`;
+      }).join('');
+      const pctTotal = base > 0 ? (sumTarget / base) * 100 : 0;
+      tableEl.innerHTML = `
+        <thead><tr>
+          <th>Categoría</th>
+          <th class="num" style="width:130px">Presupuesto</th>
+          <th class="num">Target /mes</th>
+          <th class="num">Gasto real</th>
+          <th class="num" title="Qué % de tus costos variables se va en esta categoría">% del total</th>
+          <th class="num">Diferencia</th>
+          <th style="width:90px">Estado</th>
+        </tr></thead>
+        <tbody>${filas}</tbody>
+        <tfoot><tr style="font-weight:600; background:var(--surface-2)">
+          <td>Total variable</td>
+          <td class="num">${pctTotal.toFixed(0)}% del ingreso</td>
+          <td class="num">${clp(sumTarget)}</td>
+          <td class="num">${clp(totalRealVar)}</td>
+          <td class="num">100%</td>
+          <td class="num ${(sumTarget - totalRealVar) < 0 ? 'num-neg' : 'num-pos'}">${(sumTarget - totalRealVar) >= 0 ? '+' : ''}${clp(sumTarget - totalRealVar)}</td>
+          <td></td>
+        </tr></tfoot>`;
     }
 
+    // ── Flujo de caja del mes (resumen; detalle completo en vista Cashflow) ──
+    renderPresupuestoCashflow(ymHoy);
+
     if (typeof window.renderListaRecurrentes === 'function') window.renderListaRecurrentes();
+  }
+
+  // Resumen compacto de flujo de caja dentro de Plan del mes. Reusa los
+  // mismos helpers globales que la vista Flujo de caja completa.
+  function renderPresupuestoCashflow(ymHoy) {
+    const ingMap = (typeof ventasPorMes === 'function') ? ventasPorMes() : {};
+    const gasMap = (typeof gastosPorMes === 'function') ? gastosPorMes() : {};
+    let meses = (typeof rangoMeses === 'function') ? rangoMeses() : null;
+    if (!meses || !meses.length) {
+      meses = Array.from(new Set([...Object.keys(ingMap), ...Object.keys(gasMap)])).sort();
+    }
+    const mesInicio = state.config.mesInicial || meses[0];
+    let saldo = Number(state.config.saldoInicial || 0);
+    const filas = meses.map(m => {
+      const ent = ingMap[m] || 0;
+      const sal = gasMap[m] || 0;
+      const neto = ent - sal;
+      if (m >= mesInicio) saldo += neto;
+      return { mes: m, ent, sal, neto, saldo };
+    });
+    const fila = filas.find(f => f.mes === ymHoy) || filas[filas.length - 1] || { ent: 0, sal: 0, neto: 0, saldo: saldo };
+    const set = (id, val, cls) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = clp(val);
+      if (cls) el.className = 'kpi-value ' + cls;
+    };
+    set('presCfEntro', fila.ent);
+    set('presCfSalio', fila.sal);
+    set('presCfNeto', fila.neto, fila.neto >= 0 ? 'num-pos' : 'num-neg');
+    set('presCfSaldo', fila.saldo, fila.saldo >= 0 ? '' : 'num-neg');
+
+    const tEl = document.getElementById('presCfTabla');
+    if (tEl) {
+      const fmtM = (typeof fmtMes !== 'undefined' && fmtMes) ? fmtMes : null;
+      const lblMes = m => fmtM
+        ? fmtM.format(new Date(m + '-02')).replace(/^./, c => c.toUpperCase())
+        : m;
+      const ult = filas.slice(-6);
+      if (!ult.length) {
+        tEl.innerHTML = '<tbody><tr><td style="padding:14px; color:var(--text-muted)">Sin movimientos registrados todavía.</td></tr></tbody>';
+      } else {
+        tEl.innerHTML = `
+          <thead><tr><th>Mes</th><th class="num">Entró</th><th class="num">Salió</th><th class="num">Neto</th><th class="num">Saldo</th></tr></thead>
+          <tbody>${ult.map(f => `<tr${f.mes === ymHoy ? ' style="background:var(--primary-soft)"' : ''}>
+            <td>${lblMes(f.mes)}</td>
+            <td class="num num-pos">${clp(f.ent)}</td>
+            <td class="num num-neg">${clp(f.sal)}</td>
+            <td class="num ${f.neto >= 0 ? 'num-pos' : 'num-neg'}">${clp(f.neto)}</td>
+            <td class="num"><strong>${clp(f.saldo)}</strong></td>
+          </tr>`).join('')}</tbody>`;
+      }
+    }
   }
   // Cambiar el % de una categoría. Si auto-ajuste está activo, redistribuye
   // el delta proporcionalmente entre las otras categorías para mantener el
@@ -248,15 +338,47 @@
   }
 
   function resetearPresupuestoDefaults() {
-    if (!confirm('¿Volver a los porcentajes recomendados de la industria? Se perderán tus ajustes personalizados.')) return;
+    if (!confirm('¿Volver a los valores recomendados de la industria? Se perderán tus ajustes personalizados.')) return;
     state.config.presupuesto = { ...PRESUPUESTO_DEFAULTS };
+    state.config.presupuestoCLP = {}; // se re-deriva de los % recomendados × ingreso
     saveState();
     renderPresupuesto();
-    toast('Restaurados los porcentajes recomendados', 'success');
+    toast('Restaurados los valores recomendados', 'success');
+  }
+
+  // Cambia entre asignar el presupuesto en pesos ($) o en % del ingreso.
+  // Al cambiar de modo convierte los valores para que la tabla quede
+  // consistente (no se "pierde" lo que el usuario había puesto).
+  function cambiarPresupModo(modo) {
+    modo = modo === 'pct' ? 'pct' : 'clp';
+    if ((state.config._presupModo || 'clp') === modo) return;
+    const { monto: base } = obtenerIngresoBase();
+    const presup = state.config.presupuesto || (state.config.presupuesto = {});
+    const presClp = state.config.presupuestoCLP || (state.config.presupuestoCLP = {});
+    const cats = (state.config.categorias || []).slice();
+    if (modo === 'clp') {
+      cats.forEach(c => { presClp[c] = base > 0 ? Math.round(base * Number(presup[c] || 0) / 100) : Number(presClp[c] || 0); });
+    } else {
+      cats.forEach(c => { presup[c] = base > 0 ? Math.round((Number(presClp[c] || 0) / base) * 1000) / 10 : Number(presup[c] || 0); });
+    }
+    state.config._presupModo = modo;
+    saveState();
+    renderPresupuesto();
+  }
+
+  // Asignar el presupuesto de una categoría directamente en pesos.
+  function actualizarPresupuestoCLP(cat, valor) {
+    const real = String(cat).replace(/&#39;/g, "'");
+    if (!state.config.presupuestoCLP) state.config.presupuestoCLP = {};
+    state.config.presupuestoCLP[real] = Math.max(0, Math.round(Number(valor) || 0));
+    saveState();
+    renderPresupuesto();
   }
 
   window.renderPresupuesto = renderPresupuesto;
   window.actualizarPresupuestoPct = actualizarPresupuestoPct;
+  window.actualizarPresupuestoCLP = actualizarPresupuestoCLP;
+  window.cambiarPresupModo = cambiarPresupModo;
   window.guardarAutoAjuste = guardarAutoAjuste;
   window.resetearPresupuestoDefaults = resetearPresupuestoDefaults;
 })();

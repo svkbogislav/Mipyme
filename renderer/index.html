@@ -2148,18 +2148,45 @@
         <div class="table-wrap" id="presFijosTabla" style="margin-top:10px"></div>
       </div>
 
-      <!-- DETALLE AVANZADO (opcional, colapsado) -->
-      <details class="card" style="margin-bottom:14px">
-        <summary style="cursor:pointer; font-weight:600; font-size:15px">Detalle por categoría <span style="font-weight:400; color:var(--text-muted); font-size:13px">— opcional, para repartir el gasto variable por tipo</span></summary>
-        <div style="margin-top:14px">
-          <label style="display:inline-flex; align-items:center; gap:6px; margin:0; cursor:pointer; font-size:13px">
-            <input type="checkbox" id="autoAjustePct" style="width:auto; margin:0" checked onchange="guardarAutoAjuste()" />
-            Auto-ajustar otros % al cambiar uno
-          </label>
-          <button class="btn sm" style="margin-left:12px" onclick="resetearPresupuestoDefaults()">Volver a recomendados</button>
-          <div class="table-wrap" style="margin-top:12px"><table id="tablaPresupuesto"></table></div>
+      <!-- PRESUPUESTO POR CATEGORÍA (asignable en $ o %) -->
+      <div class="card" style="margin-bottom:14px">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:6px">
+          <div>
+            <h3 style="margin:0">Presupuesto por categoría</h3>
+            <div class="card-sub" style="margin-top:4px">Cuánto le asignas a cada tipo de gasto variable. La app compara con lo que gastaste de verdad y te muestra qué % de tus costos es cada categoría.</div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+            <div class="seg" style="display:inline-flex; border:1px solid var(--border); border-radius:8px; overflow:hidden">
+              <button class="btn ghost sm" id="presModoClp" style="border:0; border-radius:0" onclick="cambiarPresupModo('clp')">En $</button>
+              <button class="btn ghost sm" id="presModoPct" style="border:0; border-radius:0; border-left:1px solid var(--border)" onclick="cambiarPresupModo('pct')">En %</button>
+            </div>
+            <button class="btn sm" onclick="resetearPresupuestoDefaults()">Volver a recomendados</button>
+          </div>
         </div>
-      </details>
+        <label id="presAutoAjusteWrap" style="display:inline-flex; align-items:center; gap:6px; margin:6px 0 0; cursor:pointer; font-size:13px">
+          <input type="checkbox" id="autoAjustePct" style="width:auto; margin:0" checked onchange="guardarAutoAjuste()" />
+          Auto-ajustar otros % al cambiar uno
+        </label>
+        <div class="table-wrap" style="margin-top:12px"><table id="tablaPresupuesto"></table></div>
+      </div>
+
+      <!-- FLUJO DE CAJA DEL MES (resumen, link a vista completa) -->
+      <div class="card" style="margin-bottom:14px">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:6px">
+          <div>
+            <h3 style="margin:0">Flujo de caja</h3>
+            <div class="card-sub" style="margin-top:4px">Lo que entró y salió de verdad, mes a mes. El saldo es la plata acumulada.</div>
+          </div>
+          <button class="btn ghost sm" onclick="document.querySelector('.nav-item[data-view=cashflow]').click()">Ver flujo completo →</button>
+        </div>
+        <div class="kpi-grid" style="margin:10px 0 12px">
+          <div class="kpi"><div class="kpi-label">Entró este mes</div><div class="kpi-value num-pos" id="presCfEntro">$0</div></div>
+          <div class="kpi"><div class="kpi-label">Salió este mes</div><div class="kpi-value num-neg" id="presCfSalio">$0</div></div>
+          <div class="kpi"><div class="kpi-label">Neto del mes</div><div class="kpi-value" id="presCfNeto">$0</div></div>
+          <div class="kpi"><div class="kpi-label">Saldo acumulado</div><div class="kpi-value" id="presCfSaldo">$0</div></div>
+        </div>
+        <div class="table-wrap"><table id="presCfTabla"></table></div>
+      </div>
 
       <div class="card">
         <h3>Cómo funciona</h3>
@@ -2167,6 +2194,7 @@
           <strong>Puedes gastar = Ingreso esperado − Costos fijos.</strong> Los fijos ya están comprometidos, así que lo que sobra es lo que tienes para gastos variables (insumos, marketing, etc.) sin meterte en problemas.
           El semáforo te dice si vas bien: <span style="color:var(--success); font-weight:600">verde</span> tranquilo · <span style="color:var(--warning); font-weight:600">amarillo</span> ojo, vas rápido · <span style="color:var(--danger); font-weight:600">rojo</span> te pasaste.
           Si tus ventas no llegan al piso de "cubrir los fijos", ese mes pierdes plata: hay que vender más o bajar un fijo.
+          En <strong>Presupuesto por categoría</strong> repartes cuánto destinas a cada gasto variable (en $ o en %, tú eliges con el botón) y ves qué porción de tus costos se va en cada cosa. El <strong>Flujo de caja</strong> muestra lo que entró y salió de verdad cada mes.
         </div>
       </div>
     </section>
