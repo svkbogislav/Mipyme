@@ -987,6 +987,10 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M7 14l4-4 4 4 5-5"/></svg>
       Flujo de caja
     </div>
+    <div class="nav-item" data-view="facturacion">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+      Facturación
+    </div>
     <div class="nav-item" data-view="analisis">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
       Análisis
@@ -2199,6 +2203,143 @@
       </div>
     </section>
 
+    <!-- =========== FACTURACIÓN ELECTRÓNICA (SII / LibreDTE) =========== -->
+    <section class="view" id="view-facturacion">
+      <div class="topbar">
+        <div>
+          <h1>Facturación</h1>
+          <div class="sub">Emite facturas, boletas y boletas de honorarios conectado al SII</div>
+        </div>
+        <div class="topbar-actions">
+          <span id="facAmbienteBadge" style="font-size:12px; padding:5px 10px; border-radius:999px; background:var(--surface-2); border:1px solid var(--border)">—</span>
+          <button class="btn ghost sm" onclick="document.querySelector('.nav-item[data-view=config]').click(); setTimeout(()=>{var e=document.getElementById('siiHash'); if(e) e.scrollIntoView({block:'center'});},150)">Configurar conexión</button>
+          <button class="btn" onclick="renderFacturacion()">Actualizar</button>
+        </div>
+      </div>
+
+      <!-- Estado / no configurado -->
+      <div class="card" id="facNoConfig" style="margin-bottom:14px; display:none">
+        <div class="empty" style="padding:22px">
+          <h4>Conecta LibreDTE para empezar</h4>
+          Para emitir documentos necesitas: una cuenta en <strong>libredte.cl</strong> con tu certificado digital y los folios (CAF) cargados, y tu token de API.
+          <div style="margin-top:12px"><button class="btn primary" onclick="document.querySelector('.nav-item[data-view=config]').click(); setTimeout(()=>{var e=document.getElementById('siiHash'); if(e) e.scrollIntoView({block:'center'});},150)">Ir a configurar conexión →</button></div>
+        </div>
+      </div>
+
+      <div id="facConfigOk" style="display:none">
+        <!-- Emitir DTE -->
+        <div class="card" style="margin-bottom:14px">
+          <h3 style="margin:0 0 4px">Emitir factura o boleta</h3>
+          <div class="card-sub" style="margin-bottom:14px">LibreDTE asigna el folio del CAF y firma el documento. En certificación no tiene validez tributaria.</div>
+          <div class="row" style="margin-bottom:8px">
+            <div>
+              <label>Tipo de documento</label>
+              <select id="facTipoDte">
+                <option value="33">Factura electrónica afecta (33)</option>
+                <option value="34">Factura electrónica exenta (34)</option>
+                <option value="39">Boleta electrónica afecta (39)</option>
+                <option value="41">Boleta electrónica exenta (41)</option>
+              </select>
+            </div>
+            <div>
+              <label>Fecha de emisión</label>
+              <input id="facFecha" type="date" />
+            </div>
+          </div>
+          <div class="row" style="margin-bottom:8px">
+            <div>
+              <label>RUT receptor</label>
+              <input id="facRutReceptor" placeholder="66666666-6 (consumidor final en boleta)" autocomplete="off" />
+            </div>
+            <div>
+              <label>Razón social receptor</label>
+              <input id="facRazonReceptor" placeholder="Nombre o razón social" autocomplete="off" />
+            </div>
+          </div>
+          <div class="row" style="margin-bottom:8px">
+            <div>
+              <label>Giro receptor</label>
+              <input id="facGiroReceptor" placeholder="Giro (obligatorio en factura)" autocomplete="off" />
+            </div>
+            <div>
+              <label>Dirección / Comuna receptor</label>
+              <input id="facDirReceptor" placeholder="Dirección, Comuna" autocomplete="off" />
+            </div>
+          </div>
+
+          <div style="margin:14px 0 6px; font-weight:600; font-size:13px">Detalle</div>
+          <div class="table-wrap"><table id="facDetalleTabla"></table></div>
+          <button class="btn sm" style="margin-top:8px" onclick="facAgregarLinea()">+ Agregar línea</button>
+
+          <div style="display:flex; justify-content:flex-end; gap:24px; margin-top:14px; flex-wrap:wrap; font-size:14px">
+            <div>Neto: <strong id="facNeto">$0</strong></div>
+            <div>IVA (19%): <strong id="facIva">$0</strong></div>
+            <div style="font-size:16px">Total: <strong id="facTotal">$0</strong></div>
+          </div>
+
+          <div style="display:flex; gap:8px; align-items:center; margin-top:14px; flex-wrap:wrap">
+            <button class="btn primary" id="facBtnEmitir" onclick="emitirDocumentoSII()">Emitir documento</button>
+            <span id="facEmitirEstado" style="font-size:13px"></span>
+          </div>
+        </div>
+
+        <!-- Documentos emitidos -->
+        <div class="card" style="margin-bottom:14px">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px">
+            <div>
+              <h3 style="margin:0">Documentos emitidos</h3>
+              <div class="card-sub" style="margin-top:4px">Últimos DTE enviados al SII desde esta cuenta LibreDTE.</div>
+            </div>
+            <button class="btn ghost sm" onclick="cargarEmitidosSII()">Refrescar lista</button>
+          </div>
+          <div class="table-wrap"><table id="facEmitidosTabla"></table></div>
+        </div>
+
+        <!-- Boleta de honorarios -->
+        <div class="card" style="margin-bottom:14px">
+          <h3 style="margin:0 0 4px">Boleta de honorarios (BHE)</h3>
+          <div class="card-sub" style="margin-bottom:14px">Se emite automatizando el portal del SII vía LibreDTE. Requiere credenciales SII en tu cuenta LibreDTE. Retención 2026: <strong>15,25%</strong>.</div>
+          <div class="row" style="margin-bottom:8px">
+            <div>
+              <label>RUT receptor (quien paga)</label>
+              <input id="bheRut" placeholder="76123456-7" autocomplete="off" />
+            </div>
+            <div>
+              <label>Razón social receptor</label>
+              <input id="bheRazon" placeholder="Nombre o razón social" autocomplete="off" />
+            </div>
+          </div>
+          <div class="row" style="margin-bottom:8px">
+            <div>
+              <label>Glosa / detalle del servicio</label>
+              <input id="bheGlosa" placeholder="Servicios profesionales de…" autocomplete="off" />
+            </div>
+            <div>
+              <label>Monto bruto (honorarios)</label>
+              <input id="bheMonto" type="number" placeholder="0" />
+            </div>
+          </div>
+          <div style="display:flex; justify-content:flex-end; gap:24px; margin:6px 0 12px; font-size:13px; color:var(--text-muted)">
+            <div>Retención (15,25%): <strong id="bheRetencion">$0</strong></div>
+            <div>Líquido a recibir: <strong id="bheLiquido">$0</strong></div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+            <button class="btn primary" id="bheBtnEmitir" onclick="emitirBHESII()">Emitir boleta de honorarios</button>
+            <span id="bheEstado" style="font-size:13px"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Cómo funciona</h3>
+          <div style="font-size:13px; color:var(--text-muted); line-height:1.6">
+            La app no se conecta directo al SII: usa <strong>LibreDTE</strong>, que tiene tu certificado y folios (CAF). Al emitir, LibreDTE firma el documento, le asigna folio y lo envía al SII; acá ves el estado.
+            <strong>Certificación</strong> es para pruebas (sin validez tributaria). Cambia a <strong>producción</strong> en Configuración solo cuando el SII apruebe tu set de certificación.
+            La <strong>BHE</strong> es un sistema aparte del SII (no tiene API oficial): LibreDTE automatiza el portal, por eso es más sensible y necesita tus credenciales SII en LibreDTE.
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- =========== PRODUCTOS =========== -->
     <section class="view" id="view-productos">
       <div class="topbar">
@@ -2633,6 +2774,60 @@
 
         <div style="margin-top:10px; padding:10px 12px; background:#dcfce7; border:1px solid #86efac; border-radius:8px; font-size:12px; color:#166534">
           <strong>✓ Conexiones activas:</strong> Meta y Google Ads están operativas. "Probar conexión" hace una llamada real al API; "Sincronizar ad spend" trae 12 meses de spend, impressions, clicks, CPC, conversions. Los snapshots se guardan en localStorage por negocio. El ROAS combinado (Meta + Google vs Shopify revenue) aparece en <strong>Análisis → Marketing</strong>.
+        </div>
+      </div>
+
+      <!-- ============ Facturación electrónica SII (LibreDTE) ============ -->
+      <div class="card" style="margin-bottom:14px">
+        <h3>Facturación electrónica (SII vía LibreDTE)</h3>
+        <div class="card-sub">Conecta tu cuenta de LibreDTE para emitir facturas, boletas y boletas de honorarios desde la app. El token se guarda local por negocio — nunca viaja a otro lado.</div>
+
+        <div style="margin-top:14px; padding:14px; border:1px solid var(--border); border-radius:9px; background:var(--surface-2)">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; flex-wrap:wrap">
+            <div style="display:flex; align-items:center; gap:10px">
+              <div style="width:30px; height:30px; border-radius:7px; background:#0a7e3f; color:white; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px">DTE</div>
+              <div>
+                <strong>LibreDTE</strong> <span id="siiConnState" style="margin-left:6px; font-size:11px; color:var(--text-muted)">— sin configurar</span>
+                <div style="font-size:11px; color:var(--text-muted)">Facturas / boletas / BHE conectado al SII</div>
+              </div>
+            </div>
+          </div>
+          <div class="row" style="margin-bottom:8px">
+            <div>
+              <label>Token de API (hash LibreDTE)</label>
+              <input id="siiHash" type="password" placeholder="hash de tu usuario LibreDTE" autocomplete="off" />
+              <div style="font-size:11px; color:var(--text-muted); margin-top:3px">LibreDTE → tu perfil → token / hash de API.</div>
+            </div>
+            <div>
+              <label>RUT emisor (tu empresa)</label>
+              <input id="siiRutEmisor" placeholder="76123456-7" autocomplete="off" />
+              <div style="font-size:11px; color:var(--text-muted); margin-top:3px">RUT con guion y dígito verificador. Debe estar registrado en LibreDTE con certificado y CAF.</div>
+            </div>
+          </div>
+          <div class="row" style="margin-bottom:8px">
+            <div>
+              <label>Ambiente</label>
+              <select id="siiAmbiente">
+                <option value="certificacion" selected>Certificación (pruebas SII — maullín)</option>
+                <option value="produccion">Producción (documentos tributarios REALES)</option>
+              </select>
+              <div style="font-size:11px; color:var(--text-muted); margin-top:3px">Empieza siempre en certificación. Cambia a producción solo cuando el SII valide tu certificación.</div>
+            </div>
+            <div>
+              <label>Host (opcional)</label>
+              <input id="siiHost" placeholder="libredte.cl" autocomplete="off" />
+              <div style="font-size:11px; color:var(--text-muted); margin-top:3px">Déjalo vacío salvo que uses un LibreDTE self-hosted.</div>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+            <button class="btn" onclick="probarConexionSII()">Probar conexión</button>
+            <button class="btn primary" onclick="guardarConexionSII()">Guardar</button>
+            <button class="btn ghost" onclick="quitarConexionSII()" style="color:var(--danger)">Desconectar</button>
+          </div>
+        </div>
+
+        <div style="margin-top:10px; padding:10px 12px; background:#fef3c7; border:1px solid #fbbf24; border-radius:8px; font-size:12px; color:#92400e">
+          <strong>⚠️ Documentos tributarios reales:</strong> en ambiente <strong>producción</strong> cada emisión genera un documento legal ante el SII. La app fuerza certificación por defecto. La emisión de boletas de honorarios (BHE) automatiza el portal del SII vía LibreDTE — requiere tener las credenciales SII configuradas en tu cuenta LibreDTE.
         </div>
       </div>
 
@@ -3674,6 +3869,7 @@
      inline ya las inicializó. -->
 <script src="../src/renderer/views/runway-card.js"></script>
 <script src="../src/renderer/views/presupuesto.js"></script>
+<script src="../src/renderer/views/facturacion.js"></script>
 <script src="../src/renderer/views/productos.js"></script>
 <script src="../src/renderer/views/activos.js"></script>
 
@@ -3798,6 +3994,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     if (view === 'cobros') renderCobros();
     if (view === 'analisis') renderAnalisis();
     if (view === 'cashflow') renderCashflow();
+    if (view === 'facturacion') renderFacturacion();
     if (view === 'presupuesto') renderPresupuesto();
     if (view === 'productos') renderProductos();
     if (view === 'activos') renderActivos();
@@ -6307,6 +6504,7 @@ function renderConfig() {
   refrescarMetaAdsUI();
   refrescarGoogleAdsUI();
   refrescarCacheHistoricoUI();
+  if (typeof refrescarSIIUI === 'function') refrescarSIIUI();
 
   // Conexión Shopify (formulario)
   const cfg = state.config.shopify_config || {};
