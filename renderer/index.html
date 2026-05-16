@@ -2109,42 +2109,42 @@
       </div>
 
       <div class="kpi-grid">
-        <div class="kpi"><div class="kpi-label">Ingreso base (mensual)</div><div class="kpi-value" id="presBase">$0</div><div class="kpi-delta" id="presBaseSub" style="color:var(--text-muted)"></div></div>
-        <div class="kpi"><div class="kpi-label">Asignado a gastos</div><div class="kpi-value" id="presAsignado">$0</div><div class="kpi-delta" id="presAsignadoPct"></div></div>
-        <div class="kpi"><div class="kpi-label">Utilidad esperada</div><div class="kpi-value num-pos" id="presUtilidad">$0</div><div class="kpi-delta" id="presUtilidadPct"></div></div>
-        <div class="kpi"><div class="kpi-label">Gasto real del período</div><div class="kpi-value" id="presGastoReal">$0</div><div class="kpi-delta" id="presEstadoGeneral"></div></div>
+        <div class="kpi"><div class="kpi-label">Ingreso mensual</div><div class="kpi-value" id="presBase">$0</div><div class="kpi-delta" id="presBaseSub" style="color:var(--text-muted)"></div></div>
+        <div class="kpi"><div class="kpi-label">Costos fijos /mes</div><div class="kpi-value num-neg" id="presFijos">$0</div><div class="kpi-delta" id="presFijosPct" style="color:var(--text-muted)"></div></div>
+        <div class="kpi"><div class="kpi-label">Presupuesto variable</div><div class="kpi-value num-neg" id="presVar">$0</div><div class="kpi-delta" id="presVarPct" style="color:var(--text-muted)"></div></div>
+        <div class="kpi"><div class="kpi-label">Utilidad proyectada</div><div class="kpi-value" id="presUtilidad">$0</div><div class="kpi-delta" id="presUtilidadPct"></div></div>
       </div>
 
+      <!-- Veredicto en lenguaje simple -->
+      <div class="card" id="presVeredicto" style="margin-bottom:14px; display:none"></div>
+
+      <!-- 1) Costos fijos: automáticos desde Gastos Periódicos -->
       <div class="card" style="margin-bottom:14px">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:6px">
           <div>
-            <h3 style="margin:0">Por categoría</h3>
-            <div style="font-size:12px; color:var(--text-muted); margin-top:4px">
-              Los % son editables. Suma máxima útil: 100%. Lo restante es tu margen / utilidad.
-            </div>
+            <h3 style="margin:0">1 · Costos fijos comprometidos</h3>
+            <div class="card-sub" style="margin-top:4px">Lo que pagas SIEMPRE pase lo que pase (arriendo, sueldos, contador, suscripciones). Sale automático de tus <strong>Gastos Periódicos</strong> — no tienes que estimarlo.</div>
           </div>
+          <button class="btn ghost sm" onclick="document.querySelector('.nav-item[data-view=gastos]').click(); setTimeout(()=>cambiarGastosSubTab('periodicos'),120)">Editar periódicos →</button>
+        </div>
+        <div class="table-wrap" id="presFijosTabla" style="margin-top:10px"></div>
+      </div>
+
+      <!-- 2) Presupuesto variable por categoría (% editable) -->
+      <div class="card" style="margin-bottom:14px">
+        <div style="margin-bottom:6px">
+          <h3 style="margin:0">2 · Presupuesto variable (lo que sí controlas)</h3>
+          <div class="card-sub" style="margin-top:4px">Gastos que varían mes a mes: insumos, marketing, logística, comisiones. Define qué <strong>% de tu ingreso</strong> quieres destinar a cada uno. La app compara contra lo que gastaste de verdad (sin contar los fijos de arriba).</div>
         </div>
         <div class="table-wrap"><table id="tablaPresupuesto"></table></div>
       </div>
 
-      <div class="card" style="margin-bottom:14px">
-        <h3>Gastos periódicos</h3>
-        <div class="card-sub">Suscripciones y cargos que pagas siempre (arriendo, sueldos, contador, etc.). Se cargan solos cada mes. También los administras en <strong>Gastos → Periódicos</strong>.</div>
-        <div class="table-wrap js-recurrentes-list" style="margin-top:10px"></div>
-        <button class="btn primary" style="margin-top:10px" onclick="abrirModalRecurrente()">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-          Agregar gasto periódico
-        </button>
-      </div>
-
       <div class="card">
-        <h3>Cómo interpretar los recomendados</h3>
+        <h3>Cómo leer esto</h3>
         <div style="font-size:13px; color:var(--text-muted); line-height:1.6">
-          Los porcentajes por defecto reflejan promedios típicos para una PyME chilena de e-commerce / arriendo de equipos.
-          Son <strong>referencias</strong>, no reglas: ajústalos según tu modelo de negocio. Por ejemplo, si recién partes,
-          marketing puede subir a 18-25%; si ya tienes una base estable de clientes recurrentes, puede bajar a 5-8%.
-          La <strong>utilidad esperada</strong> sale de lo que sobra después de asignar todas las categorías;
-          una PyME sana suele apuntar a 10-20% de utilidad neta sobre ingresos.
+          <strong>Ingreso − Costos fijos − Variable = Utilidad.</strong> Los fijos ya están comprometidos (no los discutes mes a mes). El variable es donde decides: cuánto a marketing, a insumos, etc.
+          Una PyME sana apunta a <strong>10-20% de utilidad</strong> sobre ingresos. Si tu utilidad proyectada da rojo, tienes que: subir ventas, bajar un fijo, o recortar variable.
+          El semáforo de cada categoría: <span class="badge success">En meta</span> gastas lo presupuestado · <span class="badge danger">Sobre</span> te pasaste · <span class="badge warning">Bajo</span> gastaste menos (¿oportunidad o subregistro?).
         </div>
       </div>
     </section>
@@ -12354,11 +12354,16 @@ function ingresoPromedio(meses) {
   return total / slice.length;
 }
 
-function gastoPromedio(meses, categoria) {
-  // Promedio mensual de gasto en una categoría específica (o total si categoria=null)
+function gastoPromedio(meses, categoria, opts) {
+  // Promedio mensual de gasto en una categoría (o total si categoria=null).
+  // opts.excluirRecurrentes: ignora los gastos generados por gastos periódicos
+  // (los que tienen recurring_id) — útil para el presupuesto variable, así no
+  // se doble-cuenta lo que ya está en "Costos fijos".
+  const excluirRec = opts && opts.excluirRecurrentes;
   const map = {};
   state.gastos.forEach(g => {
     if (categoria && g.categoria !== categoria) return;
+    if (excluirRec && g.recurring_id) return;
     const ym = ymOf(g.fecha);
     if (!ym) return;
     map[ym] = (map[ym] || 0) + Number(g.monto || 0);
@@ -12369,6 +12374,21 @@ function gastoPromedio(meses, categoria) {
   const total = slice.reduce((s, m) => s + map[m], 0);
   return total / Math.max(1, slice.length);
 }
+
+// Convierte un gasto periódico a su equivalente mensual según su frecuencia.
+// Centralizado acá para que Presupuesto lo use de forma consistente.
+function montoMensualRecurrente(r) {
+  const m = Number(r && r.monto || 0);
+  switch ((r && r.frecuencia) || 'mensual') {
+    case 'mensual':   return m;
+    case 'quincenal': return m * 2;       // 2 veces al mes
+    case 'semanal':   return m * (52 / 12); // ~4.33 semanas/mes
+    case 'diario':    return m * 30;
+    case 'anual':     return m / 12;
+    default:          return m;
+  }
+}
+window.montoMensualRecurrente = montoMensualRecurrente;
 
 function obtenerIngresoBase() {
   const sel = document.getElementById('presupuestoBase').value;
