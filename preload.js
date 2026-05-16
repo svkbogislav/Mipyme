@@ -68,6 +68,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   googleAdsTest: (creds) => ipcRenderer.invoke('google:test', creds),
   googleAdsFetchSpend: (creds) => ipcRenderer.invoke('google:fetchSpend', { creds }),
 
+  // SII / Facturación electrónica (LibreDTE). creds = { hash, rutEmisor,
+  // ambiente: 'certificacion'|'produccion', host? }. El hash NUNCA se
+  // hardcodea: lo ingresa el usuario y se guarda por negocio en el renderer.
+  siiTest:           (creds) => ipcRenderer.invoke('sii:test', creds),
+  siiEmitirDTE:      (args)  => ipcRenderer.invoke('sii:emitirDTE', args),
+  siiEstadoDTE:      (args)  => ipcRenderer.invoke('sii:estadoDTE', args),
+  siiPdfDTE:         (args)  => ipcRenderer.invoke('sii:pdfDTE', args),
+  siiListarEmitidos: (args)  => ipcRenderer.invoke('sii:listarEmitidos', args),
+  siiEmitirBHE:      (args)  => ipcRenderer.invoke('sii:emitirBHE', args),
+  siiListarBHE:      (args)  => ipcRenderer.invoke('sii:listarBHE', args),
+
   // Marca de que estamos corriendo en Electron (para el HTML lo detecte)
   isElectron: true,
   platform: process.platform,

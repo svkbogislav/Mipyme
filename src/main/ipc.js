@@ -15,6 +15,7 @@ const shopifyApi = require('./shopify-api');
 const shopifyOAuth = require('./shopify-oauth');
 const metaApi = require('./meta-api');
 const googleApi = require('./google-api');
+const siiApi = require('./sii-api');
 const updater = require('./updater');
 const attachments = require('./attachments');
 
@@ -35,6 +36,15 @@ function register({ getMainWindow }) {
   // === Google Ads ===
   ipcMain.handle('google:test',       async (_e, creds) => googleApi.test(creds));
   ipcMain.handle('google:fetchSpend', async (_e, args)  => googleApi.fetchSpend(args));
+
+  // === SII / Facturación electrónica (LibreDTE) ===
+  ipcMain.handle('sii:test',           async (_e, creds) => siiApi.test(creds));
+  ipcMain.handle('sii:emitirDTE',      async (_e, args)  => siiApi.emitirDTE(args));
+  ipcMain.handle('sii:estadoDTE',      async (_e, args)  => siiApi.estadoDTE(args));
+  ipcMain.handle('sii:pdfDTE',         async (_e, args)  => siiApi.pdfDTE(args));
+  ipcMain.handle('sii:listarEmitidos', async (_e, args)  => siiApi.listarEmitidos(args));
+  ipcMain.handle('sii:emitirBHE',      async (_e, args)  => siiApi.emitirBHE(args));
+  ipcMain.handle('sii:listarBHE',      async (_e, args)  => siiApi.listarBHE(args));
 
   // === Attachments ===
   ipcMain.handle('app:attachFile',     async ()            => attachments.attachFile(win()));
