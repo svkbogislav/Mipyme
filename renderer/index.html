@@ -968,6 +968,10 @@
     </div>
 
     <div class="nav-group-title">General</div>
+    <div class="nav-item" data-view="subir">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+      Subir
+    </div>
     <div class="nav-item active" data-view="dashboard">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
       Dashboard
@@ -1019,10 +1023,6 @@
     <div class="nav-item" data-view="activos">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
       Activos
-    </div>
-    <div class="nav-item" data-view="subir">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-      Subir
     </div>
 
     <div class="nav-group-title">Configuración</div>
@@ -4475,6 +4475,13 @@ function aplicarOrdenNav() {
     const node = sidebar.querySelector(`.nav-item[data-view="${view}"]`);
     if (node) sidebar.insertBefore(node, anchor);
   });
+  // "Subir" queda SIEMPRE fijado arriba, aunque el usuario haya guardado
+  // otro orden antes.
+  const subirNode = sidebar.querySelector('.nav-item[data-view="subir"]');
+  const primerNav = sidebar.querySelector('.nav-item[data-view]');
+  if (subirNode && primerNav && subirNode !== primerNav) {
+    sidebar.insertBefore(subirNode, primerNav);
+  }
 }
 
 /* =================================================================
