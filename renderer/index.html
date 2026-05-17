@@ -7092,9 +7092,21 @@ async function actualizarDesdePopup() {
 //   - hay versión nueva
 //   - el usuario no saltó esa misma versión
 //   - el "recordarme después" no está activo todavía
+let _updateCheckReintentos = 0;
 async function chequearActualizacionAlInicio() {
-  if (!_appIsPackaged) return;
   if (!(window.electronAPI && window.electronAPI.checkRemoteUpdate)) return;
+
+  // En Windows/PC lento, _appIsPackaged puede no estar resuelto a los 5s
+  // (carrera con getAppVersion). En vez de rendirnos para siempre, lo
+  // determinamos acá mismo.
+  if (!_appIsPackaged && window.electronAPI.getAppVersion) {
+    try {
+      const info = await window.electronAPI.getAppVersion();
+      _appIsPackaged = !!(info && info.isPackaged);
+    } catch {}
+  }
+  if (!_appIsPackaged) return;
+
   // ¿Está en periodo de "recordarme después"?
   try {
     const remindAt = localStorage.getItem('dp_update_remind_at_v1');
@@ -7103,8 +7115,19 @@ async function chequearActualizacionAlInicio() {
 
   let r;
   try { r = await window.electronAPI.checkRemoteUpdate(); }
-  catch (e) { return; }
-  if (!r || !r.ok || !r.hasUpdate) return;
+  catch (e) { r = { ok: false, error: (e && e.message) || String(e) }; }
+
+  if (!r || !r.ok) {
+    // No tragarse el error en silencio: queda en consola para diagnóstico
+    // y reintentamos 1 vez (la red puede no estar lista al arrancar).
+    console.warn('[update] chequeo falló:', r && r.error);
+    if (_updateCheckReintentos < 1) {
+      _updateCheckReintentos++;
+      setTimeout(chequearActualizacionAlInicio, 30000);
+    }
+    return;
+  }
+  if (!r.hasUpdate) return;
 
   // ¿Usuario decidió saltar exactamente esta versión?
   try {
