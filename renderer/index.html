@@ -2990,6 +2990,7 @@
             <h3 style="margin:0">Actualización de la app</h3>
             <div style="font-size:12px; color:var(--text-muted); margin-top:4px" id="actualizarVersionInfo">Versión actual: <strong id="appVersionLabel">—</strong></div>
             <div style="font-size:11px; color:var(--text-muted); margin-top:6px; word-break:break-all" id="actualizarSourceInfo"></div>
+            <div id="actualizarEstado" style="margin-top:10px; font-size:12px"></div>
           </div>
           <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
             <button class="btn ghost" onclick="elegirCarpetaProyecto()" style="font-size:12px" title="Elegir manualmente la carpeta del proyecto donde vive actualizar.command">Elegir carpeta…</button>
@@ -6894,6 +6895,30 @@ async function refrescarInfoActualizacion() {
       // Modo producción: feed remoto (GitHub Releases). No necesitamos carpeta.
       srcInfo.innerHTML = `<span style="color:var(--text-muted)">Plataforma: ${info.platform || '?'} · Las actualizaciones se descargan automáticamente desde GitHub Releases.</span>`;
       if (btn) { btn.disabled = false; btn.textContent = 'Buscar actualizaciones'; }
+      // Estado persistente de actualización (visible siempre en esta pestaña)
+      const estEl = document.getElementById('actualizarEstado');
+      if (estEl && window.electronAPI.checkRemoteUpdate) {
+        estEl.innerHTML = `<span style="color:var(--text-muted)">Buscando actualizaciones…</span>`;
+        window.electronAPI.checkRemoteUpdate().then(r => {
+          if (!r || !r.ok) {
+            estEl.innerHTML = `<span style="color:var(--text-muted)">No se pudo verificar ahora. Reintenta más tarde.</span>`;
+            return;
+          }
+          if (r.hasUpdate) {
+            const esWin = info.platform === 'win32';
+            estEl.innerHTML = `<div style="padding:10px 12px; border:1px solid var(--border); border-left:4px solid var(--primary); border-radius:9px; background:var(--surface-2)">
+              <strong>⬇️ Hay una actualización: v${escapeHtml(String(r.latestVersion || ''))}</strong>
+              <div style="color:var(--text-muted); margin-top:3px; line-height:1.5">${esWin
+                ? 'Se descarga sola y se instala <strong>cuando cierres la app</strong>. La próxima vez que la abras estará al día — no tienes que hacer nada.'
+                : 'Usa el botón “Actualizar a nueva versión” para instalarla ahora.'}</div>
+            </div>`;
+          } else {
+            estEl.innerHTML = `<span style="color:var(--success)">✓ Estás en la última versión (v${escapeHtml(String(r.currentVersion || info.version || ''))}).</span>`;
+          }
+        }).catch(() => {
+          estEl.innerHTML = `<span style="color:var(--text-muted)">No se pudo verificar ahora.</span>`;
+        });
+      }
     } else if (info.sourcePath) {
       // Modo dev: script local
       srcInfo.innerHTML = `<span style="color:var(--text-muted)">Modo desarrollo · Carpeta del proyecto: <code style="font-size:11px">${escapeHtml(info.sourcePath)}</code> ✓</span>`;
