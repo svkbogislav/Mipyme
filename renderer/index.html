@@ -2467,10 +2467,16 @@
         <div class="kpi"><div class="kpi-label">Saldo en banco</div><div class="kpi-value" id="cuentasBanco">$0</div></div>
       </div>
 
-      <div class="card">
+      <div class="card" style="margin-bottom:14px">
         <h3>Detalle por cuenta</h3>
         <div class="card-sub">Saldo = saldo inicial + ingresos asignados − gastos asignados</div>
         <div class="table-wrap"><table id="tablaCuentas"></table></div>
+      </div>
+
+      <div class="card" id="cardCartolasImportadas" style="display:none">
+        <h3>Cartolas importadas</h3>
+        <div class="card-sub">Si una cartola entró mal, puedes retirarla: borra lo que esa importación creó y deshace sus cruces (lo que ya tenías no se toca).</div>
+        <div class="table-wrap" style="margin-top:10px"><table id="tablaCartolasLotes"></table></div>
       </div>
     </section>
 
@@ -9112,14 +9118,15 @@ function cambiarDecisionConciliacion(idx, valor) {
 function confirmarConciliacion() {
   if (!_conciliacionStaging) return;
   const account_id = _conciliacionStaging.account_id;
+  const lote = 'L' + Date.now();
   let aplicados = 0, creados = 0;
   _conciliacionStaging.items.forEach(it => {
     if (it.decision.tipo === 'match') {
-      Conciliacion.aplicarMatch(state, it.mov, it.decision.candidato, account_id);
+      Conciliacion.aplicarMatch(state, it.mov, it.decision.candidato, account_id, lote);
       aplicados++;
     } else if (it.decision.tipo === 'crear') {
       const cat = it.decision.categoria || null;
-      Conciliacion.crearDesdeMovimiento(state, it.mov, account_id, cat);
+      Conciliacion.crearDesdeMovimiento(state, it.mov, account_id, cat, lote);
       // Aprende solo lo que el usuario fijó/confirmó explícitamente.
       if (it.decision.categoriaManual && cat && window.Categorizador) {
         window.Categorizador.aprender(it.mov.descripcion, cat, state);
@@ -9127,11 +9134,57 @@ function confirmarConciliacion() {
       creados++;
     }
   });
+  // Registro del lote para poder retirarlo después
+  if (aplicados + creados > 0) {
+    if (!Array.isArray(state.cartolaLotes)) state.cartolaLotes = [];
+    const cta = (state.config.cuentas || []).find(c => c.id === account_id);
+    state.cartolaLotes.push({
+      lote,
+      fecha: new Date().toISOString(),
+      account_id,
+      account_nombre: cta ? cta.nombre : '—',
+      aplicados, creados
+    });
+  }
   saveState();
   cerrarModalConciliacion();
   toast(`Cartola aplicada: ${aplicados} cruzado(s), ${creados} creado(s)`, 'success');
   renderCuentas();
   if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
+}
+
+// Retira (deshace) una cartola importada: borra los gastos/ventas creados
+// por ese lote y deshace los cruces (los originales NO se borran, solo se
+// "des-concilian").
+function retirarLoteCartola(lote) {
+  const reg = (state.cartolaLotes || []).find(l => l.lote === lote);
+  const concs = (state.conciliaciones || []).filter(c => c.lote === lote);
+  if (concs.length === 0 && !reg) { toast('No encontré esa cartola', 'error'); return; }
+  const autoCreados = concs.filter(c => c.auto_creado);
+  if (!confirm(`¿Retirar esta cartola?\n\nSe borrarán ${autoCreados.length} movimiento(s) que creó y se desharán ${concs.length - autoCreados.length} cruce(s). Los gastos/ventas que ya tenías NO se borran.`)) return;
+
+  let borrados = 0, descruzados = 0;
+  concs.forEach(c => {
+    if (c.auto_creado) {
+      if (c.ref_type === 'gasto') {
+        const n = (state.gastos || []).length;
+        state.gastos = (state.gastos || []).filter(g => g.id !== c.ref_id);
+        if ((state.gastos || []).length < n) borrados++;
+      } else if (c.ref_type === 'venta') {
+        const n = (state.ventasManuales || []).length;
+        state.ventasManuales = (state.ventasManuales || []).filter(v => v.id !== c.ref_id);
+        if ((state.ventasManuales || []).length < n) borrados++;
+      }
+    } else {
+      descruzados++; // solo se elimina la conciliación (el original queda)
+    }
+  });
+  state.conciliaciones = (state.conciliaciones || []).filter(c => c.lote !== lote);
+  state.cartolaLotes = (state.cartolaLotes || []).filter(l => l.lote !== lote);
+  saveState();
+  toast(`Cartola retirada: ${borrados} movimiento(s) borrado(s), ${descruzados} cruce(s) deshecho(s)`, 'success');
+  renderCuentas();
+  if (document.getElementById('view-dashboard')?.classList.contains('active')) renderDashboard();
 }
 
 function renderCuentas() {
@@ -9170,6 +9223,33 @@ function renderCuentas() {
       }).join('')}
     </tbody>
   `;
+
+  // Cartolas importadas (para poder retirarlas)
+  const lotes = (state.cartolaLotes || []).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+  const card = document.getElementById('cardCartolasImportadas');
+  const tl = document.getElementById('tablaCartolasLotes');
+  if (card && tl) {
+    if (lotes.length === 0) {
+      card.style.display = 'none';
+    } else {
+      card.style.display = '';
+      tl.innerHTML = `
+        <thead><tr><th>Fecha de importación</th><th>Cuenta</th><th class="num">Creados</th><th class="num">Cruzados</th><th></th></tr></thead>
+        <tbody>
+          ${lotes.map(l => {
+            const f = l.fecha ? fmtFechaCorta.format(new Date(l.fecha)) : '—';
+            return `<tr>
+              <td>${escapeHtml(f)}</td>
+              <td>${escapeHtml(l.account_nombre || '—')}</td>
+              <td class="num">${fmtNum.format(l.creados || 0)}</td>
+              <td class="num">${fmtNum.format(l.aplicados || 0)}</td>
+              <td style="text-align:right"><button class="btn sm ghost" style="color:var(--danger)" onclick="retirarLoteCartola('${escapeHtml(l.lote)}')">Retirar</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      `;
+    }
+  }
 }
 
 // Simula el cálculo de saldo con los valores actuales del modal — sin guardar.

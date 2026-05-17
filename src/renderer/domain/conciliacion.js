@@ -445,7 +445,7 @@
   }
 
   // ─── Aplicar match (marca como conciliado en state.conciliaciones) ───
-  function aplicarMatch(state, mov, candidato, account_id) {
+  function aplicarMatch(state, mov, candidato, account_id, lote) {
     if (!state.conciliaciones) state.conciliaciones = [];
     state.conciliaciones.push({
       id: window.uid(),
@@ -455,13 +455,14 @@
       cartola_fecha: mov.fecha,
       cartola_descripcion: mov.descripcion,
       cartola_monto: mov.monto,
+      lote: lote || null,
       created_at: new Date().toISOString()
     });
     return true;
   }
 
   // ─── Crear gasto/venta desde un movimiento sin match ──────────────────
-  function crearDesdeMovimiento(state, mov, account_id, categoriaOverride) {
+  function crearDesdeMovimiento(state, mov, account_id, categoriaOverride, lote) {
     if (mov.monto < 0) {
       // Cargo → gasto. Categoría: override del usuario > sugerencia del
       // categorizador (reglas base + aprendido) > "Por clasificar".
@@ -493,6 +494,7 @@
         cartola_descripcion: mov.descripcion,
         cartola_monto: mov.monto,
         auto_creado: true,
+        lote: lote || null,
         created_at: new Date().toISOString()
       });
       return { tipo: 'gasto', ref: gasto };
@@ -518,6 +520,7 @@
         cartola_descripcion: mov.descripcion,
         cartola_monto: mov.monto,
         auto_creado: true,
+        lote: lote || null,
         created_at: new Date().toISOString()
       });
       return { tipo: 'venta', ref: venta };
