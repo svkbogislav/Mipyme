@@ -357,11 +357,6 @@
     filas = filas.filter(f => f.some(c => c !== ''));
     if (filas.length === 0) return { error: 'No se encontraron filas con datos' };
 
-    // Cartola "narrativa" (cada movimiento es una frase): se lee del texto,
-    // no de columnas. Tiene precedencia solo si la mayoría calza el patrón.
-    const txtRes = _parsearCartolaTexto(filas);
-    if (txtRes) return txtRes;
-
     const idxSigno = _detectarColumnaSigno(filas);
 
     if (idxSigno !== null) {
@@ -427,7 +422,12 @@
 
     // ─── Modo genérico (CSV simple, banco estilo Santander/BCI/etc) ───
     const cols = _detectarColumnas(filas);
-    if (!cols) return { error: 'No pude detectar las columnas de fecha y monto. ¿El archivo tiene esas columnas?' };
+    if (!cols) {
+      // Último recurso: cartola "narrativa" (cada movimiento es una frase).
+      const txtRes = _parsearCartolaTexto(filas);
+      if (txtRes) return txtRes;
+      return { error: 'No pude detectar las columnas de fecha y monto. ¿El archivo tiene esas columnas?' };
+    }
 
     const movs = [];
     let ultimaFecha = null;
