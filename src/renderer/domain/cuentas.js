@@ -77,9 +77,17 @@
     let saldo = Number(cuenta.saldo_inicial || 0);
 
     const desdeYM = cuenta.saldo_inicial_mes || state.config.mesInicial || '0000-00';
+    // "Hoy" en hora local (no UTC) para no excluir/incluir de más por zona horaria.
+    const ahora = new Date();
+    const hoyYMD = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
+    const hoyYM = hoyYMD.slice(0, 7);
     const incluirEnSaldo = (fechaStr) => {
       if (!fechaStr) return true;
-      const ym = (fechaStr.length >= 7) ? fechaStr.slice(0, 7) : fechaStr;
+      const ymd = String(fechaStr).slice(0, 10);
+      // Movimiento con fecha futura: la plata aún no se movió → no cuenta
+      // para la caja ACTUAL.
+      if (ymd > hoyYMD) return false;
+      const ym = ymd.slice(0, 7);
       return ym >= desdeYM;
     };
 
@@ -102,7 +110,8 @@
     // detallados recientes + ventas manuales.
     if (cuentaId === getCuentaDepositoVentasId(state)) {
       Object.entries(ventasPorMes || {}).forEach(([ym, monto]) => {
-        if (ym >= desdeYM) saldo += Number(monto || 0);
+        // Excluye meses futuros: esas ventas aún no entran a la caja actual.
+        if (ym >= desdeYM && ym <= hoyYM) saldo += Number(monto || 0);
       });
     }
     return saldo;

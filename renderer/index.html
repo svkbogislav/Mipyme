@@ -5953,7 +5953,7 @@ function renderVentasTabla() {
           : '';
         const detalle = (v.items || []).map(i => `${i.quantity || i.qty || 1}× ${i.title || i.name || ''}`).join(', ');
         return `<tr style="${filaStyle}">
-          <td>${v.fecha ? fmtFechaCorta.format(new Date(v.fecha)) : '—'}</td>
+          <td>${v.fecha ? fmtFechaCorta.format(new Date(ymdOf(v.fecha) + 'T12:00:00')) : '—'}</td>
           <td>${origen}${acciones}</td>
           <td>${escapeHtml(v.cliente)}</td>
           <td style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${escapeHtml(detalle)}</td>
