@@ -1372,8 +1372,12 @@
 
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:12px; flex-wrap:wrap">
-          <h3 style="margin:0">Pedidos</h3>
+          <h3 style="margin:0" id="ventasCardTitulo">Pedidos</h3>
           <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+            <div class="seg" style="display:inline-flex; border:1px solid var(--border); border-radius:8px; overflow:hidden">
+              <button class="btn ghost sm" id="ventasVistaPedido" style="border:0; border-radius:0" onclick="cambiarVistaVentas('pedido')">Por pedido</button>
+              <button class="btn ghost sm" id="ventasVistaDia" style="border:0; border-radius:0; border-left:1px solid var(--border)" onclick="cambiarVistaVentas('dia')">Por día</button>
+            </div>
             <input id="ventasSearch" placeholder="Buscar por cliente, # de orden o producto..." style="max-width:280px" oninput="renderVentasTabla()" />
           </div>
         </div>
@@ -5877,6 +5881,12 @@ function badgeFiltro(reason) {
   return '';
 }
 
+let _ventasVista = 'pedido'; // 'pedido' | 'dia'
+function cambiarVistaVentas(modo) {
+  _ventasVista = modo === 'dia' ? 'dia' : 'pedido';
+  renderVentasTabla();
+}
+
 function renderVentasTabla() {
   const q = (document.getElementById('ventasSearch')?.value || '').toLowerCase().trim();
   const mostrarFiltrados = !!document.getElementById('ventasMostrarFiltrados')?.checked;
@@ -5935,6 +5945,51 @@ function renderVentasTabla() {
     } else {
       wrap.innerHTML = '<div class="empty"><h4>Sin pedidos</h4>No hay ventas válidas que mostrar. Si tienes pedidos test, cancelados o sin pagar en Shopify, están excluidos del análisis (ver banner arriba si aplica).</div>';
     }
+    return;
+  }
+
+  // Toggle visual + título según vista
+  const _on = el => { el.style.background = 'var(--primary)'; el.style.color = '#fff'; };
+  const _off = el => { el.style.background = ''; el.style.color = ''; };
+  const bP = document.getElementById('ventasVistaPedido');
+  const bD = document.getElementById('ventasVistaDia');
+  if (bP && bD) { (_ventasVista === 'dia' ? _off : _on)(bP); (_ventasVista === 'dia' ? _on : _off)(bD); }
+  const tit = document.getElementById('ventasCardTitulo');
+  if (tit) tit.textContent = _ventasVista === 'dia' ? 'Ventas por día' : 'Pedidos';
+
+  // ── Vista "Por día": tabla agregada (fecha · n° · total · ticket) ──
+  if (_ventasVista === 'dia') {
+    const mapa = {};
+    ventas.forEach(v => {
+      const d = ymdOf(v.fecha);
+      if (!d) return;
+      if (!mapa[d]) mapa[d] = { n: 0, total: 0 };
+      mapa[d].n++;
+      mapa[d].total += Number(v.total || 0);
+    });
+    const dias = Object.keys(mapa).sort((a, b) => b.localeCompare(a));
+    const granN = dias.reduce((s, d) => s + mapa[d].n, 0);
+    const granTotal = dias.reduce((s, d) => s + mapa[d].total, 0);
+    wrap.innerHTML = `<table>
+      <thead><tr><th>Fecha</th><th class="num">N° de ventas</th><th class="num">Total del día</th><th class="num">Ticket prom.</th></tr></thead>
+      <tbody>
+        ${dias.map(d => {
+          const r = mapa[d];
+          return `<tr>
+            <td>${fmtFechaCorta.format(new Date(d + 'T12:00:00'))}</td>
+            <td class="num">${fmtNum.format(r.n)}</td>
+            <td class="num"><strong>${clp(r.total)}</strong></td>
+            <td class="num" style="color:var(--text-muted)">${clp(r.n ? r.total / r.n : 0)}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+      <tfoot><tr style="font-weight:700; background:var(--surface-2)">
+        <td>${dias.length} día${dias.length === 1 ? '' : 's'}</td>
+        <td class="num">${fmtNum.format(granN)}</td>
+        <td class="num">${clp(granTotal)}</td>
+        <td class="num">${clp(granN ? granTotal / granN : 0)}</td>
+      </tr></tfoot>
+    </table>`;
     return;
   }
 
