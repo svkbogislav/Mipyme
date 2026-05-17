@@ -2057,9 +2057,17 @@
       </div>
 
       <div class="card full" data-widget-key="cf-proyeccion" style="margin-bottom:14px">
-        <h3 style="margin:0">¿Cómo va tu caja las próximas 12 semanas?</h3>
-        <div class="card-sub" style="margin-top:4px">
-          Proyección a partir de tus promedios. Cambia los supuestos abajo para simular otro escenario.
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap">
+          <div>
+            <h3 style="margin:0">¿Cómo va tu caja a futuro?</h3>
+            <div class="card-sub" style="margin-top:4px">
+              Proyección a partir de tus promedios. Cambia los supuestos abajo para simular otro escenario.
+            </div>
+          </div>
+          <div class="seg" style="display:inline-flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; flex-shrink:0">
+            <button class="btn ghost sm" id="proyHorizSem" style="border:0; border-radius:0" onclick="cambiarHorizonteProy('sem')">12 semanas</button>
+            <button class="btn ghost sm" id="proyHorizMes" style="border:0; border-radius:0; border-left:1px solid var(--border)" onclick="cambiarHorizonteProy('mes')">12 meses</button>
+          </div>
         </div>
         <!-- Grid 4 columnas iguales con auto-formato CLP. data-clp activa el
              separador de miles (Forms.bindCLPInputs) mientras el usuario escribe. -->
@@ -9793,82 +9801,110 @@ function poblarDriversProyeccion() {
     `Default: promedio últimas 8 semanas (${clp(def.ventasSemana)}/sem). Editable.`;
 }
 
+let _proyHorizonte = 'sem'; // 'sem' (12 semanas) | 'mes' (12 meses ≈ 1 año)
+function cambiarHorizonteProy(h) {
+  _proyHorizonte = h === 'mes' ? 'mes' : 'sem';
+  renderProyeccion12s();
+}
+
 function renderProyeccion12s() {
   poblarDriversProyeccion();
   const d = getDriversProyActuales();
-  const ventas = d.ventasSemana || 0;
-  const variables = d.variablesSemana || 0;
-  const fijosSem = (d.fijosMes || 0) / (52 / 12); // mensuales → semanales (4.33 sem/mes)
+  const ventasSem = d.ventasSemana || 0;
+  const variablesSem = d.variablesSemana || 0;
+  const fijosMes = d.fijosMes || 0;
   const cajaInicio = d.cajaInicial || 0;
 
-  // Vencimientos de deuda CxP por semana — se restan en la semana donde caen
+  const esMes = _proyHorizonte === 'mes';
+  const N = 12;
+  const SPM = 52 / 12; // semanas por mes (~4.33)
+  const ventasPeriodo    = esMes ? ventasSem * SPM    : ventasSem;
+  const variablesPeriodo = esMes ? variablesSem * SPM : variablesSem;
+  const fijosPeriodo     = esMes ? fijosMes           : fijosMes / SPM;
+  const unidadPl = esMes ? 'meses' : 'semanas';
+  const unidadSing = esMes ? 'el mes' : 'la semana';
+
+  // Toggle visual del selector de horizonte
+  (function () {
+    const on = el => { if (el) { el.style.background = 'var(--primary)'; el.style.color = '#fff'; } };
+    const off = el => { if (el) { el.style.background = ''; el.style.color = ''; } };
+    const bS = document.getElementById('proyHorizSem');
+    const bM = document.getElementById('proyHorizMes');
+    (esMes ? off : on)(bS);
+    (esMes ? on : off)(bM);
+  })();
+
   const hoy = new Date();
-  hoy.setHours(0,0,0,0);
-  const deudaPorSemana = new Array(13).fill(0);
+  hoy.setHours(0, 0, 0, 0);
+
+  function periodo(i) { // i 0-based
+    if (esMes) {
+      const ini = new Date(hoy.getFullYear(), hoy.getMonth() + i, 1);
+      const fin = new Date(hoy.getFullYear(), hoy.getMonth() + i + 1, 0);
+      return { ini, fin };
+    }
+    const ini = new Date(hoy.getTime() + i * 7 * 864e5);
+    const fin = new Date(hoy.getTime() + ((i + 1) * 7 - 1) * 864e5);
+    return { ini, fin };
+  }
+
+  // Vencimientos de deuda CxP en el período donde caen
+  const deudaPeriodo = new Array(N).fill(0);
   (state.deudas || []).forEach(deuda => {
     const saldo = saldoPendienteDeuda(deuda);
     if (saldo <= 0 || !deuda.fecha_vencimiento) return;
     const venc = new Date(deuda.fecha_vencimiento + 'T12:00:00');
-    const diff = Math.floor((venc - hoy) / (24 * 3600 * 1000));
-    const semana = Math.floor(diff / 7) + 1; // semana 1 = próximos 7 días
-    if (semana >= 1 && semana <= 12) deudaPorSemana[semana] += saldo;
-    else if (semana < 1) deudaPorSemana[1] += saldo; // vencidas → semana 1 (a pagar ya)
+    let idx;
+    if (esMes) idx = (venc.getFullYear() - hoy.getFullYear()) * 12 + (venc.getMonth() - hoy.getMonth());
+    else idx = Math.floor((venc - hoy) / (7 * 864e5));
+    if (idx < 0) idx = 0;            // vencidas → primer período (a pagar ya)
+    if (idx >= 0 && idx < N) deudaPeriodo[idx] += saldo;
   });
 
-  const escenarios = {
-    bajo:  { factor: 0.8, color: '#e74c3c', label: 'Bajo (−20%)' },
-    base:  { factor: 1.0, color: '#3498db', label: 'Base' },
-    alto:  { factor: 1.3, color: '#15803d', label: 'Alto (+30%)' }
-  };
-
+  const fBajo = 0.8, fAlto = 1.3;
   const filas = [];
-  let saldoBajo = cajaInicio, saldoBase = cajaInicio, saldoAlto = cajaInicio;
-  let breakevenSem = null;
-  for (let s = 1; s <= 12; s++) {
-    const semInicio = new Date(hoy.getTime() + (s - 1) * 7 * 24 * 3600 * 1000);
-    const semFin = new Date(hoy.getTime() + (s * 7 - 1) * 24 * 3600 * 1000);
-    const ventaBajo = ventas * escenarios.bajo.factor;
-    const ventaBase = ventas;
-    const ventaAlto = ventas * escenarios.alto.factor;
-    const salidas = variables + fijosSem + deudaPorSemana[s];
-    saldoBajo += ventaBajo - salidas;
-    saldoBase += ventaBase - salidas;
-    saldoAlto += ventaAlto - salidas;
-    if (breakevenSem === null && saldoBase < 0) breakevenSem = s;
+  let sB = cajaInicio, sBase = cajaInicio, sA = cajaInicio;
+  let breakevenIdx = null;
+  for (let i = 0; i < N; i++) {
+    const { ini, fin } = periodo(i);
+    const salidas = variablesPeriodo + fijosPeriodo + deudaPeriodo[i];
+    sB += ventasPeriodo * fBajo - salidas;
+    sBase += ventasPeriodo - salidas;
+    sA += ventasPeriodo * fAlto - salidas;
+    if (breakevenIdx === null && sBase < 0) breakevenIdx = i + 1;
     filas.push({
-      semana: s,
-      desde: semInicio,
-      hasta: semFin,
-      ventaBase,
-      salidas,
-      cxpVenc: deudaPorSemana[s],
-      saldoBajo,
-      saldoBase,
-      saldoAlto
+      n: i + 1, desde: ini, hasta: fin,
+      ventaBase: ventasPeriodo, salidas, cxpVenc: deudaPeriodo[i],
+      saldoBajo: sB, saldoBase: sBase, saldoAlto: sA
     });
   }
 
-  // ── Resumen en lenguaje simple (titular + 3 números clave) ──
-  const ultimo = filas[11];
+  // Etiqueta de un período (mes corto o rango de fechas semanal)
+  const lblPeriodo = f => esMes
+    ? f.desde.toLocaleDateString('es-CL', { month: 'short', year: '2-digit' }).replace('.', '')
+    : `${fmtFechaCorta.format(f.desde).replace(/, \d{4}/, '')}—${fmtFechaCorta.format(f.hasta).replace(/, \d{4}/, '')}`;
+
+  // ── Resumen en lenguaje simple ──
+  const ultimo = filas[N - 1];
   let v;
-  if (breakevenSem) {
-    const f = filas[breakevenSem - 1];
+  if (breakevenIdx) {
+    const f = filas[breakevenIdx - 1];
     v = {
-      icon: '🚨', color: 'var(--danger)', soft: 'var(--danger-soft, #fee2e2)',
-      tit: `Te quedas sin caja en la semana ${breakevenSem}`,
-      sub: `Cerca del ${fmtFechaCorta.format(f.desde)} el saldo proyectado (escenario base) cae bajo $0. Hay que vender más, postergar un pago o recortar gastos antes de esa fecha.`
+      icon: '🚨', color: 'var(--danger)',
+      tit: `Te quedas sin caja en ${unidadSing} ${breakevenIdx}`,
+      sub: `Cerca del ${fmtFechaCorta.format(f.desde)} el saldo proyectado (escenario esperado) cae bajo $0. Hay que vender más, postergar un pago o recortar gastos antes de esa fecha.`
     };
   } else if (ultimo.saldoBase > cajaInicio) {
     v = {
-      icon: '✅', color: 'var(--success)', soft: 'var(--success-soft, #dcfce7)',
+      icon: '✅', color: 'var(--success)',
       tit: 'Tu caja crece',
-      sub: `En el escenario base terminas con <strong>${clp(ultimo.saldoBase)}</strong> en 12 semanas — ${clp(ultimo.saldoBase - cajaInicio)} más que hoy.`
+      sub: `En el escenario esperado terminas con <strong>${clp(ultimo.saldoBase)}</strong> en 12 ${unidadPl} — ${clp(ultimo.saldoBase - cajaInicio)} más que hoy.`
     };
   } else {
     v = {
-      icon: '⚠️', color: 'var(--warning)', soft: 'var(--warning-soft, #fef3c7)',
+      icon: '⚠️', color: 'var(--warning)',
       tit: 'Caja sostenible, pero sin crecer',
-      sub: `Terminas con <strong>${clp(ultimo.saldoBase)}</strong> en 12 semanas, parecido a hoy. No te quedas sin plata, pero tampoco acumulas colchón.`
+      sub: `Terminas con <strong>${clp(ultimo.saldoBase)}</strong> en 12 ${unidadPl}, parecido a hoy. No te quedas sin plata, pero tampoco acumulas colchón.`
     };
   }
   const resEl = document.getElementById('proyResumen');
@@ -9883,28 +9919,28 @@ function renderProyeccion12s() {
       </div>
       <div class="kpi-grid" style="margin-top:12px">
         <div class="kpi"><div class="kpi-label">Caja hoy</div><div class="kpi-value">${clp(cajaInicio)}</div></div>
-        <div class="kpi"><div class="kpi-label">En 12 semanas (esperado)</div><div class="kpi-value ${ultimo.saldoBase >= cajaInicio ? 'num-pos' : 'num-neg'}">${clp(ultimo.saldoBase)}</div></div>
-        <div class="kpi"><div class="kpi-label">Rango posible (12 sem)</div><div class="kpi-value" style="font-size:16px">${clp(ultimo.saldoBajo)} – ${clp(ultimo.saldoAlto)}</div><div class="kpi-delta" style="color:var(--text-muted)">si vendes poco / mucho</div></div>
+        <div class="kpi"><div class="kpi-label">En 12 ${unidadPl} (esperado)</div><div class="kpi-value ${ultimo.saldoBase >= cajaInicio ? 'num-pos' : 'num-neg'}">${clp(ultimo.saldoBase)}</div></div>
+        <div class="kpi"><div class="kpi-label">Rango posible (12 ${unidadPl})</div><div class="kpi-value" style="font-size:16px">${clp(ultimo.saldoBajo)} – ${clp(ultimo.saldoAlto)}</div><div class="kpi-delta" style="color:var(--text-muted)">si vendes poco / mucho</div></div>
       </div>`;
   }
 
   // Tabla
   document.getElementById('tablaProyeccion12s').innerHTML = `
     <thead><tr>
-      <th>Sem</th>
+      <th>${esMes ? 'Mes' : 'Sem'}</th>
       <th>Período</th>
-      <th class="num">Entradas (base)</th>
+      <th class="num">Entradas (esperado)</th>
       <th class="num">Salidas</th>
       <th class="num">Por pagar venc.</th>
       <th class="num" style="color:#e74c3c">Saldo bajo</th>
-      <th class="num" style="color:#3498db">Saldo base</th>
+      <th class="num" style="color:#3498db">Saldo esperado</th>
       <th class="num" style="color:#15803d">Saldo alto</th>
     </tr></thead>
     <tbody>
       ${filas.map(f => `
         <tr style="${f.saldoBase < 0 ? 'background:#fee2e2' : ''}">
-          <td><strong>${f.semana}</strong></td>
-          <td style="font-size:12px">${fmtFechaCorta.format(f.desde).replace(/, \d{4}/, '')}—${fmtFechaCorta.format(f.hasta).replace(/, \d{4}/, '')}</td>
+          <td><strong>${f.n}</strong></td>
+          <td style="font-size:12px">${lblPeriodo(f)}</td>
           <td class="num num-pos">${clp(f.ventaBase)}</td>
           <td class="num num-neg">${clp(f.salidas)}</td>
           <td class="num">${f.cxpVenc > 0 ? `<span style="color:var(--danger)">${clp(f.cxpVenc)}</span>` : '—'}</td>
@@ -9919,7 +9955,7 @@ function renderProyeccion12s() {
   // ── Gráfico de la proyección (3 escenarios) ──
   const cv = document.getElementById('chartProyeccion');
   if (cv && typeof createChart === 'function') {
-    const labels = filas.map(f => 'S' + f.semana);
+    const labels = filas.map(f => esMes ? lblPeriodo(f) : 'S' + f.n);
     if (charts.proyeccion) { try { charts.proyeccion.destroy(); } catch {} }
     charts.proyeccion = createChart('chartProyeccion', () => ({
       type: 'line',
