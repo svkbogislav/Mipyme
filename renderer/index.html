@@ -3406,6 +3406,10 @@
           <strong>+ Registrar mi primer gasto</strong>
           <div style="font-size:11px; color:var(--text-muted); margin-top:2px">O empezar con lo que sale (suele ser más fácil)</div>
         </button>
+        <button class="btn" style="justify-content:flex-start; padding:14px; text-align:left" onclick="cerrarOnboarding(false); setTimeout(abrirModalConciliacion, 150)">
+          <strong>🏦 Subir una cartola del banco</strong>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:2px">Carga un mes entero de ventas y gastos de una sola vez (Excel o CSV)</div>
+        </button>
         <button class="btn" id="wizShopifyBtn" style="justify-content:flex-start; padding:14px; text-align:left; display:none" onclick="cerrarOnboarding(false); document.querySelector('.nav-item[data-view=config]')?.click()">
           <strong>🛒 Conectar mi Shopify</strong>
           <div style="font-size:11px; color:var(--text-muted); margin-top:2px">Importa todas tus ventas online automáticamente</div>
@@ -13075,6 +13079,12 @@ const TOUR_STOPS = [
     emoji: '💸',
     titulo: 'Gastos',
     texto: 'Acá lo que sale. Los gastos fijos que marcaste en el wizard (arriendo, internet, etc.) se generan automáticamente cada mes — no tienes que reingresarlos. Para gastos puntuales, click <strong>"Nuevo gasto"</strong>.'
+  },
+  {
+    view: 'subir',
+    emoji: '🏦',
+    titulo: 'Subir cartola del banco',
+    texto: '¿No quieres anotar venta por venta? Acá <strong>subes la cartola de tu banco</strong> (Excel o CSV) y la app la lee: registra automáticamente lo que <strong>entró como ventas</strong> y lo que <strong>salió como gastos</strong>, y te muestra qué cruza con lo que ya tenías. La forma más rápida de cargar un mes entero de movimientos.'
   },
   {
     view: 'cuentas',
