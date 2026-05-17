@@ -8867,9 +8867,11 @@ function _renderMapeoColumnas() {
     return '';
   };
 
-  // Filas de muestra (primeras con datos, sin header ni saldos)
+  // Filas de muestra: SOLO movimientos reales (después del header; antes
+  // del header está el preámbulo: nombre, "Cuenta en pesos N°", "Resumen
+  // del periodo", totales — eso no debe mostrarse como ejemplo).
   const muestra = [];
-  for (let i = 0; i < filas.length && muestra.length < 6; i++) {
+  for (let i = (hdrIdx >= 0 ? hdrIdx + 1 : 0); i < filas.length && muestra.length < 6; i++) {
     if (i === hdrIdx || _esFilaSaldoUI(filas[i])) continue;
     if (!filas[i].some(c => (c || '').toString().trim())) continue;
     muestra.push(filas[i]);
