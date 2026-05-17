@@ -9198,40 +9198,47 @@ function _renderConciliacionPaso2() {
   `;
 
   const lista = document.getElementById('concListaMatches');
-  lista.innerHTML = items.map((it, idx) => {
+  const filas = items.map((it, idx) => {
     const m = it.mov;
     const d = it.decision;
-    const bg = d.tipo === 'match' ? '#f0fdf4' : (d.tipo === 'crear' ? '#fff7ed' : '#f9fafb');
-    const border = d.tipo === 'match' ? '#86efac' : (d.tipo === 'crear' ? '#fdba74' : '#e5e7eb');
-    const fechaFmt = fmtFechaCorta.format(new Date(m.fecha + 'T12:00:00'));
-    const montoColor = m.monto >= 0 ? '#15803d' : 'var(--danger)';
+    const barra = d.tipo === 'match' ? 'var(--success)' : (d.tipo === 'crear' ? 'var(--warning, #f59e0b)' : 'var(--text-muted)');
+    const fechaFmt = fmtFechaCorta.format(new Date(m.fecha + 'T12:00:00')).replace(/,?\s*\d{4}/, '');
+    const montoColor = m.monto >= 0 ? 'var(--success)' : 'var(--danger)';
     const candidatosOpts = it.candidatos.map((c, ci) => {
       const ref = c.ref;
       const lbl = c.tipo === 'venta'
-        ? `Venta · ${clp(ref.monto)} · ${ref.fecha}`
+        ? `Cruzar con venta · ${clp(ref.monto)}`
         : c.tipo === 'gasto'
-          ? `Gasto · ${clp(ref.monto)} · ${escapeHtml(ref.proveedor || ref.descripcion || '')} · ${ref.fecha}`
-          : `Cobro · ${clp(c.refPago ? c.refPago.monto : ref.monto_total)} · ${escapeHtml(ref.deudor || '')} · ${ref.fecha_emision || ''}`;
+          ? `Cruzar con gasto · ${clp(ref.monto)} · ${escapeHtml((ref.proveedor || ref.descripcion || '').slice(0, 20))}`
+          : `Cruzar con cobro · ${clp(c.refPago ? c.refPago.monto : ref.monto_total)}`;
       const selected = d.tipo === 'match' && d.candidato === c ? 'selected' : '';
       return `<option value="match:${ci}" ${selected}>${lbl}</option>`;
     }).join('');
-
-    return `<div style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:${bg}; border-bottom:1px solid ${border}; flex-wrap:wrap">
-      <div style="flex:1; min-width:200px">
-        <strong>${fechaFmt}</strong>
-        <span style="color:${montoColor}; font-weight:600; margin-left:8px">${m.monto >= 0 ? '+' : ''}${clp(m.monto)}</span>
-        <div style="font-size:12px; color:var(--text-muted); margin-top:2px">${escapeHtml(m.descripcion)}</div>
-      </div>
-      <select onchange="cambiarDecisionConciliacion(${idx}, this.value)" style="width:auto; min-width:240px; max-width:380px">
+    const catCell = (d.tipo === 'crear' && m.monto < 0)
+      ? `<select onchange="setCategoriaConciliacion(${idx}, this.value)" title="Categoría detectada — corrígela si está mal" style="width:100%; font-size:11px; padding:3px 4px">${_opcionesCategoriaConc(d.categoria)}</select>${d.categoria ? '<span style="font-size:9px; color:var(--success); white-space:nowrap"> ● auto</span>' : ''}`
+      : '<span style="color:var(--text-muted)">—</span>';
+    return `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:5px 4px 5px 8px; border-left:3px solid ${barra}; white-space:nowrap; font-size:11px">${fechaFmt}</td>
+      <td style="padding:5px 6px; font-size:11px; color:var(--text-muted); max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" title="${escapeHtml(m.descripcion)}">${escapeHtml(m.descripcion.slice(0, 70))}</td>
+      <td style="padding:5px 6px; text-align:right; white-space:nowrap; font-weight:600; color:${montoColor}; font-size:12px">${m.monto >= 0 ? '+' : ''}${clp(m.monto)}</td>
+      <td style="padding:5px 6px"><select onchange="cambiarDecisionConciliacion(${idx}, this.value)" style="width:100%; font-size:11px; padding:3px 4px">
         ${candidatosOpts}
-        <option value="crear" ${d.tipo === 'crear' ? 'selected' : ''}>Crear nuevo ${m.monto >= 0 ? 'ingreso' : 'gasto'}</option>
-        <option value="ignorar" ${d.tipo === 'ignorar' ? 'selected' : ''}>Ignorar este movimiento</option>
-      </select>
-      ${(d.tipo === 'crear' && m.monto < 0) ? `<select onchange="setCategoriaConciliacion(${idx}, this.value)" title="Categoría detectada — corrígela si está mal y la app lo recordará" style="width:auto; min-width:170px; max-width:240px">
-        ${_opcionesCategoriaConc(d.categoria)}
-      </select>${d.categoria ? `<span style="font-size:10px; color:#15803d; white-space:nowrap" title="Sugerida automáticamente">● auto</span>` : ''}` : ''}
-    </div>`;
+        <option value="crear" ${d.tipo === 'crear' ? 'selected' : ''}>Crear ${m.monto >= 0 ? 'ingreso' : 'gasto'} nuevo</option>
+        <option value="ignorar" ${d.tipo === 'ignorar' ? 'selected' : ''}>Ignorar</option>
+      </select></td>
+      <td style="padding:5px 6px; min-width:150px">${catCell}</td>
+    </tr>`;
   }).join('');
+  lista.innerHTML = `<table style="width:100%; border-collapse:collapse">
+    <thead><tr style="position:sticky; top:0; background:var(--surface); z-index:1">
+      <th style="padding:6px 8px; text-align:left; font-size:11px; color:var(--text-muted); border-bottom:1px solid var(--border)">Fecha</th>
+      <th style="padding:6px; text-align:left; font-size:11px; color:var(--text-muted); border-bottom:1px solid var(--border)">Movimiento</th>
+      <th style="padding:6px; text-align:right; font-size:11px; color:var(--text-muted); border-bottom:1px solid var(--border)">Monto</th>
+      <th style="padding:6px; text-align:left; font-size:11px; color:var(--text-muted); border-bottom:1px solid var(--border)">Qué hacer</th>
+      <th style="padding:6px; text-align:left; font-size:11px; color:var(--text-muted); border-bottom:1px solid var(--border)">Categoría</th>
+    </tr></thead>
+    <tbody>${filas}</tbody>
+  </table>`;
 }
 
 // Sugerencia de categoría para un cargo (monto<0) usando el categorizador
