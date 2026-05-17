@@ -204,7 +204,10 @@ function _limpiarErrorUpdater(err) {
   // Patrón típico: 'HttpError: 404 ...' o 'method: GET url: ...'
   const m404 = msg.match(/(\d{3})\s+(?:".*?")?/);
   if (m404 && m404[1] === '404') {
-    return 'El repo de GitHub Releases no existe o no es accesible (404). Verifica owner/repo en package.json.';
+    // 404 casi siempre es transitorio: el chequeo corrió mientras la nueva
+    // versión aún se publicaba en GitHub (latest.yml todavía no disponible).
+    // No asustar al usuario con "el repo no existe".
+    return 'No se pudo verificar la actualización ahora (puede que la nueva versión aún se esté publicando). Se reintenta solo más tarde.';
   }
   if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT/i.test(msg)) {
     return 'No hay conexión a internet o GitHub no responde. Intenta de nuevo en un rato.';

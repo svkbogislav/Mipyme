@@ -7323,6 +7323,15 @@ async function actualizarDesdePopup() {
 //   - el usuario no saltó esa misma versión
 //   - el "recordarme después" no está activo todavía
 let _updateCheckReintentos = 0;
+// Reintento con backoff: la ventana de publicación en GitHub (build Mac
+// luego Windows) puede durar varios minutos; 404 en ese rato es normal.
+function _reintentarChequeoUpdate() {
+  const delays = [45000, 90000, 180000]; // 45s · 1.5min · 3min
+  if (_updateCheckReintentos >= delays.length) return;
+  const d = delays[_updateCheckReintentos];
+  _updateCheckReintentos++;
+  setTimeout(chequearActualizacionAlInicio, d);
+}
 async function chequearActualizacionAlInicio() {
   if (!(window.electronAPI && window.electronAPI.checkRemoteUpdate)) return;
 
@@ -7347,12 +7356,13 @@ async function chequearActualizacionAlInicio() {
         // Aviso al ENTRAR (no bloqueante, sin clic). La instalación es
         // silenciosa al cerrar — no reintroducimos el clic que se colgaba.
         mostrarAvisoUpdateDisponible(r.latestVersion);
+      } else if (!r || !r.ok) {
+        // 404/transitorio (la versión nueva aún se está publicando):
+        // reintentar solo, sin molestar al usuario.
+        _reintentarChequeoUpdate();
       }
     } catch (e) {
-      if (_updateCheckReintentos < 1) {
-        _updateCheckReintentos++;
-        setTimeout(chequearActualizacionAlInicio, 30000);
-      }
+      _reintentarChequeoUpdate();
     }
     return;
   }
@@ -7368,13 +7378,10 @@ async function chequearActualizacionAlInicio() {
   catch (e) { r = { ok: false, error: (e && e.message) || String(e) }; }
 
   if (!r || !r.ok) {
-    // No tragarse el error en silencio: queda en consola para diagnóstico
-    // y reintentamos 1 vez (la red puede no estar lista al arrancar).
+    // No tragarse el error: a consola para diagnóstico y reintento con
+    // backoff (la red puede no estar lista, o la versión aún publicándose).
     console.warn('[update] chequeo falló:', r && r.error);
-    if (_updateCheckReintentos < 1) {
-      _updateCheckReintentos++;
-      setTimeout(chequearActualizacionAlInicio, 30000);
-    }
+    _reintentarChequeoUpdate();
     return;
   }
   if (!r.hasUpdate) return;
