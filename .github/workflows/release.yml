@@ -45,7 +45,13 @@ jobs:
   # Bonus: compila el .exe en un runner Windows real (sin Wine).
   # Publica al MISMO release que el job de Mac (electron-builder agrega
   # los assets al release existente del tag).
+  #
+  # needs: release-mac → corre DESPUÉS de Mac. Si ambos corrieran en
+  # paralelo, los dos intentan CREAR el release del tag a la vez y uno
+  # recibe 422 "already_exists" (la carrera que dejó v1.0.99 sin .exe).
+  # Serial: Mac crea el release, Windows solo le agrega su .exe.
   release-win:
+    needs: release-mac
     runs-on: windows-latest
     steps:
       - name: Checkout código

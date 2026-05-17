@@ -2057,9 +2057,9 @@
       </div>
 
       <div class="card full" data-widget-key="cf-proyeccion" style="margin-bottom:14px">
-        <h3>Proyección semanal próximas 12 semanas</h3>
-        <div class="card-sub">
-          Drivers configurables abajo — escenario base toma el promedio reciente. Bajo y alto son ±20% / +30% sobre las ventas. Si el saldo proyectado cruza $0, la fila se marca en rojo: ese es tu cliff de caja.
+        <h3 style="margin:0">¿Cómo va tu caja las próximas 12 semanas?</h3>
+        <div class="card-sub" style="margin-top:4px">
+          Proyección a partir de tus promedios. Cambia los supuestos abajo para simular otro escenario.
         </div>
         <!-- Grid 4 columnas iguales con auto-formato CLP. data-clp activa el
              separador de miles (Forms.bindCLPInputs) mientras el usuario escribe. -->
@@ -2085,11 +2085,15 @@
             <div style="font-size:11px; color:var(--text-muted); margin-top:4px">Default: saldo total de tus cuentas líquidas hoy.</div>
           </div>
         </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px">
-          <button class="btn ghost" onclick="resetearProyeccion12s()">Restaurar drivers a promedios</button>
-          <span id="proyBreakeven" style="font-size:13px; margin-left:auto"></span>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px">
+          <button class="btn ghost sm" onclick="resetearProyeccion12s()">Restaurar a mis promedios</button>
         </div>
-        <div class="table-wrap"><table id="tablaProyeccion12s"></table></div>
+        <div id="proyResumen" style="margin-bottom:14px"></div>
+        <div class="chart-wrap tall"><canvas id="chartProyeccion"></canvas></div>
+        <details style="margin-top:12px">
+          <summary style="cursor:pointer; font-weight:600; font-size:14px">Ver semana a semana</summary>
+          <div class="table-wrap" style="margin-top:10px"><table id="tablaProyeccion12s"></table></div>
+        </details>
       </div>
 
       <div class="card full" data-widget-key="cf-detalle">
@@ -9844,18 +9848,44 @@ function renderProyeccion12s() {
     });
   }
 
-  // Mensaje de breakeven
-  const beEl = document.getElementById('proyBreakeven');
+  // ── Resumen en lenguaje simple (titular + 3 números clave) ──
+  const ultimo = filas[11];
+  let v;
   if (breakevenSem) {
     const f = filas[breakevenSem - 1];
-    beEl.innerHTML = `<span style="color:var(--danger); font-weight:600">⚠️ Cliff de caja en semana ${breakevenSem}</span> · ${fmtFechaCorta.format(f.desde)}—${fmtFechaCorta.format(f.hasta)} · saldo proyectado ${clp(f.saldoBase)}`;
+    v = {
+      icon: '🚨', color: 'var(--danger)', soft: 'var(--danger-soft, #fee2e2)',
+      tit: `Te quedas sin caja en la semana ${breakevenSem}`,
+      sub: `Cerca del ${fmtFechaCorta.format(f.desde)} el saldo proyectado (escenario base) cae bajo $0. Hay que vender más, postergar un pago o recortar gastos antes de esa fecha.`
+    };
+  } else if (ultimo.saldoBase > cajaInicio) {
+    v = {
+      icon: '✅', color: 'var(--success)', soft: 'var(--success-soft, #dcfce7)',
+      tit: 'Tu caja crece',
+      sub: `En el escenario base terminas con <strong>${clp(ultimo.saldoBase)}</strong> en 12 semanas — ${clp(ultimo.saldoBase - cajaInicio)} más que hoy.`
+    };
   } else {
-    const ultimo = filas[11];
-    if (ultimo.saldoBase > cajaInicio) {
-      beEl.innerHTML = `<span style="color:var(--success); font-weight:600">✓ Crece caja</span> · saldo a 12 sem: ${clp(ultimo.saldoBase)} (escenario base)`;
-    } else {
-      beEl.innerHTML = `<span style="color:var(--text-muted)">Caja sostenible 12 sem</span> · saldo final: ${clp(ultimo.saldoBase)}`;
-    }
+    v = {
+      icon: '⚠️', color: 'var(--warning)', soft: 'var(--warning-soft, #fef3c7)',
+      tit: 'Caja sostenible, pero sin crecer',
+      sub: `Terminas con <strong>${clp(ultimo.saldoBase)}</strong> en 12 semanas, parecido a hoy. No te quedas sin plata, pero tampoco acumulas colchón.`
+    };
+  }
+  const resEl = document.getElementById('proyResumen');
+  if (resEl) {
+    resEl.innerHTML = `
+      <div style="display:flex; gap:12px; align-items:flex-start; padding:14px 16px; border-radius:12px; border:1px solid var(--border); border-left:4px solid ${v.color}; background:var(--surface)">
+        <div style="font-size:22px; flex-shrink:0">${v.icon}</div>
+        <div style="flex:1; min-width:0">
+          <div style="font-weight:700; font-size:15px; color:${v.color}">${v.tit}</div>
+          <div style="font-size:13px; color:var(--text-muted); line-height:1.5; margin-top:3px">${v.sub}</div>
+        </div>
+      </div>
+      <div class="kpi-grid" style="margin-top:12px">
+        <div class="kpi"><div class="kpi-label">Caja hoy</div><div class="kpi-value">${clp(cajaInicio)}</div></div>
+        <div class="kpi"><div class="kpi-label">En 12 semanas (esperado)</div><div class="kpi-value ${ultimo.saldoBase >= cajaInicio ? 'num-pos' : 'num-neg'}">${clp(ultimo.saldoBase)}</div></div>
+        <div class="kpi"><div class="kpi-label">Rango posible (12 sem)</div><div class="kpi-value" style="font-size:16px">${clp(ultimo.saldoBajo)} – ${clp(ultimo.saldoAlto)}</div><div class="kpi-delta" style="color:var(--text-muted)">si vendes poco / mucho</div></div>
+      </div>`;
   }
 
   // Tabla
@@ -9885,6 +9915,25 @@ function renderProyeccion12s() {
       `).join('')}
     </tbody>
   `;
+
+  // ── Gráfico de la proyección (3 escenarios) ──
+  const cv = document.getElementById('chartProyeccion');
+  if (cv && typeof createChart === 'function') {
+    const labels = filas.map(f => 'S' + f.semana);
+    if (charts.proyeccion) { try { charts.proyeccion.destroy(); } catch {} }
+    charts.proyeccion = createChart('chartProyeccion', () => ({
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Si vendes poco (−20%)', data: filas.map(f => Math.round(f.saldoBajo)), borderColor: '#e74c3c', backgroundColor: 'transparent', borderDash: [5, 4], borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.3, order: 3 },
+          { label: 'Esperado', data: filas.map(f => Math.round(f.saldoBase)), borderColor: '#3498db', backgroundColor: 'rgba(52,152,219,0.10)', borderWidth: 3, pointRadius: 3, pointHoverRadius: 6, tension: 0.3, fill: true, order: 1 },
+          { label: 'Si vendes mucho (+30%)', data: filas.map(f => Math.round(f.saldoAlto)), borderColor: '#15803d', backgroundColor: 'transparent', borderDash: [5, 4], borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.3, order: 2 }
+        ]
+      },
+      options: chartOpts({ money: true })
+    }));
+  }
 }
 
 /* =================================================================
