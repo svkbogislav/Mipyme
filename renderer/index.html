@@ -2219,11 +2219,37 @@
 
       <!-- Estado / no configurado -->
       <div class="card" id="facNoConfig" style="margin-bottom:14px; display:none">
-        <div class="empty" style="padding:22px">
+        <div class="empty" style="padding:22px 22px 10px">
           <h4>Conecta LibreDTE para empezar</h4>
-          Para emitir documentos necesitas: una cuenta en <strong>libredte.cl</strong> con tu certificado digital y los folios (CAF) cargados, y tu token de API.
+          Para emitir facturas, boletas o boletas de honorarios necesitas una cuenta en <strong>libredte.cl</strong> con tu certificado digital y folios (CAF) cargados, y tu token de API.
           <div style="margin-top:12px"><button class="btn primary" onclick="document.querySelector('.nav-item[data-view=config]').click(); setTimeout(()=>{var e=document.getElementById('siiHash'); if(e) e.scrollIntoView({block:'center'});},150)">Ir a configurar conexión →</button></div>
         </div>
+        <details style="padding:0 22px 20px">
+          <summary style="cursor:pointer; font-weight:600; font-size:14px; padding:8px 0">Ver guía paso a paso para dejarlo funcionando</summary>
+          <div style="font-size:13px; line-height:1.6; color:var(--text); margin-top:8px">
+            <p style="margin:10px 0 4px"><strong>A · Cuenta y empresa en LibreDTE</strong></p>
+            <ol style="margin:0; padding-left:20px">
+              <li>En <strong>libredte.cl</strong> → Registrarse con tu email y confirma el correo.</li>
+              <li><em>Contribuyentes → Registrar</em>: ingresa el RUT de la empresa, razón social, giro, dirección y actividad económica (el mismo RUT con que ya facturan).</li>
+              <li><em>Contribuyente → Configuración → Firma electrónica</em>: sube el certificado digital (<code>.p12</code> / <code>.pfx</code>) + su clave. Es el mismo que usan hoy para facturar (lo tiene tu proveedor de certificado o tu contador).</li>
+            </ol>
+            <p style="margin:14px 0 4px"><strong>B · Token de API (lo que pegas acá)</strong></p>
+            <ol start="4" style="margin:0; padding-left:20px">
+              <li>En LibreDTE → arriba a la derecha → <em>Perfil del usuario</em> → copia el campo <strong>"Hash"</strong>.</li>
+              <li>Pégalo en <em>Configuración → Facturación electrónica</em> junto al RUT emisor, deja <strong>ambiente = Certificación</strong> y dale "Probar conexión".</li>
+            </ol>
+            <p style="margin:14px 0 4px"><strong>C · Folios (CAF) y certificación ante el SII</strong></p>
+            <ol start="6" style="margin:0; padding-left:20px">
+              <li>En el portal del <strong>SII</strong> (ambiente de certificación) → Factura electrónica → Timbraje → solicita folios para cada tipo: 33 (factura afecta), 34 (exenta), 39 (boleta). Descargas un CAF por tipo.</li>
+              <li>En LibreDTE → <em>Contribuyente → Mantenedores → CAF</em> → sube cada archivo.</li>
+              <li>Completa el <strong>proceso de certificación</strong> del SII (set de pruebas). LibreDTE tiene asistente; conviene hacerlo con tu contador — es trámite, no técnico.</li>
+              <li>Cuando el SII te aprueba: pides CAF de producción, los cargas en LibreDTE y recién ahí cambias el ambiente a <strong>Producción</strong> en la app (te pedirá confirmar).</li>
+            </ol>
+            <p style="margin:14px 0 4px"><strong>D · Boleta de honorarios (BHE)</strong></p>
+            <p style="margin:0">Es aparte (no usa CAF ni certificado). En LibreDTE → módulo <em>Honorarios</em> guarda las credenciales SII del emisor. Sin eso, el botón de BHE fallará.</p>
+            <p style="margin:14px 0 0; color:var(--text-muted)">Apenas tengas el <strong>hash</strong> y un <strong>CAF de certificación cargado</strong>, ya puedes probar emitiendo un documento de prueba (sin validez tributaria) antes de pasar a producción.</p>
+          </div>
+        </details>
       </div>
 
       <div id="facConfigOk" style="display:none">
