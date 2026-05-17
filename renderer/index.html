@@ -8809,8 +8809,16 @@ function _renderMapeoColumnas() {
   if (!cont) return;
   const st = _conciliacionStaging;
   if (!st || !Array.isArray(st._filas) || !st._filas.length) { cont.innerHTML = ''; return; }
-  const filas = st._filas;
   const cols = st._cols || {};
+  // Cartola narrativa: cada movimiento es una frase, no hay columnas que
+  // ajustar. Mostramos una nota en vez del editor.
+  if (cols.formato === 'texto') {
+    cont.innerHTML = `<div style="font-size:12px; color:var(--text-muted); padding:10px 12px; border:1px solid var(--border); border-radius:9px; background:var(--surface-2)">
+      ℹ️ Esta cartola viene como <strong>texto</strong> (cada movimiento es una frase, ej. "Abono por transferencia… el 16/05/2026… monto 1290"). La app la leyó automáticamente: detectó tipo, fecha y monto de cada frase. <strong>No hay columnas que ajustar.</strong> Revisa abajo y, si alguna fila no es un movimiento, ponla en "Ignorar".
+    </div>`;
+    return;
+  }
+  const filas = st._filas;
   const numCols = Math.max(...filas.map(f => f.length));
   const hdrIdx = (cols.headerIdx != null && cols.headerIdx >= 0) ? cols.headerIdx : -1;
 

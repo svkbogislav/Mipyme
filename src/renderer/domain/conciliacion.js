@@ -135,6 +135,86 @@
     return signo * n;
   }
 
+  // ─── Cartolas "narrativas" (Tenpo, MercadoPago, fintech) ───────────────
+  // Algunos bancos no exportan columnas: cada movimiento es UNA frase tipo
+  //   "Abono por transferencia de JUAN ... el 16/05/2026 ... monto 1290"
+  //   "Cargo por compra en ARAMCO el 16/05/2026 ... monto 9020"
+  // Acá el tipo (abono/cargo), la fecha y el monto van DENTRO del texto.
+  // Mapear columnas no sirve — hay que leer la frase.
+  function _parsearMovTexto(txt) {
+    const t = String(txt || '').replace(/\s+/g, ' ').trim();
+    if (!t) return null;
+    const low = t.toLowerCase();
+
+    // Tipo: palabra inicial manda; si no, por palabras clave.
+    let signo = 0;
+    if (/^\s*(abono|dep[oó]sito|devoluci[oó]n|reembolso)\b/.test(low)) signo = 1;
+    else if (/^\s*(cargo|compra|pago|giro|retiro|comisi[oó]n)\b/.test(low)) signo = -1;
+    else if (/\babono\b|\bdep[oó]sito\b|transferencia (recibida|de)\b|\bdevoluci[oó]n\b|\bingreso\b/.test(low)) signo = 1;
+    else if (/\bcargo\b|\bcompra\b|\bpago\b|\bgiro\b|\bretiro\b|\bcomisi[oó]n\b|\begreso\b/.test(low)) signo = -1;
+    if (signo === 0) return null;
+
+    // Fecha: "el dd/mm/aaaa" preferido; si no, primer dd/mm/aaaa o ISO.
+    let fecha = null;
+    let mF = low.match(/\bel\s+(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if (!mF) mF = t.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if (mF) {
+      let yr = +mF[3]; if (yr < 100) yr += 2000;
+      const d = new Date(yr, +mF[2] - 1, +mF[1], 12, 0, 0);
+      if (!isNaN(d) && d.getFullYear() > 2000 && d.getFullYear() < 2100) fecha = d;
+    }
+    if (!fecha) {
+      const mISO = t.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (mISO) { const d = new Date(+mISO[1], +mISO[2] - 1, +mISO[3], 12, 0, 0); if (!isNaN(d)) fecha = d; }
+    }
+    if (!fecha) return null;
+
+    // Monto: "monto N" preferido; si no, primer "$ N"; si no, el número
+    // más grande de la frase (evita confundir con RUT/hora).
+    let monto = null;
+    // Solo montos EXPLÍCITOS ("monto N" o "$ N"). Sin fallback al número
+    // más grande: en estas frases hay RUTs/horas que se confundirían.
+    let mM = low.match(/monto\s*\$?\s*([\d][\d.,]*)/);
+    if (mM) monto = _parsearMonto(mM[1]);
+    if (monto == null) {
+      const mD = t.match(/\$\s*([\d][\d.,]*)/);
+      if (mD) monto = _parsearMonto(mD[1]);
+    }
+    if (monto == null || !Number.isFinite(monto) || monto === 0) return null;
+
+    return {
+      fecha: window.ymdOf(fecha.toISOString()),
+      monto: Math.round(Math.abs(monto)) * signo,
+      descripcion: t.slice(0, 250)
+    };
+  }
+
+  function _parsearCartolaTexto(filas) {
+    // Texto de cada fila = todas las celdas unidas (cubre 1 sola columna o
+    // varias mal alineadas).
+    const textos = filas.map(f => (Array.isArray(f) ? f.join(' ') : String(f || '')).trim())
+      .filter(s => s);
+    if (textos.length < 2) return null;
+    const parsed = [];
+    let conPatron = 0;
+    textos.forEach(t => {
+      if (_esFilaSaldo([t])) return;
+      const low = t.toLowerCase();
+      const pareceMov = /\b(abono|cargo|compra|pago|giro|retiro|dep[oó]sito|transferencia|comisi[oó]n)\b/.test(low)
+        && /\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{4}-\d{1,2}-\d{1,2}/.test(t);
+      if (!pareceMov) return;
+      conPatron++;
+      const mv = _parsearMovTexto(t);
+      if (mv) parsed.push({ _id: window.uid(), fecha: mv.fecha, descripcion: mv.descripcion, monto: mv.monto, _raw: [t] });
+    });
+    // Solo usamos este modo si la mayoría de las filas son frases-movimiento
+    // (evita robarle el parseo a una cartola columnar normal).
+    if (parsed.length >= 3 && parsed.length >= conPatron * 0.6) {
+      return { movimientos: parsed, columnas: { formato: 'texto' }, totalFilas: filas.length, filas };
+    }
+    return null;
+  }
+
   // Detecta índices de columnas (fecha, monto, descripcion) en las filas
   // ya parseadas. Si hay header lo descarta. Devuelve { headerIdx, idxFecha,
   // idxMonto, idxDesc, idxAbono, idxCargo } — algunos pueden ser null si
@@ -276,6 +356,11 @@
     filas = filas.map(f => (Array.isArray(f) ? f : [f]).map(c => (c === null || c === undefined) ? '' : String(c).trim()));
     filas = filas.filter(f => f.some(c => c !== ''));
     if (filas.length === 0) return { error: 'No se encontraron filas con datos' };
+
+    // Cartola "narrativa" (cada movimiento es una frase): se lee del texto,
+    // no de columnas. Tiene precedencia solo si la mayoría calza el patrón.
+    const txtRes = _parsearCartolaTexto(filas);
+    if (txtRes) return txtRes;
 
     const idxSigno = _detectarColumnaSigno(filas);
 
