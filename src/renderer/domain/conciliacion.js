@@ -334,8 +334,9 @@
       }
       return {
         movimientos: movs,
-        columnas: { headerIdx: headerRow, idxFecha, idxMonto, idxDesc, idxSigno, formato: 'bice' },
-        totalFilas: filas.length
+        columnas: { headerIdx: headerRow, idxFecha, idxMonto, idxDesc, idxSigno, idxCargo: null, idxAbono: null, formato: 'bice' },
+        totalFilas: filas.length,
+        filas
       };
     }
 
@@ -373,7 +374,59 @@
         _raw: fila
       });
     });
-    return { movimientos: movs, columnas: cols, totalFilas: filas.length };
+    return { movimientos: movs, columnas: cols, totalFilas: filas.length, filas };
+  }
+
+  // Re-parsea con un MAPEO de columnas explícito dado por el usuario (cuando
+  // la autodetección se equivocó, ej. tomó la columna de Saldo como ingreso).
+  // mapeo = { headerIdx, idxFecha, idxDesc, idxMonto, idxCargo, idxAbono }
+  // (índices numéricos o null/''). Sigue ignorando filas de saldo/total.
+  function reparsearConMapeo(filas, mapeo) {
+    if (!Array.isArray(filas) || filas.length === 0) return { error: 'Sin filas' };
+    const N = x => (x === '' || x === null || x === undefined) ? null : Number(x);
+    const m = {
+      headerIdx: N(mapeo.headerIdx),
+      idxFecha: N(mapeo.idxFecha),
+      idxDesc:  N(mapeo.idxDesc),
+      idxMonto: N(mapeo.idxMonto),
+      idxCargo: N(mapeo.idxCargo),
+      idxAbono: N(mapeo.idxAbono)
+    };
+    const movs = [];
+    let ultimaFecha = null;
+    filas.forEach((fila, i) => {
+      if (m.headerIdx !== null && i === m.headerIdx) return;
+      if (_esFilaSaldo(fila)) return;
+      const fechaCelda = (m.idxFecha !== null ? fila[m.idxFecha] : '') || '';
+      if (fechaCelda) {
+        const fD = _parsearFecha(fechaCelda);
+        if (fD) ultimaFecha = window.ymdOf(fD.toISOString());
+      }
+      if (!ultimaFecha) return;
+      let monto = null;
+      if (m.idxMonto !== null) {
+        monto = _parsearMonto(fila[m.idxMonto]);
+      } else if (m.idxCargo !== null && m.idxAbono !== null) {
+        const cargo = _parsearMonto(fila[m.idxCargo]);
+        const abono = _parsearMonto(fila[m.idxAbono]);
+        if (abono && abono > 0) monto = abono;
+        else if (cargo && cargo > 0) monto = -cargo;
+      } else if (m.idxAbono !== null) {
+        const a = _parsearMonto(fila[m.idxAbono]); if (a && a > 0) monto = a;
+      } else if (m.idxCargo !== null) {
+        const c = _parsearMonto(fila[m.idxCargo]); if (c && c > 0) monto = -c;
+      }
+      if (monto === null || !Number.isFinite(monto) || monto === 0) return;
+      const descripcion = (m.idxDesc !== null ? fila[m.idxDesc] : fila.join(' ')) || '';
+      movs.push({
+        _id: window.uid(),
+        fecha: ultimaFecha,
+        descripcion: String(descripcion).trim().slice(0, 250),
+        monto: Math.round(monto),
+        _raw: fila
+      });
+    });
+    return { movimientos: movs, columnas: m, totalFilas: filas.length, filas };
   }
 
   // Compatibilidad hacia atrás: parsea texto CSV/TSV y delega a parsearCartolaFilas.
@@ -530,6 +583,7 @@
   window.Conciliacion = {
     parsearCartola,
     parsearCartolaFilas,
+    reparsearConMapeo,
     matchearMovimientos,
     aplicarMatch,
     crearDesdeMovimiento,

@@ -3895,6 +3895,7 @@
       <div style="font-size:12px; color:var(--text-muted); margin-bottom:10px">
         Esto es un <strong>preview</strong>: nada se guarda hasta que aprietes "Aplicar". Revisa cada fila — si algo no es un movimiento (ej. un saldo) ponlo en <strong>Ignorar</strong>, y corrige la categoría si hace falta.
       </div>
+      <div id="concMapeo" style="margin-bottom:12px"></div>
       <div id="concResumen" style="background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:10px 12px; margin-bottom:12px; font-size:13px"></div>
       <div id="concListaMatches" style="max-height:50vh; overflow-y:auto; border:1px solid var(--border); border-radius:9px"></div>
       <div style="font-size:11px; color:var(--text-muted); margin-top:8px">
@@ -8761,8 +8762,11 @@ function _procesarArchivoCartola(file) {
     }));
     _conciliacionStaging = {
       account_id: document.getElementById('concAccount').value,
-      items
+      items,
+      _filas: r.filas || null,
+      _cols: r.columnas || null
     };
+    _renderMapeoColumnas();
     _renderConciliacionPaso2();
   };
 
@@ -8795,6 +8799,90 @@ function _procesarArchivoCartola(file) {
     reader.onload = () => procesar(Conciliacion.parsearCartola(reader.result));
     reader.readAsText(file, 'utf-8');
   }
+}
+
+// Panel de mapeo de columnas (pre-llenado con lo detectado, editable).
+// Si la app se equivocó (ej. tomó Saldo final como ingreso), el usuario
+// reasigna acá y la vista previa se re-calcula al instante.
+function _renderMapeoColumnas() {
+  const cont = document.getElementById('concMapeo');
+  if (!cont) return;
+  const st = _conciliacionStaging;
+  if (!st || !Array.isArray(st._filas) || !st._filas.length) { cont.innerHTML = ''; return; }
+  const filas = st._filas;
+  const cols = st._cols || {};
+  const numCols = Math.max(...filas.map(f => f.length));
+  const hdrIdx = (cols.headerIdx != null && cols.headerIdx >= 0) ? cols.headerIdx : -1;
+
+  // Etiqueta + ejemplo de cada columna
+  function ejemplo(j) {
+    for (let i = 0; i < filas.length; i++) {
+      if (i === hdrIdx) continue;
+      const v = (filas[i][j] || '').toString().trim();
+      if (v) return v.slice(0, 18);
+    }
+    return '';
+  }
+  const opts = (sel) => {
+    let o = `<option value="">(ninguna)</option>`;
+    for (let j = 0; j < numCols; j++) {
+      const lbl = (hdrIdx >= 0 && filas[hdrIdx][j]) ? String(filas[hdrIdx][j]).slice(0, 22) : `Columna ${j + 1}`;
+      const ej = ejemplo(j);
+      o += `<option value="${j}" ${String(sel) === String(j) ? 'selected' : ''}>${escapeHtml(lbl)}${ej ? ' · ej: ' + escapeHtml(ej) : ''}</option>`;
+    }
+    return o;
+  };
+  const c = st._mapeo || cols;
+  const campo = (label, id, val, hint) => `
+    <div style="min-width:170px; flex:1">
+      <label style="font-size:11px; color:var(--text-muted)">${label}</label>
+      <select id="${id}" onchange="_reaplicarMapeoCartola()" style="width:100%; font-size:12px; padding:5px 6px">${opts(val)}</select>
+      ${hint ? `<div style="font-size:10px; color:var(--text-muted); margin-top:2px">${hint}</div>` : ''}
+    </div>`;
+
+  cont.innerHTML = `
+    <details ${st._mapeoAbierto ? 'open' : ''} ontoggle="if(_conciliacionStaging) _conciliacionStaging._mapeoAbierto=this.open">
+      <summary style="cursor:pointer; font-weight:600; font-size:13px">⚙️ Columnas detectadas <span style="font-weight:400; color:var(--text-muted)">— ajusta si algo quedó mal (ej. ingresos/egresos)</span></summary>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; padding:12px; border:1px solid var(--border); border-radius:9px; background:var(--surface-2)">
+        ${campo('Fecha', 'mapFecha', c.idxFecha)}
+        ${campo('Descripción', 'mapDesc', c.idxDesc)}
+        ${campo('Ingreso (abono)', 'mapAbono', c.idxAbono, 'columna de lo que entra')}
+        ${campo('Egreso (cargo)', 'mapCargo', c.idxCargo, 'columna de lo que sale')}
+        ${campo('Monto único (con signo)', 'mapMonto', c.idxMonto, 'úsalo si hay 1 sola columna +/−')}
+      </div>
+      <div style="font-size:11px; color:var(--text-muted); margin-top:6px">Deja en "(ninguna)" la columna de Saldo. Si usas Ingreso/Egreso por separado, deja Monto único vacío.</div>
+    </details>`;
+}
+
+function _reaplicarMapeoCartola() {
+  const st = _conciliacionStaging;
+  if (!st || !Array.isArray(st._filas)) return;
+  const val = id => { const e = document.getElementById(id); return e ? e.value : ''; };
+  const mapeo = {
+    headerIdx: (st._cols && st._cols.headerIdx != null) ? st._cols.headerIdx : -1,
+    idxFecha: val('mapFecha'),
+    idxDesc: val('mapDesc'),
+    idxAbono: val('mapAbono'),
+    idxCargo: val('mapCargo'),
+    idxMonto: val('mapMonto')
+  };
+  st._mapeo = {
+    idxFecha: mapeo.idxFecha, idxDesc: mapeo.idxDesc, idxAbono: mapeo.idxAbono,
+    idxCargo: mapeo.idxCargo, idxMonto: mapeo.idxMonto, headerIdx: mapeo.headerIdx
+  };
+  const r = Conciliacion.reparsearConMapeo(st._filas, mapeo);
+  if (r.error) { toast(r.error, 'error'); return; }
+  const matches = Conciliacion.matchearMovimientos(r.movimientos, state);
+  st.items = matches.map(m => ({
+    mov: m.mov,
+    candidatos: m.candidatos,
+    decision: m.candidatos.length > 0
+      ? { tipo: 'match', candidato: m.candidatos[0] }
+      : { tipo: 'crear', categoria: _sugerirCatConc(m.mov) }
+  }));
+  st._mapeoAbierto = true;
+  _renderMapeoColumnas();
+  _renderConciliacionPaso2();
 }
 
 // Cablea drag-and-drop sobre cualquier drop-zone que dispare procesarArchivoCartola.
