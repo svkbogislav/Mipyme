@@ -6665,12 +6665,12 @@ function renderCashflow() {
     data: {
       labels,
       datasets: [
-        { type: 'bar', label: 'Entradas', data: filas.map(f => f.ent), backgroundColor: '#6da252', borderColor: '#5b9c45', borderWidth: 1, borderRadius: 4, order: 2 },
-        { type: 'bar', label: 'Salidas', data: filas.map(f => -f.sal), backgroundColor: '#e74c3c', borderColor: '#c0392b', borderWidth: 1, borderRadius: 4, order: 2 },
+        { type: 'bar', label: 'Entradas', data: filas.map(f => f.ent), backgroundColor: '#6da252', borderColor: '#5b9c45', borderWidth: 1, borderRadius: 4, order: 2, stack: 'cf' },
+        { type: 'bar', label: 'Salidas', data: filas.map(f => -f.sal), backgroundColor: '#e74c3c', borderColor: '#c0392b', borderWidth: 1, borderRadius: 4, order: 2, stack: 'cf' },
         { type: 'line', label: 'Saldo acumulado', data: filas.map(f => f.saldo), borderColor: '#3498db', backgroundColor: 'rgba(52,152,219,0.1)', tension: 0.3, fill: false, borderWidth: 3, pointRadius: 4, pointBackgroundColor: '#3498db', order: 1, yAxisID: 'y' }
       ]
     },
-    options: chartOpts({ money: true })
+    options: chartOpts({ money: true, stacked: true })
   }));
 
   // Proyección 12 semanas
