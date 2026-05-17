@@ -245,15 +245,22 @@
       meses = Array.from(new Set([...Object.keys(ingMap), ...Object.keys(gasMap)])).sort();
     }
     const mesInicio = state.config.mesInicial || meses[0];
-    let saldo = Number(state.config.saldoInicial || 0);
-    const filas = meses.map(m => {
+    const saldoInicial = Number(state.config.saldoInicial || 0);
+    // Saldo acumulado CONTINUO anclado a saldoInicial al inicio del mes inicial.
+    const netos = meses.map(m => (ingMap[m] || 0) - (gasMap[m] || 0));
+    const preRun = [];
+    let run = 0;
+    for (let i = 0; i < meses.length; i++) { preRun.push(run); run += netos[i]; }
+    let anchor = meses.findIndex(m => m >= mesInicio);
+    if (anchor === -1) anchor = meses.length;
+    const offset = saldoInicial - (anchor < meses.length ? preRun[anchor] : run);
+    const filas = meses.map((m, i) => {
       const ent = ingMap[m] || 0;
       const sal = gasMap[m] || 0;
-      const neto = ent - sal;
-      if (m >= mesInicio) saldo += neto;
-      return { mes: m, ent, sal, neto, saldo };
+      const neto = netos[i];
+      return { mes: m, ent, sal, neto, saldo: preRun[i] + neto + offset };
     });
-    const fila = filas.find(f => f.mes === ymHoy) || filas[filas.length - 1] || { ent: 0, sal: 0, neto: 0, saldo: saldo };
+    const fila = filas.find(f => f.mes === ymHoy) || filas[filas.length - 1] || { ent: 0, sal: 0, neto: 0, saldo: saldoInicial };
     const set = (id, val, cls) => {
       const el = document.getElementById(id);
       if (!el) return;

@@ -6608,13 +6608,25 @@ function renderCashflow() {
   const ingresos = ventasPorMes();
   const gastos = gastosPorMes();
   const mesInicio = state.config.mesInicial || meses[0];
-  let saldo = Number(state.config.saldoInicial || 0);
+  const saldoInicial = Number(state.config.saldoInicial || 0);
 
-  const filas = meses.map(m => {
+  // Saldo acumulado CONTINUO: acumula el neto mes a mes en todo el rango,
+  // anclado a que el saldo al INICIO del "mes inicial" = saldoInicial.
+  // (Antes solo acumulaba desde mesInicio → línea plana y luego un salto.)
+  const netos = meses.map(m => (ingresos[m] || 0) - (gastos[m] || 0));
+  const preRun = [];
+  let run = 0;
+  for (let i = 0; i < meses.length; i++) { preRun.push(run); run += netos[i]; }
+  let anchor = meses.findIndex(m => m >= mesInicio);
+  if (anchor === -1) anchor = meses.length; // mesInicio futuro/fuera de rango
+  const preAtAnchor = anchor < meses.length ? preRun[anchor] : run;
+  const offset = saldoInicial - preAtAnchor;
+
+  const filas = meses.map((m, i) => {
     const ent = ingresos[m] || 0;
     const sal = gastos[m] || 0;
-    const neto = ent - sal;
-    if (m >= mesInicio) saldo += neto;
+    const neto = netos[i];
+    const saldo = preRun[i] + neto + offset;
     return { mes: m, ent, sal, neto, saldo };
   });
 
