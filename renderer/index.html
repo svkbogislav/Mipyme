@@ -13698,19 +13698,41 @@ async function hidratarVersionSidebar() {
   // Detectar primera apertura post-update: comparar con la versión guardada
   const lastSeen = localStorage.getItem('dp_last_seen_version');
   if (lastSeen && lastSeen !== version && version !== '?') {
-    // Cambio de versión detectado → toast celebratorio + animación corta
-    setTimeout(() => {
-      toast(`✨ Actualizado a v${version} (antes v${lastSeen})`, 'success');
-      span.style.transition = 'color 0.4s, font-weight 0.4s';
-      span.style.color = 'var(--primary)';
-      span.style.fontWeight = '700';
-      setTimeout(() => {
-        span.style.color = '';
-        span.style.fontWeight = '';
-      }, 4000);
-    }, 800);
+    // Cambio de versión detectado → aviso visible (queda hasta que lo cierra)
+    setTimeout(() => mostrarAvisoActualizado(version, lastSeen), 900);
   }
   if (version !== '?') localStorage.setItem('dp_last_seen_version', version);
+}
+
+// Aviso visible de "se actualizó" — card fija arriba al centro, no bloquea
+// la app, queda hasta que el usuario la cierra (o 20s). Pensado para que
+// una usuaria no técnica note el cambio sin un toast fugaz.
+function mostrarAvisoActualizado(version, lastSeen) {
+  if (document.getElementById('avisoActualizado')) return;
+  const el = document.createElement('div');
+  el.id = 'avisoActualizado';
+  el.style.cssText = [
+    'position:fixed', 'top:18px', 'left:50%', 'transform:translateX(-50%)',
+    'z-index:99999', 'background:var(--surface)', 'color:var(--text)',
+    'border:1px solid var(--border)', 'border-left:4px solid var(--success, #16a34a)',
+    'border-radius:12px', 'box-shadow:0 10px 30px rgba(0,0,0,0.18)',
+    'padding:14px 16px', 'max-width:min(440px, calc(100vw - 32px))',
+    'display:flex', 'gap:12px', 'align-items:flex-start', 'font-size:13px'
+  ].join(';');
+  el.innerHTML = `
+    <div style="font-size:20px; line-height:1.1; flex-shrink:0">✅</div>
+    <div style="flex:1; min-width:0">
+      <div style="font-weight:700; font-size:14px; margin-bottom:2px">Mipyme se actualizó</div>
+      <div style="color:var(--text-muted); line-height:1.5">
+        Ahora estás en la versión <strong>v${escapeHtml(String(version))}</strong>
+        ${lastSeen ? `(antes tenías v${escapeHtml(String(lastSeen))})` : ''}. Todo quedó al día solo.
+      </div>
+      <button class="btn sm primary" style="margin-top:10px" onclick="(function(){var a=document.getElementById('avisoActualizado'); if(a) a.remove();})()">Entendido</button>
+    </div>
+    <button aria-label="Cerrar" onclick="(function(){var a=document.getElementById('avisoActualizado'); if(a) a.remove();})()"
+      style="background:none; border:0; color:var(--text-muted); font-size:18px; cursor:pointer; line-height:1; flex-shrink:0">×</button>`;
+  document.body.appendChild(el);
+  setTimeout(() => { const a = document.getElementById('avisoActualizado'); if (a) a.remove(); }, 20000);
 }
 
 // Sync silencioso al abrir la app: si han pasado >=24h desde la última
