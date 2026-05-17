@@ -1244,11 +1244,12 @@
             </div>
             <div style="display:flex; gap:6px; align-items:center">
               <select id="selMensualPeriod" style="width:auto; min-width:130px; font-size:12px; padding:4px 8px" onchange="actualizarConfigDashboard('mensualPeriod', this.value)">
+                <option value="period" selected>Seguir filtro de arriba</option>
                 <option value="month">Este mes</option>
                 <option value="ytd">Este año</option>
                 <option value="6">Últimos 6 meses</option>
                 <option value="12">Últimos 12 meses</option>
-                <option value="24" selected>Últimos 24 meses</option>
+                <option value="24">Últimos 24 meses</option>
                 <option value="36">Últimos 36 meses</option>
                 <option value="0">Todo el tiempo</option>
               </select>
@@ -5071,7 +5072,7 @@ function togglearWidget(key, checked) {
 function resetearPersonalizar() {
   if (!confirm('¿Volver a la configuración por defecto del dashboard? Restaura visibilidad y orden de los widgets.')) return;
   state.config.dashboard = {
-    mensualPeriod: 24, mensualYoY: false, diarioPeriod: 'period',
+    mensualPeriod: 'period', mensualYoY: false, diarioPeriod: 'period',
     topProductosPeriod: 'period', categoriasPeriod: 'period',
     widgets: { kpis: true, chartMensual: true, accountBalance: true, chartCategorias: true, chartDiario: true, topProductos: true, runway: true },
     widgetOrder: DEFAULT_WIDGET_ORDER.slice()
@@ -5459,8 +5460,17 @@ function renderChartMensualDiario(ym, yoy) {
 
 function renderChartMensual() {
   const cfg = getDashCfg();
-  const periodCfg = cfg.mensualPeriod;
+  let periodCfg = cfg.mensualPeriod;
   const yoy = !!cfg.mensualYoY;
+
+  // 'period' (default) = seguir el filtro global de arriba. Si el global es
+  // un mes específico (YYYY-MM, como "Este mes"), mostramos ese mes; si es
+  // 'all'/'ytd', el rango correspondiente.
+  if (periodCfg === 'period' || periodCfg === undefined) {
+    const g = (document.getElementById('periodSelector') || {}).value || nuevoMesActualYM();
+    if (/^\d{4}-\d{2}$/.test(g)) return renderChartMensualDiario(g, yoy);
+    periodCfg = g === 'all' ? 0 : (g === 'ytd' ? 'ytd' : 24);
+  }
 
   let isSingleMonth = false, targetYM = null;
   if (periodCfg === 'month') { isSingleMonth = true; targetYM = nuevoMesActualYM(); }
@@ -5522,8 +5532,10 @@ function renderChartMensual() {
 function getDashCfg() {
   if (!state.config.dashboard) state.config.dashboard = {};
   const d = state.config.dashboard;
-  // Defaults si faltan
-  if (d.mensualPeriod === undefined) d.mensualPeriod = 24;
+  // Defaults si faltan. Migración: el viejo default 24 ("Últimos 24 meses")
+  // daba fechas raras (rango móvil) → ahora 'period' = sigue el filtro de
+  // arriba (que parte en "Este mes"). Cada gráfico se cambia en su selector.
+  if (d.mensualPeriod === undefined || d.mensualPeriod === 24 || d.mensualPeriod === '24') d.mensualPeriod = 'period';
   if (d.mensualYoY === undefined) d.mensualYoY = false;
   // Migración: usuarios con viejo default 30 (antes "Últimos 30 días") → 'period'
   if (d.diarioPeriod === undefined || d.diarioPeriod === 30 || d.diarioPeriod === '30') d.diarioPeriod = 'period';
