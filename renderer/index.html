@@ -2552,6 +2552,13 @@
             <input id="cfgNombre" />
           </div>
         </div>
+        <div class="row" style="margin-bottom:10px">
+          <div style="flex:1">
+            <label>Giros / actividades (SII) <span style="font-weight:400; color:var(--text-muted)">— puedes tener varios</span></label>
+            <div id="cfgGirosWidget"></div>
+            <datalist id="girosList"></datalist>
+          </div>
+        </div>
         <div class="row">
           <div>
             <label>Saldo inicial de caja (CLP)</label>
@@ -3315,9 +3322,8 @@
           <input id="wizRUT" placeholder="76.123.456-7" />
         </div>
         <div>
-          <label>Giro / actividad</label>
-          <input id="wizGiro" list="girosList" placeholder="Empezá a escribir tu rubro…" autocomplete="off" />
-          <datalist id="girosList"></datalist>
+          <label>Giro / actividad <span style="font-weight:400; color:var(--text-muted)">(puedes agregar varios)</span></label>
+          <div id="wizGirosWidget"></div>
         </div>
       </div>
 
@@ -6517,10 +6523,82 @@ function renderCashflow() {
 }
 
 /* =================================================================
+   GIROS / ACTIVIDADES SII — widget múltiple, editable en cualquier
+   momento (config + wizard). Antes era un input único solo en el
+   onboarding: no permitía varios giros ni editarlo después.
+   ================================================================= */
+function _girosArray() {
+  if (Array.isArray(state.config.giros)) return state.config.giros.slice();
+  const g = (state.config.giro || '').trim();
+  return g ? [g] : [];
+}
+function _persistGiros(arr) {
+  state.config.giros = arr;
+  state.config.giro = arr.join('; '); // compat: campo legacy / reportes
+  saveState();
+}
+function _poblarGirosDatalist() {
+  const dl = document.getElementById('girosList');
+  if (dl && window.GirosSII && !dl.dataset.populated) {
+    dl.innerHTML = GirosSII.GIROS.map(g =>
+      `<option value="${escapeHtml(g.desc)}">${escapeHtml(g.cat)} · ${g.codigo}</option>`
+    ).join('');
+    dl.dataset.populated = '1';
+  }
+}
+function renderGirosWidget(containerId) {
+  const cont = document.getElementById(containerId);
+  if (!cont) return;
+  _poblarGirosDatalist();
+  const arr = _girosArray();
+  const chips = arr.length
+    ? arr.map((g, i) =>
+        `<span class="badge" style="display:inline-flex; align-items:center; gap:6px; margin:6px 6px 0 0; padding:5px 9px; font-size:12px">${escapeHtml(g)}<span onclick="quitarGiro('${containerId}', ${i})" style="cursor:pointer; font-weight:700; opacity:.65" title="Quitar">×</span></span>`
+      ).join('')
+    : `<span style="font-size:12px; color:var(--text-muted)">Ninguno aún. Agrega uno o varios.</span>`;
+  cont.innerHTML = `
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-start">
+      <input id="${containerId}_input" list="girosList" placeholder="Escribe tu rubro y presiona Agregar…" autocomplete="off" style="flex:1; min-width:220px"
+             onkeydown="if(event.key==='Enter'){event.preventDefault(); agregarGiroDesdeInput('${containerId}');}" />
+      <button type="button" class="btn sm" onclick="agregarGiroDesdeInput('${containerId}')">Agregar</button>
+    </div>
+    <div style="margin-top:2px">${chips}</div>`;
+}
+function agregarGiroDesdeInput(containerId) {
+  const inp = document.getElementById(containerId + '_input');
+  if (!inp) return;
+  const val = (inp.value || '').trim();
+  if (!val) return;
+  // Si coincide con una glosa oficial del SII, guardamos "código - glosa".
+  let store = val;
+  if (window.GirosSII) {
+    const hit = GirosSII.GIROS.find(g => g.desc.toLowerCase() === val.toLowerCase());
+    if (hit) store = `${hit.codigo} - ${hit.desc}`;
+  }
+  const arr = _girosArray();
+  if (arr.some(g => g.toLowerCase() === store.toLowerCase())) { inp.value = ''; return; }
+  arr.push(store);
+  _persistGiros(arr);
+  inp.value = '';
+  renderGirosWidget(containerId);
+  if (typeof toast === 'function') toast('Giro agregado', 'success');
+}
+function quitarGiro(containerId, idx) {
+  const arr = _girosArray();
+  arr.splice(idx, 1);
+  _persistGiros(arr);
+  renderGirosWidget(containerId);
+}
+window.renderGirosWidget = renderGirosWidget;
+window.agregarGiroDesdeInput = agregarGiroDesdeInput;
+window.quitarGiro = quitarGiro;
+
+/* =================================================================
    CONFIGURACIÓN
    ================================================================= */
 function renderConfig() {
   document.getElementById('cfgNombre').value = state.config.nombre || '';
+  renderGirosWidget('cfgGirosWidget');
   Forms.setearMontoCLP(document.getElementById('cfgSaldoInicial'), state.config.saldoInicial);
   document.getElementById('cfgMesInicial').value = state.config.mesInicial || nuevoMesActualYM();
   renderListaCategorias();
@@ -12742,21 +12820,13 @@ function abrirOnboarding() {
   const nombreActual = state.config.nombre || '';
   document.getElementById('wizNombre').value = (nombreActual === 'Mi negocio') ? '' : nombreActual;
   document.getElementById('wizRUT').value = state.config.rut || '';
-  document.getElementById('wizGiro').value = state.config.giro || '';
+  renderGirosWidget('wizGirosWidget');
   document.getElementById('wizCiudad').value = state.config.ciudad || '';
   document.getElementById('wizIVA').value = state.config.aplica_iva === false ? 'no' : 'si';
   document.getElementById('wizSaldoCaja').value = '';
   document.getElementById('wizSaldoBanco').value = '';
 
-  // Poblar datalist de giros SII (códigos de actividad económica curados
-  // para PyMEs). El usuario empieza a tipear y el browser filtra.
-  const girosList = document.getElementById('girosList');
-  if (girosList && window.GirosSII && !girosList.dataset.populated) {
-    girosList.innerHTML = GirosSII.GIROS.map(g =>
-      `<option value="${escapeHtml(g.desc)}">${escapeHtml(g.cat)} · ${g.codigo}</option>`
-    ).join('');
-    girosList.dataset.populated = '1';
-  }
+  // (El datalist de giros SII lo puebla renderGirosWidget vía _poblarGirosDatalist)
 
   // Render tarjetas de tipo de negocio
   const grid = document.getElementById('wizTiposGrid');
@@ -12867,7 +12937,7 @@ function wizardSiguiente() {
   } else if (_wizardStep === 2) {
     // Datos fiscales (todos opcionales). Guardar lo que esté lleno.
     state.config.rut = (document.getElementById('wizRUT').value || '').trim();
-    state.config.giro = (document.getElementById('wizGiro').value || '').trim();
+    // Los giros ya los persiste el widget (state.config.giros) en cada cambio.
     state.config.ciudad = (document.getElementById('wizCiudad').value || '').trim();
     state.config.aplica_iva = document.getElementById('wizIVA').value === 'si';
     saveState();
