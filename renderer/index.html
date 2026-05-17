@@ -3883,12 +3883,16 @@
       <div id="concParseError" style="display:none; padding:10px 12px; background:var(--danger-soft); border:1px solid var(--danger); border-radius:9px; color:var(--danger); font-size:13px; margin-bottom:12px"></div>
     </div>
 
-    <!-- Paso 2: revisar matches -->
+    <!-- Paso 2: PREVIEW — revisar y ajustar antes de importar -->
     <div id="concStep2" style="display:none">
+      <div style="font-weight:600; font-size:14px; margin-bottom:4px">Revisa antes de importar</div>
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:10px">
+        Esto es un <strong>preview</strong>: nada se guarda hasta que aprietes "Aplicar". Revisa cada fila — si algo no es un movimiento (ej. un saldo) ponlo en <strong>Ignorar</strong>, y corrige la categoría si hace falta.
+      </div>
       <div id="concResumen" style="background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:10px 12px; margin-bottom:12px; font-size:13px"></div>
       <div id="concListaMatches" style="max-height:50vh; overflow-y:auto; border:1px solid var(--border); border-radius:9px"></div>
       <div style="font-size:11px; color:var(--text-muted); margin-top:8px">
-        <strong>Verde:</strong> match encontrado, se marcará como conciliado. <strong>Naranja:</strong> sin match, se creará nuevo — la app <strong>detecta la categoría</strong> automáticamente (la marca "● auto"); si la corriges, lo recuerda para la próxima. <strong>Gris:</strong> ignorar.
+        <strong>Verde:</strong> match encontrado, se marcará como conciliado. <strong>Naranja:</strong> sin match, se creará nuevo — la app <strong>detecta la categoría</strong> automáticamente (la marca "● auto"); si la corriges, lo recuerda para la próxima. <strong>Gris:</strong> ignorar (no se importa). Las filas de "Saldo final/inicial" ya se descartan solas.
       </div>
     </div>
 

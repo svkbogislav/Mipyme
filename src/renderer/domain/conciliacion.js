@@ -243,6 +243,27 @@
     return null;
   }
 
+  // ¿La fila es un renglón de SALDO / TOTAL / encabezado de resumen y NO
+  // un movimiento real? Los bancos meten "Saldo final", "Saldo inicial",
+  // "Saldo disponible", "Saldo contable", "Total cargos/abonos", etc. en
+  // medio o al final de la cartola con un monto — sin esto se cuelan como
+  // ventas/gastos falsos.
+  function _esFilaSaldo(fila) {
+    const txt = (Array.isArray(fila) ? fila.join(' ') : String(fila || '')).toLowerCase();
+    if (!txt.trim()) return true;
+    // "saldo ..." (final, inicial, anterior, disponible, contable, nuevo,
+    // al cierre, del periodo, en cuenta) o "total ..." de resumen.
+    if (/\bsaldo\b\s*(final|inicial|anterior|disponible|contable|nuevo|en\s+cuenta|al\s+cierre|del\s+per[ií]odo|actual|a\s+favor)?/.test(txt)
+        && !/transferenc|pago|compra|giro|abono\s+de|dep[oó]sito\s+de|cargo\s+por/.test(txt)) {
+      // Solo si NO parece una transacción real con contraparte
+      if (/^\s*saldo\b/.test(txt) || /\bsaldo\s+(final|inicial|anterior|disponible|contable|nuevo|al|del|actual)\b/.test(txt))
+        return true;
+    }
+    if (/^\s*total\s+(cargos|abonos|movimientos|d[eé]bitos|cr[eé]ditos|general|del\s+per[ií]odo)/.test(txt)) return true;
+    if (/^\s*(saldo|total)\s*$/.test(txt)) return true;
+    return false;
+  }
+
   // Parsea un array de filas (cada fila es un array de celdas). Acepta CSV
   // ya parseado, o XLSX vía SheetJS sheet_to_json({header:1}).
   // Si detecta columna de "Categoría" tipo BICE, usa ese signo en vez de
@@ -281,6 +302,7 @@
       let ultimaFecha = null;
       for (let i = headerRow + 1; i < filas.length; i++) {
         const fila = filas[i];
+        if (_esFilaSaldo(fila)) continue; // "Saldo final/inicial", "Total ..." → no es movimiento
         // Si la fila tiene solo texto (sin monto), probablemente es footer/disclaimer.
         const montoTxt = fila[idxMonto] || '';
         if (!montoTxt || !/\d/.test(montoTxt)) continue;
@@ -325,6 +347,7 @@
     let ultimaFecha = null;
     filas.forEach((fila, i) => {
       if (i === cols.headerIdx) return;
+      if (_esFilaSaldo(fila)) return; // "Saldo final/inicial", "Total ..." → no es movimiento
       const fechaCelda = fila[cols.idxFecha] || '';
       if (fechaCelda) {
         const fD = _parsearFecha(fechaCelda);
