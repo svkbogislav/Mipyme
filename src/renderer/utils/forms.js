@@ -33,13 +33,18 @@
       const etiqueta = reglas.etiqueta || id;
       let problema = null;
 
+      // Campos con formato CLP en vivo ("1.000.000") romperían Number():
+      // hay que parsearlos quitando los separadores de miles primero.
+      const esCLP = el.hasAttribute && el.hasAttribute('data-clp');
+      const numDe = v => esCLP ? parsearCLP(v) : Number(v);
+
       if (reglas.requerido && !raw) {
         problema = `Falta ${etiqueta}`;
       } else if (reglas.positivo) {
-        const n = Number(raw);
+        const n = numDe(raw);
         if (!Number.isFinite(n) || n <= 0) problema = `${capitalize(etiqueta)} debe ser mayor a 0`;
       } else if (reglas.noNegativo) {
-        const n = Number(raw);
+        const n = numDe(raw);
         if (Number.isFinite(n) && n < 0) problema = `${capitalize(etiqueta)} no puede ser negativo`;
       }
 
