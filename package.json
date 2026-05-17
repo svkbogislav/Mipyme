@@ -100,14 +100,14 @@
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "nsis": {
-      "oneClick": false,
+      "oneClick": true,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Mipyme",
       "uninstallDisplayName": "Mipyme",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "allowToChangeInstallationDirectory": false
     }
   },
   "dependencies": {

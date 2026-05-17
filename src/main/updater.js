@@ -262,7 +262,16 @@ async function downloadRemoteUpdate() {
 function quitAndInstallRemote() {
   if (!app.isPackaged) return { ok: false, error: 'No aplica en modo desarrollo' };
   // setImmediate para que el IPC reply alcance al renderer antes del quit.
-  setImmediate(() => autoUpdater.quitAndInstall());
+  // quitAndInstall(isSilent=true, isForceRunAfter=true): en Windows (NSIS
+  // one-click) corre el instalador en silencio y relanza la app sola, sin
+  // wizard que pida clics (eso dejaba el update "pegado en Instalando…").
+  setImmediate(() => {
+    try {
+      autoUpdater.quitAndInstall(true, true);
+    } catch (e) {
+      console.error('[updater] quitAndInstall falló:', e && e.message);
+    }
+  });
   return { ok: true };
 }
 
