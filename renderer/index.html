@@ -5462,6 +5462,37 @@ function renderChartMensualDiario(ym, yoy) {
   charts.mensual = createChart('chartMensual', () => buildCashFlowChartConfig(labels, dataIn, dataOut, dataProfit, { xAxisTitle, fullDates, yoy: yoyData }));
 }
 
+// Modo "un mes": muestra el MES COMPLETO como un solo bloque (Entradas /
+// Salidas / Utilidad del mes), no el desglose día por día.
+function renderChartMensualUnMes(ym, yoy) {
+  const ingresos = ventasPorMes();
+  const costos = gastosPorMes();
+  const inM = ingresos[ym] || 0;
+  const outM = costos[ym] || 0;
+  const d = new Date(ym + '-02');
+  const label = d.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })
+    .replace(/^./, c => c.toUpperCase());
+  const labels = [label];
+  const dataIn = [inM], dataOut = [outM], dataProfit = [inM - outM];
+
+  let yoyData = null;
+  if (yoy) {
+    const [y, mes] = ym.split('-');
+    const prev = `${Number(y) - 1}-${mes}`;
+    yoyData = {
+      dataInPrev: [ingresos[prev] || 0],
+      dataOutPrev: [costos[prev] || 0],
+      yearLabel: String(Number(y) - 1)
+    };
+  }
+
+  renderCashFlowLegend(yoyData ? yoyData.yearLabel : null);
+  renderCashFlowSidePanel(inM, outM);
+  charts.mensual?.destroy();
+  toggleEmpty(document.getElementById('chartMensual'), false);
+  charts.mensual = createChart('chartMensual', () => buildCashFlowChartConfig(labels, dataIn, dataOut, dataProfit, { yoy: yoyData }));
+}
+
 function renderChartMensual() {
   const cfg = getDashCfg();
   let periodCfg = cfg.mensualPeriod;
@@ -5472,7 +5503,7 @@ function renderChartMensual() {
   // 'all'/'ytd', el rango correspondiente.
   if (periodCfg === 'period' || periodCfg === undefined) {
     const g = (document.getElementById('periodSelector') || {}).value || nuevoMesActualYM();
-    if (/^\d{4}-\d{2}$/.test(g)) return renderChartMensualDiario(g, yoy);
+    if (/^\d{4}-\d{2}$/.test(g)) return renderChartMensualUnMes(g, yoy);
     periodCfg = g === 'all' ? 0 : (g === 'ytd' ? 'ytd' : 24);
   }
 
@@ -5483,7 +5514,7 @@ function renderChartMensual() {
     isSingleMonth = true; targetYM = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   }
 
-  if (isSingleMonth) return renderChartMensualDiario(targetYM, yoy);
+  if (isSingleMonth) return renderChartMensualUnMes(targetYM, yoy);
 
   const todosMeses = rangoMeses();
   let meses;
