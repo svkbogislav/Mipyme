@@ -5536,10 +5536,13 @@ function renderChartMensual() {
 function getDashCfg() {
   if (!state.config.dashboard) state.config.dashboard = {};
   const d = state.config.dashboard;
-  // Defaults si faltan. Migración: el viejo default 24 ("Últimos 24 meses")
-  // daba fechas raras (rango móvil) → ahora 'period' = sigue el filtro de
-  // arriba (que parte en "Este mes"). Cada gráfico se cambia en su selector.
-  if (d.mensualPeriod === undefined || d.mensualPeriod === 24 || d.mensualPeriod === '24') d.mensualPeriod = 'period';
+  // Migración única (v1.0.89): el gráfico "Flujo de caja" del dashboard
+  // debe partir siguiendo el filtro de arriba ("Este mes"), no en un rango
+  // anual/móvil. Forzamos 'period' UNA vez para todos (cubre cualquier valor
+  // viejo guardado: 12, 24, 'ytd', etc.). Después el usuario puede cambiarlo
+  // en el selector del gráfico y no se vuelve a tocar.
+  if (!d._mp89) { d.mensualPeriod = 'period'; d._mp89 = true; }
+  if (d.mensualPeriod === undefined) d.mensualPeriod = 'period';
   if (d.mensualYoY === undefined) d.mensualYoY = false;
   // Migración: usuarios con viejo default 30 (antes "Últimos 30 días") → 'period'
   if (d.diarioPeriod === undefined || d.diarioPeriod === 30 || d.diarioPeriod === '30') d.diarioPeriod = 'period';
