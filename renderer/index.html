@@ -1786,6 +1786,16 @@
       </div>
 
       <div class="card" style="margin-bottom:14px">
+        <h3>🧾 Facturas electrónicas (XML)</h3>
+        <div class="card-sub">Sube el <strong>XML</strong> de tus facturas electrónicas (el que entrega el SII o tu proveedor). La app lee solo proveedor, RUT, folio, fecha y montos, y crea el gasto (o la venta, si la emitiste tú) automáticamente. Puedes soltar varios a la vez.</div>
+        <div class="file-drop" id="dropZoneFacturasXML" onclick="document.getElementById('facturaXMLFile').click()" style="margin-top:12px">
+          <strong>Haz click o arrastra tus XML acá</strong>
+          <div style="font-size:12px; color:var(--text-muted); margin-top:6px">Acepta uno o varios <code>.xml</code> de DTE (factura 33/34, boleta, nota de crédito, etc.). Detecta duplicados.</div>
+        </div>
+        <input type="file" id="facturaXMLFile" accept=".xml,application/xml,text/xml" multiple style="display:none" onchange="cargarFacturasXML(event)" />
+      </div>
+
+      <div class="card" style="margin-bottom:14px">
         <h3>🛒 Importar pedidos de Shopify (alternativa)</h3>
         <div class="card-sub">Si no quieres conectar la API, puedes importar un <code>shopify_data.json</code> generado externamente o un respaldo previo.</div>
         <div class="file-drop" id="dropZoneSubir" onclick="document.getElementById('shopifyFile2')?.click()" style="margin-top:12px">
@@ -3829,6 +3839,22 @@
   </div>
 </div>
 
+<!-- ===== MODAL: Revisar facturas XML antes de importar ===== -->
+<div class="modal-overlay" id="modalFacturasXML" onclick="if(event.target===this) cerrarModalFacturasXML()">
+  <div class="modal" style="max-width:760px; max-height:90vh; overflow-y:auto">
+    <div class="modal-header">
+      <h2 style="margin:0">Facturas detectadas</h2>
+      <button class="modal-close" onclick="cerrarModalFacturasXML()">✕</button>
+    </div>
+    <div id="facturasXMLResumen" style="font-size:13px; margin:10px 0"></div>
+    <div class="table-wrap" style="max-height:50vh; overflow:auto"><table id="facturasXMLTabla"></table></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">
+      <button class="btn ghost" onclick="cerrarModalFacturasXML()">Cancelar</button>
+      <button class="btn primary" id="btnImportarFacturasXML" onclick="confirmarImportarFacturasXML()">Importar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== MODAL: Nueva versión disponible =====
      Se abre automáticamente al boot cuando electron-updater detecta una
      versión nueva en GitHub Releases. Muestra las release notes y permite
@@ -3911,6 +3937,7 @@
 <!-- SheetJS (xlsx): parser de cartolas bancarias en Excel. Expone window.XLSX. -->
 <script src="../node_modules/xlsx/dist/xlsx.full.min.js"></script>
 <script src="../src/renderer/domain/categorizador.js"></script>
+<script src="../src/renderer/domain/dte-xml.js"></script>
 <script src="../src/renderer/domain/conciliacion.js"></script>
 <!-- Views (render functions extraídas del inline). Se cargan ANTES del script
      inline. Cada archivo expone window.renderXxx() — el inline DELETE su
@@ -8601,6 +8628,179 @@ function _bindCartolaDropZone(id) {
 function _inicializarConcDragDrop() {
   _bindCartolaDropZone('concDropZone');
   _bindCartolaDropZone('subirCartolaDropZone');
+  _bindFacturasXMLDropZone();
+}
+
+/* =================================================================
+   IMPORTAR FACTURAS XML (DTE del SII) → gasto o venta automático
+   ================================================================= */
+let _facturasXMLStaging = null;
+
+function _normalizarRUT(r) {
+  return String(r || '').toUpperCase().replace(/[^0-9K]/g, '');
+}
+function _dteKey(d) {
+  return `${d.tipoDTE || '?'}-${d.folio || '?'}-${_normalizarRUT(d.rutEmisor)}`;
+}
+function _dteKeyYaImportado(key) {
+  const enG = (state.gastos || []).some(g => g.dte_key === key);
+  const enV = (state.ventasManuales || []).some(v => v.dte_key === key);
+  return enG || enV;
+}
+
+function cargarFacturasXML(event) {
+  const files = event && event.target && event.target.files;
+  if (!files || !files.length) return;
+  const lecturas = Array.from(files).map(f => new Promise(res => {
+    const r = new FileReader();
+    r.onload = () => res({ ok: true, text: String(r.result || ''), name: f.name });
+    r.onerror = () => res({ ok: false, name: f.name });
+    r.readAsText(f);
+  }));
+  Promise.all(lecturas).then(_procesarFacturasXML);
+  event.target.value = ''; // permite re-subir el mismo archivo
+}
+
+function _bindFacturasXMLDropZone() {
+  const dz = document.getElementById('dropZoneFacturasXML');
+  if (!dz || dz.dataset.dndBound) return;
+  dz.dataset.dndBound = '1';
+  ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => {
+    e.preventDefault(); e.stopPropagation(); dz.classList.add('dragover');
+  }));
+  ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => {
+    e.preventDefault(); e.stopPropagation(); dz.classList.remove('dragover');
+  }));
+  dz.addEventListener('drop', e => {
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (!files || !files.length) return;
+    const lecturas = Array.from(files).map(f => new Promise(res => {
+      const r = new FileReader();
+      r.onload = () => res({ ok: true, text: String(r.result || ''), name: f.name });
+      r.onerror = () => res({ ok: false, name: f.name });
+      r.readAsText(f);
+    }));
+    Promise.all(lecturas).then(_procesarFacturasXML);
+  });
+}
+
+function _procesarFacturasXML(lecturas) {
+  if (!window.DTEXML) { toast('Parser de XML no disponible', 'error'); return; }
+  const ownRUT = _normalizarRUT(state.config && state.config.rut);
+  const items = [];
+  const vistos = new Set();
+  let errores = 0;
+
+  lecturas.forEach(l => {
+    if (!l.ok) { errores++; return; }
+    const res = window.DTEXML.parse(l.text);
+    if (!res.ok) { errores++; return; }
+    res.documentos.forEach(d => {
+      const key = _dteKey(d);
+      // Emisor = nosotros → es una venta que emitimos; si no, es un gasto
+      // (factura de proveedor recibida).
+      const emitidaPorNosotros = ownRUT && _normalizarRUT(d.rutEmisor) === ownRUT;
+      const signo = d.tipoDTE === 61 ? -1 : 1; // nota de crédito resta
+      const dup = _dteKeyYaImportado(key) || vistos.has(key);
+      vistos.add(key);
+      items.push({
+        d, key,
+        destino: emitidaPorNosotros ? 'venta' : 'gasto',
+        monto: Math.round(d.total) * signo,
+        dup,
+        incluir: !dup,
+      });
+    });
+  });
+
+  if (items.length === 0) {
+    toast(errores ? 'No pude leer ninguna factura válida de esos XML' : 'Sin facturas en el archivo', 'error');
+    return;
+  }
+  _facturasXMLStaging = { items, errores };
+  _renderModalFacturasXML();
+  document.getElementById('modalFacturasXML').classList.add('show');
+}
+
+function _renderModalFacturasXML() {
+  if (!_facturasXMLStaging) return;
+  const items = _facturasXMLStaging.items;
+  const nuevos = items.filter(i => !i.dup).length;
+  const dups = items.length - nuevos;
+  document.getElementById('facturasXMLResumen').innerHTML =
+    `<strong>${items.length}</strong> documento(s) leído(s) · <strong style="color:#15803d">${nuevos}</strong> nuevo(s)` +
+    (dups ? ` · <strong style="color:#b45309">${dups}</strong> ya importado(s) (se omiten)` : '') +
+    (_facturasXMLStaging.errores ? ` · <span style="color:var(--danger)">${_facturasXMLStaging.errores} archivo(s) ilegible(s)</span>` : '');
+  const t = document.getElementById('facturasXMLTabla');
+  t.innerHTML = `
+    <thead><tr><th></th><th>Tipo</th><th>Folio</th><th>Fecha</th><th>Emisor</th><th>Destino</th><th class="num">Monto</th></tr></thead>
+    <tbody>${items.map((it, idx) => {
+      const d = it.d;
+      return `<tr style="${it.dup ? 'opacity:.5' : ''}">
+        <td><input type="checkbox" ${it.incluir ? 'checked' : ''} ${it.dup ? 'disabled' : ''} onchange="_facturasXMLStaging.items[${idx}].incluir=this.checked" style="width:auto;margin:0"></td>
+        <td>${escapeHtml(d.tipoNombre)}</td>
+        <td>${escapeHtml(d.folio || '—')}</td>
+        <td>${escapeHtml(d.fecha || '—')}</td>
+        <td><strong>${escapeHtml(d.razonEmisor || d.rutEmisor || '—')}</strong><div style="font-size:11px;color:var(--text-muted)">${escapeHtml(d.rutEmisor || '')}</div></td>
+        <td>${it.destino === 'venta' ? '<span class="badge" style="background:#dbeafe;color:#1d4ed8">Venta</span>' : '<span class="badge">Gasto</span>'}${it.dup ? ' <span class="badge warning" style="font-size:10px">duplicado</span>' : ''}</td>
+        <td class="num">${clp(it.monto)}</td>
+      </tr>`;
+    }).join('')}</tbody>`;
+  const btn = document.getElementById('btnImportarFacturasXML');
+  if (btn) btn.textContent = `Importar ${nuevos}`;
+}
+
+function cerrarModalFacturasXML() {
+  document.getElementById('modalFacturasXML').classList.remove('show');
+  _facturasXMLStaging = null;
+}
+
+function confirmarImportarFacturasXML() {
+  if (!_facturasXMLStaging) return;
+  let nG = 0, nV = 0;
+  _facturasXMLStaging.items.forEach(it => {
+    if (!it.incluir || it.dup) return;
+    const d = it.d;
+    if (it.destino === 'venta') {
+      if (!Array.isArray(state.ventasManuales)) state.ventasManuales = [];
+      state.ventasManuales.push({
+        id: uid(),
+        fecha: d.fecha,
+        monto: it.monto,
+        canal: 'factura',
+        concepto: `Factura #${d.folio} — ${d.razonReceptor || d.rutReceptor || ''}`.trim(),
+        cliente: d.razonReceptor || '',
+        account_id: state.config.cuenta_default_id,
+        dte_key: it.key,
+        created_at: new Date().toISOString(),
+      });
+      nV++;
+    } else {
+      const cat = (window.Categorizador &&
+        (window.Categorizador.sugerir(`${d.razonEmisor} ${d.giroEmisor}`, -1, state) || {}).categoria) || 'Por clasificar';
+      if (!Array.isArray(state.gastos)) state.gastos = [];
+      state.gastos.push({
+        id: uid(),
+        fecha: d.fecha,
+        monto: it.monto,
+        categoria: cat,
+        proveedor: d.razonEmisor || d.rutEmisor || '—',
+        descripcion: `${d.tipoNombre} #${d.folio}` + (d.items && d.items.length ? ' — ' + d.items.slice(0, 3).map(x => x.nombre).join(', ') : ''),
+        metodo: 'Factura',
+        account_id: state.config.cuenta_default_id,
+        dte_key: it.key,
+        created_at: new Date().toISOString(),
+      });
+      nG++;
+    }
+  });
+  saveState();
+  cerrarModalFacturasXML();
+  toast(`Importado: ${nG} gasto(s)${nV ? `, ${nV} venta(s)` : ''}`, 'success');
+  if (typeof renderActivo === 'function') renderActivo();
+  if (typeof renderDashboard === 'function' && document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
+  if (typeof renderGastos === 'function') try { renderGastos(); } catch {}
+  if (typeof renderVentas === 'function') try { renderVentas(); } catch {}
 }
 
 function _renderConciliacionPaso2() {
