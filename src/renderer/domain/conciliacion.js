@@ -475,7 +475,8 @@
       idxDesc:  N(mapeo.idxDesc),
       idxMonto: N(mapeo.idxMonto),
       idxCargo: N(mapeo.idxCargo),
-      idxAbono: N(mapeo.idxAbono)
+      idxAbono: N(mapeo.idxAbono),
+      idxSigno: N(mapeo.idxSigno)   // columna Categoría (Cargos/Abonos)
     };
     const movs = [];
     let ultimaFecha = null;
@@ -489,7 +490,15 @@
       }
       if (!ultimaFecha) return;
       let monto = null;
-      if (m.idxMonto !== null) {
+      if (m.idxMonto !== null && m.idxSigno !== null) {
+        // Monto + columna Categoría (Cargos/Abonos) define el signo
+        const v = Math.abs(_parsearMonto(fila[m.idxMonto]) || 0);
+        const cat = String(fila[m.idxSigno] || '').toLowerCase();
+        if (v > 0) {
+          if (/cargo|d[eé]bito|giro|egreso/.test(cat)) monto = -v;
+          else if (/abono|cr[eé]dito|dep[oó]sito|ingreso/.test(cat)) monto = v;
+        }
+      } else if (m.idxMonto !== null) {
         monto = _parsearMonto(fila[m.idxMonto]);
       } else if (m.idxCargo !== null && m.idxAbono !== null) {
         const cargo = _parsearMonto(fila[m.idxCargo]);

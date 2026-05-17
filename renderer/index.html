@@ -8822,62 +8822,125 @@ function _renderMapeoColumnas() {
   const numCols = Math.max(...filas.map(f => f.length));
   const hdrIdx = (cols.headerIdx != null && cols.headerIdx >= 0) ? cols.headerIdx : -1;
 
-  // Etiqueta + ejemplo de cada columna
-  function ejemplo(j) {
+  // Solo columnas que tienen algún dato (oculta columnas 100% vacías).
+  const colVisibles = [];
+  for (let j = 0; j < numCols; j++) {
+    let tiene = false;
     for (let i = 0; i < filas.length; i++) {
       if (i === hdrIdx) continue;
+      if ((filas[i][j] || '').toString().trim()) { tiene = true; break; }
+    }
+    if (tiene) colVisibles.push(j);
+  }
+
+  // Roles posibles para cada columna
+  const ROLES = [
+    { v: '', t: '— ignorar —' },
+    { v: 'fecha', t: 'Fecha' },
+    { v: 'desc', t: 'Descripción' },
+    { v: 'cat', t: 'Tipo (Cargos/Abonos)' },
+    { v: 'abono', t: 'Ingreso (abono $)' },
+    { v: 'cargo', t: 'Egreso (cargo $)' },
+    { v: 'monto', t: 'Monto (con signo)' }
+  ];
+
+  // Rol actual por columna: el guardado por el usuario, o el detectado.
+  let roles = st._roles;
+  if (!roles) {
+    roles = {};
+    const c = st._mapeo || cols;
+    if (c.idxFecha != null && c.idxFecha !== '') roles[c.idxFecha] = 'fecha';
+    if (c.idxDesc  != null && c.idxDesc  !== '') roles[c.idxDesc] = 'desc';
+    if (c.idxSigno != null && c.idxSigno !== '') roles[c.idxSigno] = 'cat';
+    if (c.idxAbono != null && c.idxAbono !== '') roles[c.idxAbono] = 'abono';
+    if (c.idxCargo != null && c.idxCargo !== '') roles[c.idxCargo] = 'cargo';
+    if (c.idxMonto != null && c.idxMonto !== '') roles[c.idxMonto] = 'monto';
+    st._roles = roles;
+  }
+
+  const ejemplo = j => {
+    for (let i = 0; i < filas.length; i++) {
+      if (i === hdrIdx || _esFilaSaldoUI(filas[i])) continue;
       const v = (filas[i][j] || '').toString().trim();
-      if (v) return v.slice(0, 18);
+      if (v) return v;
     }
     return '';
-  }
-  const opts = (sel) => {
-    let o = `<option value="">(ninguna)</option>`;
-    for (let j = 0; j < numCols; j++) {
-      const lbl = (hdrIdx >= 0 && filas[hdrIdx][j]) ? String(filas[hdrIdx][j]).slice(0, 22) : `Columna ${j + 1}`;
-      const ej = ejemplo(j);
-      o += `<option value="${j}" ${String(sel) === String(j) ? 'selected' : ''}>${escapeHtml(lbl)}${ej ? ' · ej: ' + escapeHtml(ej) : ''}</option>`;
-    }
-    return o;
   };
-  const c = st._mapeo || cols;
-  const campo = (label, id, val, hint) => `
-    <div style="min-width:170px; flex:1">
-      <label style="font-size:11px; color:var(--text-muted)">${label}</label>
-      <select id="${id}" onchange="_reaplicarMapeoCartola()" style="width:100%; font-size:12px; padding:5px 6px">${opts(val)}</select>
-      ${hint ? `<div style="font-size:10px; color:var(--text-muted); margin-top:2px">${hint}</div>` : ''}
-    </div>`;
+
+  // Filas de muestra (primeras con datos, sin header ni saldos)
+  const muestra = [];
+  for (let i = 0; i < filas.length && muestra.length < 6; i++) {
+    if (i === hdrIdx || _esFilaSaldoUI(filas[i])) continue;
+    if (!filas[i].some(c => (c || '').toString().trim())) continue;
+    muestra.push(filas[i]);
+  }
+
+  const th = colVisibles.map(j => {
+    const hdrName = (hdrIdx >= 0 && filas[hdrIdx][j]) ? String(filas[hdrIdx][j]).slice(0, 18) : `Columna ${j + 1}`;
+    const sel = roles[j] || '';
+    const optsHtml = ROLES.map(r => `<option value="${r.v}" ${r.v === sel ? 'selected' : ''}>${r.t}</option>`).join('');
+    return `<th style="padding:6px; vertical-align:top; min-width:130px; border-bottom:1px solid var(--border)">
+      <select onchange="_setRolColumna(${j}, this.value)" style="width:100%; font-size:12px; padding:4px 6px; font-weight:600">${optsHtml}</select>
+      <div style="font-size:10px; color:var(--text-muted); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapeHtml(hdrName)}">${escapeHtml(hdrName)}</div>
+    </th>`;
+  }).join('');
+
+  const trs = muestra.map(f => `<tr>${colVisibles.map(j => {
+    const v = (f[j] || '').toString();
+    return `<td style="padding:5px 6px; font-size:11px; color:var(--text-muted); border-bottom:1px solid var(--border); max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" title="${escapeHtml(v)}">${escapeHtml(v.slice(0, 60))}</td>`;
+  }).join('')}</tr>`).join('');
 
   cont.innerHTML = `
-    <details ${st._mapeoAbierto ? 'open' : ''} ontoggle="if(_conciliacionStaging) _conciliacionStaging._mapeoAbierto=this.open">
-      <summary style="cursor:pointer; font-weight:600; font-size:13px">⚙️ Columnas detectadas <span style="font-weight:400; color:var(--text-muted)">— ajusta si algo quedó mal (ej. ingresos/egresos)</span></summary>
-      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; padding:12px; border:1px solid var(--border); border-radius:9px; background:var(--surface-2)">
-        ${campo('Fecha', 'mapFecha', c.idxFecha)}
-        ${campo('Descripción', 'mapDesc', c.idxDesc)}
-        ${campo('Ingreso (abono)', 'mapAbono', c.idxAbono, 'columna de lo que entra')}
-        ${campo('Egreso (cargo)', 'mapCargo', c.idxCargo, 'columna de lo que sale')}
-        ${campo('Monto único (con signo)', 'mapMonto', c.idxMonto, 'úsalo si hay 1 sola columna +/−')}
+    <details ${st._mapeoAbierto === false ? '' : 'open'} ontoggle="if(_conciliacionStaging) _conciliacionStaging._mapeoAbierto=this.open">
+      <summary style="cursor:pointer; font-weight:600; font-size:13px">⚙️ Columnas <span style="font-weight:400; color:var(--text-muted)">— arriba de cada columna elige qué es; verifica que calce con los datos</span></summary>
+      <div style="overflow-x:auto; margin-top:10px; border:1px solid var(--border); border-radius:9px; background:var(--surface-2)">
+        <table style="width:100%; border-collapse:collapse"><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table>
       </div>
-      <div style="font-size:11px; color:var(--text-muted); margin-top:6px">Deja en "(ninguna)" la columna de Saldo. Si usas Ingreso/Egreso por separado, deja Monto único vacío.</div>
+      <div style="font-size:11px; color:var(--text-muted); margin-top:6px">Pon en "ignorar" la columna de Saldo. Para banco con columna "Cargos/Abonos": marca esa como <strong>Tipo</strong> y la del valor como <strong>Monto</strong>. Si Ingreso y Egreso son columnas separadas, usa esos dos.</div>
     </details>`;
+}
+
+// _esFilaSaldo del dominio no está expuesto; replica mínima para la UI.
+function _esFilaSaldoUI(fila) {
+  const t = (Array.isArray(fila) ? fila.join(' ') : String(fila || '')).toLowerCase().trim();
+  if (!t) return true;
+  return /\bsaldo\s+(final|inicial|anterior|disponible|contable|nuevo|al|del|actual)\b/.test(t)
+      || /^\s*(saldo|total)\s*$/.test(t)
+      || /^\s*total\s+(cargos|abonos|movimientos|d[eé]bitos|cr[eé]ditos)/.test(t);
+}
+
+function _setRolColumna(j, rol) {
+  const st = _conciliacionStaging;
+  if (!st) return;
+  if (!st._roles) st._roles = {};
+  // Un rol único por columna: si otra columna ya lo tenía, se libera.
+  if (rol) {
+    Object.keys(st._roles).forEach(k => { if (st._roles[k] === rol && Number(k) !== j) delete st._roles[k]; });
+    st._roles[j] = rol;
+  } else {
+    delete st._roles[j];
+  }
+  _reaplicarMapeoCartola();
 }
 
 function _reaplicarMapeoCartola() {
   const st = _conciliacionStaging;
   if (!st || !Array.isArray(st._filas)) return;
-  const val = id => { const e = document.getElementById(id); return e ? e.value : ''; };
+  const roles = st._roles || {};
+  const find = rol => {
+    const k = Object.keys(roles).find(k => roles[k] === rol);
+    return k == null ? '' : Number(k);
+  };
   const mapeo = {
     headerIdx: (st._cols && st._cols.headerIdx != null) ? st._cols.headerIdx : -1,
-    idxFecha: val('mapFecha'),
-    idxDesc: val('mapDesc'),
-    idxAbono: val('mapAbono'),
-    idxCargo: val('mapCargo'),
-    idxMonto: val('mapMonto')
+    idxFecha: find('fecha'),
+    idxDesc:  find('desc'),
+    idxSigno: find('cat'),
+    idxAbono: find('abono'),
+    idxCargo: find('cargo'),
+    idxMonto: find('monto')
   };
-  st._mapeo = {
-    idxFecha: mapeo.idxFecha, idxDesc: mapeo.idxDesc, idxAbono: mapeo.idxAbono,
-    idxCargo: mapeo.idxCargo, idxMonto: mapeo.idxMonto, headerIdx: mapeo.headerIdx
-  };
+  st._mapeo = mapeo;
   const r = Conciliacion.reparsearConMapeo(st._filas, mapeo);
   if (r.error) { toast(r.error, 'error'); return; }
   const matches = Conciliacion.matchearMovimientos(r.movimientos, state);
@@ -8888,7 +8951,6 @@ function _reaplicarMapeoCartola() {
       ? { tipo: 'match', candidato: m.candidatos[0] }
       : { tipo: 'crear', categoria: _sugerirCatConc(m.mov) }
   }));
-  st._mapeoAbierto = true;
   _renderMapeoColumnas();
   _renderConciliacionPaso2();
 }
