@@ -26,7 +26,11 @@ const { spawn } = require('node:child_process');
 const { autoUpdater } = require('electron-updater');
 
 // electron-updater logging: importante para debug en producción
-autoUpdater.autoDownload = false;        // pedimos confirmación antes de bajar
+// Windows: update 100% silencioso → descarga sola en segundo plano y se
+// instala al cerrar la app (autoInstallOnAppQuit). Sin popup ni clic.
+// Mac: queda false (usa el bypass manual descargarEInstalarManual por la
+// firma de Apple).
+autoUpdater.autoDownload = (process.platform === 'win32');
 autoUpdater.autoInstallOnAppQuit = true; // al cerrar la app, instala lo descargado
 
 const INSTALL_CONFIG_FILE = 'install-config.json';

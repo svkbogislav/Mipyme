@@ -7228,6 +7228,20 @@ async function chequearActualizacionAlInicio() {
   }
   if (!_appIsPackaged) return;
 
+  // Windows: update 100% silencioso. checkRemoteUpdate dispara la descarga
+  // en segundo plano (autoDownload) y electron-updater instala al cerrar la
+  // app (autoInstallOnAppQuit). Sin popup ni clic.
+  if (window.electronAPI && window.electronAPI.platform === 'win32') {
+    try { await window.electronAPI.checkRemoteUpdate(); }
+    catch (e) {
+      if (_updateCheckReintentos < 1) {
+        _updateCheckReintentos++;
+        setTimeout(chequearActualizacionAlInicio, 30000);
+      }
+    }
+    return;
+  }
+
   // ¿Está en periodo de "recordarme después"?
   try {
     const remindAt = localStorage.getItem('dp_update_remind_at_v1');
