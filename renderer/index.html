@@ -2563,9 +2563,13 @@
       <div class="card" style="margin-bottom:14px">
         <h3>Empresa</h3>
         <div class="row" style="margin-bottom:10px">
-          <div>
+          <div style="flex:1">
             <label>Nombre del negocio</label>
             <input id="cfgNombre" />
+          </div>
+          <div style="flex:1">
+            <label>RUT del negocio <span style="font-weight:400; color:var(--text-muted)">— para clasificar facturas (venta tuya vs gasto)</span></label>
+            <input id="cfgRUT" placeholder="76.123.456-7" />
           </div>
         </div>
         <div class="row" style="margin-bottom:10px">
@@ -6716,6 +6720,7 @@ window.quitarGiro = quitarGiro;
    ================================================================= */
 function renderConfig() {
   document.getElementById('cfgNombre').value = state.config.nombre || '';
+  { const e = document.getElementById('cfgRUT'); if (e) e.value = state.config.rut || ''; }
   renderGirosWidget('cfgGirosWidget');
   Forms.setearMontoCLP(document.getElementById('cfgSaldoInicial'), state.config.saldoInicial);
   document.getElementById('cfgMesInicial').value = state.config.mesInicial || nuevoMesActualYM();
@@ -7309,6 +7314,7 @@ function quitarCategoria(cat) {
 
 function guardarConfigManual() {
   state.config.nombre = document.getElementById('cfgNombre').value.trim() || 'Mi negocio';
+  { const e = document.getElementById('cfgRUT'); if (e) state.config.rut = e.value.trim(); }
   state.config.saldoInicial = Forms.parsearCLP(document.getElementById('cfgSaldoInicial').value);
   state.config.mesInicial = document.getElementById('cfgMesInicial').value;
   saveState();
