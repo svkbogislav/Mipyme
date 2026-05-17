@@ -7316,8 +7316,14 @@ async function chequearActualizacionAlInicio() {
   // en segundo plano (autoDownload) y electron-updater instala al cerrar la
   // app (autoInstallOnAppQuit). Sin popup ni clic.
   if (window.electronAPI && window.electronAPI.platform === 'win32') {
-    try { await window.electronAPI.checkRemoteUpdate(); }
-    catch (e) {
+    try {
+      const r = await window.electronAPI.checkRemoteUpdate();
+      if (r && r.ok && r.hasUpdate) {
+        // Aviso al ENTRAR (no bloqueante, sin clic). La instalación es
+        // silenciosa al cerrar — no reintroducimos el clic que se colgaba.
+        mostrarAvisoUpdateDisponible(r.latestVersion);
+      }
+    } catch (e) {
       if (_updateCheckReintentos < 1) {
         _updateCheckReintentos++;
         setTimeout(chequearActualizacionAlInicio, 30000);
@@ -14244,6 +14250,35 @@ function mostrarAvisoActualizado(version, lastSeen) {
       style="background:none; border:0; color:var(--text-muted); font-size:18px; cursor:pointer; line-height:1; flex-shrink:0">×</button>`;
   document.body.appendChild(el);
   setTimeout(() => { const a = document.getElementById('avisoActualizado'); if (a) a.remove(); }, 20000);
+}
+
+// Aviso AL ENTRAR (Windows): hay una versión nueva descargándose/lista.
+// No bloquea ni pide clic — la instalación es silenciosa al cerrar la app.
+function mostrarAvisoUpdateDisponible(version) {
+  if (document.getElementById('avisoUpdateDisp')) return;
+  const el = document.createElement('div');
+  el.id = 'avisoUpdateDisp';
+  el.style.cssText = [
+    'position:fixed', 'top:18px', 'left:50%', 'transform:translateX(-50%)',
+    'z-index:99999', 'background:var(--surface)', 'color:var(--text)',
+    'border:1px solid var(--border)', 'border-left:4px solid var(--primary, #4f46e5)',
+    'border-radius:12px', 'box-shadow:0 10px 30px rgba(0,0,0,0.18)',
+    'padding:14px 16px', 'max-width:min(460px, calc(100vw - 32px))',
+    'display:flex', 'gap:12px', 'align-items:flex-start', 'font-size:13px'
+  ].join(';');
+  el.innerHTML = `
+    <div style="font-size:20px; line-height:1.1; flex-shrink:0">⬇️</div>
+    <div style="flex:1; min-width:0">
+      <div style="font-weight:700; font-size:14px; margin-bottom:2px">Hay una actualización lista</div>
+      <div style="color:var(--text-muted); line-height:1.5">
+        Versión <strong>v${escapeHtml(String(version || ''))}</strong>. Se instala <strong>sola cuando cierres la app</strong> — no tienes que hacer nada. La próxima vez que la abras ya estará al día.
+      </div>
+      <button class="btn sm primary" style="margin-top:10px" onclick="(function(){var a=document.getElementById('avisoUpdateDisp'); if(a) a.remove();})()">Entendido</button>
+    </div>
+    <button aria-label="Cerrar" onclick="(function(){var a=document.getElementById('avisoUpdateDisp'); if(a) a.remove();})()"
+      style="background:none; border:0; color:var(--text-muted); font-size:18px; cursor:pointer; line-height:1; flex-shrink:0">×</button>`;
+  document.body.appendChild(el);
+  setTimeout(() => { const a = document.getElementById('avisoUpdateDisp'); if (a) a.remove(); }, 30000);
 }
 
 // Sync silencioso al abrir la app: si han pasado >=24h desde la última
