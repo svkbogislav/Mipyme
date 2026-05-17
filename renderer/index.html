@@ -2620,6 +2620,45 @@
       <details class="config-section">
         <summary>
           <svg class="cs-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          <span class="cs-title">Comisiones e impuestos automáticos</span>
+          <span class="cs-hint">Descontar comisión por venta e IVA estimado</span>
+        </summary>
+        <div class="cs-body">
+          <div class="card" style="margin-bottom:14px">
+            <div class="card-sub" style="margin-bottom:14px">
+              Si importas tus ventas (ej. Shopify), la comisión de la pasarela y el IVA no vienen en los datos. Actívalos acá y la app los <strong>estima y descuenta solo</strong> cada mes sobre tus ventas. Son <strong>estimaciones</strong> para tener una foto realista de la utilidad — no reemplazan a tu contador.
+            </div>
+
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 0; border-top:1px solid var(--border)">
+              <label style="display:inline-flex; align-items:center; gap:8px; margin:0; cursor:pointer; font-weight:600; min-width:230px">
+                <input type="checkbox" id="cfgComisionActivo" style="width:auto; margin:0" onchange="guardarCostosEstimados()" />
+                Descontar comisión sobre ventas
+              </label>
+              <div style="display:flex; align-items:center; gap:6px">
+                <input id="cfgComisionPct" type="number" min="0" max="100" step="0.01" style="width:90px; text-align:right" oninput="guardarCostosEstimados()" /> %
+              </div>
+              <span style="font-size:11px; color:var(--text-muted)">de cada venta (ej. Transbank ~1,19% · Shopify Payments ~2%)</span>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 0; border-top:1px solid var(--border)">
+              <label style="display:inline-flex; align-items:center; gap:8px; margin:0; cursor:pointer; font-weight:600; min-width:230px">
+                <input type="checkbox" id="cfgIvaActivo" style="width:auto; margin:0" onchange="guardarCostosEstimados()" />
+                Descontar IVA estimado
+              </label>
+              <div style="display:flex; align-items:center; gap:6px">
+                <input id="cfgIvaPct" type="number" min="0" max="100" step="0.1" style="width:90px; text-align:right" oninput="guardarCostosEstimados()" /> %
+              </div>
+              <span style="font-size:11px; color:var(--text-muted)">sobre ventas (Chile: 19%). Estimación simple, no es el F29.</span>
+            </div>
+
+            <div id="costosEstimadosInfo" style="font-size:12px; color:var(--text-muted); margin-top:12px; padding-top:12px; border-top:1px solid var(--border)"></div>
+          </div>
+        </div>
+      </details>
+
+      <details class="config-section">
+        <summary>
+          <svg class="cs-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           <span class="cs-title">Reportes para el contador</span>
           <span class="cs-hint">Gastos, ventas y resumen de ganancias del mes</span>
         </summary>
@@ -6580,6 +6619,10 @@ function guardarGasto() {
 function eliminarGasto(id) {
   const g = state.gastos.find(x => x.id === id);
   if (!g) return;
+  if (g.auto_estimado) {
+    toast('Es una estimación automática (comisión/IVA). Desactívala en Configuración → Comisiones e impuestos automáticos.', '');
+    return;
+  }
   if (g.recurring_id) {
     // Es parte de una serie recurrente. Electron NO soporta prompt(), así que
     // usamos dos confirm() encadenados (ambos soportados en Electron):
@@ -6782,6 +6825,7 @@ function renderConfig() {
   refrescarShopifyAutoSyncUI();
   refrescarMetaAdsUI();
   refrescarGoogleAdsUI();
+  refrescarCostosEstimadosUI();
   refrescarCacheHistoricoUI();
   if (typeof refrescarSIIUI === 'function') refrescarSIIUI();
 
@@ -7505,6 +7549,8 @@ async function actualizarViaElectron() {
       catalog: newCatalog
     };
     saveShopify();
+    // Recalcular comisión/IVA estimados con las ventas nuevas
+    try { sincronizarCostosEstimados(); } catch {}
     const segs = ((Date.now() - t0) / 1000).toFixed(1);
     const nuevosEnCache = cacheNuevo.length - cachePrev.length;
     const cacheInfo = nuevosEnCache > 0 ? ` · +${nuevosEnCache} al cache (${cacheNuevo.length} total)` : ` · ${cacheNuevo.length} en cache`;
@@ -8521,6 +8567,106 @@ function bootstrapDatos() {
   // nombre. Cada usuario importa sus propios datos vía Subir → Shopify JSON
   // o respaldo. La data del dueño vive en un archivo local privado, fuera
   // del binario distribuido.)
+
+  // Genera/actualiza comisión e IVA estimados según ventas + config.
+  try { sincronizarCostosEstimados(); } catch (e) { console.warn('[costosEst]', e); }
+}
+
+/* =================================================================
+   COSTOS ESTIMADOS AUTOMÁTICOS (comisión por venta · IVA)
+   =================================================================
+   Cuando las ventas se importan (Shopify) la comisión y el IVA no vienen
+   en los datos. Acá se generan gastos "estimados" por mes a partir de
+   ventasPorMes() y la config (con on/off). Quedan tageados auto_estimado
+   y se regeneran idempotentemente — toda agregación que suma state.gastos
+   (dashboard, presupuesto, flujo de caja, P&L) los toma solo. */
+function _cfgCostosEstimados() {
+  if (!state.config.costosEstimados) {
+    state.config.costosEstimados = { comision: { activo: false, pct: 2 }, iva: { activo: false, pct: 19 } };
+  }
+  const c = state.config.costosEstimados;
+  if (!c.comision) c.comision = { activo: false, pct: 2 };
+  if (!c.iva) c.iva = { activo: false, pct: 19 };
+  return c;
+}
+
+function sincronizarCostosEstimados() {
+  if (!state || !state.config) return false;
+  const cfg = _cfgCostosEstimados();
+  const comOn = !!cfg.comision.activo && Number(cfg.comision.pct) > 0;
+  const ivaOn = !!cfg.iva.activo && Number(cfg.iva.pct) > 0;
+
+  const vpm = ventasPorMes();
+  const hoyYM = nuevoMesActualYM();
+  const deseados = [];
+  Object.keys(vpm).forEach(ym => {
+    const vts = Number(vpm[ym] || 0);
+    if (vts <= 0 || ym > hoyYM) return; // no estimar meses futuros
+    if (comOn) deseados.push({ tipo: 'comision', ym, monto: Math.round(vts * Number(cfg.comision.pct) / 100), pct: Number(cfg.comision.pct) });
+    if (ivaOn) deseados.push({ tipo: 'iva', ym, monto: Math.round(vts * Number(cfg.iva.pct) / 100), pct: Number(cfg.iva.pct) });
+  });
+
+  if (!Array.isArray(state.gastos)) state.gastos = [];
+  const firmaPrev = state.gastos.filter(g => g.auto_estimado)
+    .map(g => `${g.auto_estimado}|${ymOf(g.fecha)}|${Number(g.monto)}|${g._pct}`).sort().join(';');
+  const firmaNew = deseados.map(x => `${x.tipo}|${x.ym}|${x.monto}|${x.pct}`).sort().join(';');
+  if (firmaPrev === firmaNew) return false; // sin cambios → no tocar ni guardar
+
+  state.gastos = state.gastos.filter(g => !g.auto_estimado);
+  deseados.forEach(x => {
+    const lastDay = new Date(Number(x.ym.slice(0, 4)), Number(x.ym.slice(5, 7)), 0).getDate();
+    state.gastos.push({
+      id: uid(),
+      fecha: `${x.ym}-${String(lastDay).padStart(2, '0')}`,
+      monto: x.monto,
+      categoria: x.tipo === 'comision' ? 'Comisiones de venta' : 'Impuestos',
+      proveedor: 'Estimado automático',
+      descripcion: x.tipo === 'comision' ? `Comisión estimada sobre ventas (${x.pct}%)` : `IVA estimado (${x.pct}%)`,
+      metodo: 'Estimado',
+      auto_estimado: x.tipo,
+      _pct: x.pct,
+      account_id: state.config.cuenta_default_id,
+      created_at: new Date().toISOString()
+    });
+  });
+  saveState();
+  return true;
+}
+
+function guardarCostosEstimados() {
+  const cfg = _cfgCostosEstimados();
+  cfg.comision.activo = !!document.getElementById('cfgComisionActivo')?.checked;
+  cfg.comision.pct = Math.max(0, Math.min(100, Number(document.getElementById('cfgComisionPct')?.value) || 0));
+  cfg.iva.activo = !!document.getElementById('cfgIvaActivo')?.checked;
+  cfg.iva.pct = Math.max(0, Math.min(100, Number(document.getElementById('cfgIvaPct')?.value) || 0));
+  saveState();
+  sincronizarCostosEstimados();
+  refrescarCostosEstimadosUI();
+  // Refrescar vistas de plata si están activas
+  try { if (document.getElementById('view-dashboard')?.classList.contains('active')) renderDashboard(); } catch {}
+  try { if (document.getElementById('view-cashflow')?.classList.contains('active')) renderCashflow(); } catch {}
+  try { if (document.getElementById('view-presupuesto')?.classList.contains('active')) renderPresupuesto(); } catch {}
+  toast('Ajuste guardado', 'success');
+}
+
+function refrescarCostosEstimadosUI() {
+  const cfg = _cfgCostosEstimados();
+  const set = (id, val) => { const e = document.getElementById(id); if (e) e.value = val; };
+  const chk = (id, val) => { const e = document.getElementById(id); if (e) e.checked = !!val; };
+  chk('cfgComisionActivo', cfg.comision.activo);
+  set('cfgComisionPct', cfg.comision.pct);
+  chk('cfgIvaActivo', cfg.iva.activo);
+  set('cfgIvaPct', cfg.iva.pct);
+  const info = document.getElementById('costosEstimadosInfo');
+  if (info) {
+    const ests = (state.gastos || []).filter(g => g.auto_estimado);
+    if (!ests.length) {
+      info.textContent = 'Sin estimaciones activas. Actívalas arriba y se calcularán solas sobre tus ventas mensuales.';
+    } else {
+      const tot = ests.reduce((s, g) => s + Number(g.monto || 0), 0);
+      info.innerHTML = `Generadas <strong>${ests.length}</strong> estimación(es) en tus gastos (total ${clp(tot)}). Aparecen como "Estimado automático" y se recalculan solas cuando cambian tus ventas.`;
+    }
+  }
 }
 
 // (Importadores DPCL eliminados: la app ya no trae datos de ningún

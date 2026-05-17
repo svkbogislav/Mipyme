@@ -408,6 +408,7 @@
       } else {
         // Cargo: gastos
         gastos.forEach(g => {
+          if (g.auto_estimado) return; // estimaciones (comisión/IVA) no son movimientos reales
           if (conciliados.has(`gasto:${g.id}`)) return;
           if (Number(g.monto) !== absMonto) return;
           const d = _diffDias(mov.fecha, g.fecha);
