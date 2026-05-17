@@ -5326,6 +5326,22 @@ function buildCashFlowChartConfig(labels, dataIn, dataOut, dataProfit, opts = {}
       order: 1
     }
   ];
+  // Marcar el día de HOY: borde ámbar en las barras + punto grande en la
+  // línea de ganancia, para ver "dónde estamos" dentro del mes.
+  const _ti = (typeof opts.todayIndex === 'number') ? opts.todayIndex : -1;
+  if (_ti >= 0 && _ti < labels.length) {
+    [datasets[0], datasets[1]].forEach(ds => {
+      const base = ds.backgroundColor;
+      ds.backgroundColor = labels.map(() => base);
+      ds.borderColor = labels.map((_, i) => i === _ti ? '#f59e0b' : 'transparent');
+      ds.borderWidth = labels.map((_, i) => i === _ti ? 2 : 0);
+    });
+    const ld = datasets[2];
+    ld.pointRadius = labels.map((_, i) => i === _ti ? 6 : 3);
+    ld.pointBackgroundColor = labels.map((_, i) => i === _ti ? '#f59e0b' : AK.profit);
+    ld.pointBorderColor = labels.map((_, i) => i === _ti ? '#b45309' : '#fff');
+  }
+
   const config = {
     type: 'bar',
     data: { labels, datasets },
@@ -5374,7 +5390,8 @@ function buildCashFlowChartConfig(labels, dataIn, dataOut, dataProfit, opts = {}
         const idx = items[0].dataIndex;
         const f = opts.fullDates[idx];
         if (!f) return '';
-        return fmtFechaCorta.format(new Date(f + 'T12:00:00'));
+        const base = fmtFechaCorta.format(new Date(f + 'T12:00:00'));
+        return idx === _ti ? base + ' · HOY' : base;
       }
     };
   }
@@ -5463,6 +5480,12 @@ function renderChartMensualDiario(ym, yoy) {
     totalIn += inD; totalOut += outD;
   }
 
+  // Índice del día de HOY (para marcarlo en el gráfico). -1 si el mes
+  // mostrado no es el mes en curso.
+  const _hoy = new Date();
+  const todayIndex = (_hoy.getFullYear() === y && (_hoy.getMonth() + 1) === m)
+    ? _hoy.getDate() - 1 : -1;
+
   // Título del eje X: "Abril 2026"
   const xAxisTitle = monthRangeTitle(fullDates);
 
@@ -5497,7 +5520,7 @@ function renderChartMensualDiario(ym, yoy) {
   renderCashFlowSidePanel(totalIn, totalOut);
   charts.mensual?.destroy();
   toggleEmpty(document.getElementById('chartMensual'), false);
-  charts.mensual = createChart('chartMensual', () => buildCashFlowChartConfig(labels, dataIn, dataOut, dataProfit, { xAxisTitle, fullDates, yoy: yoyData }));
+  charts.mensual = createChart('chartMensual', () => buildCashFlowChartConfig(labels, dataIn, dataOut, dataProfit, { xAxisTitle, fullDates, yoy: yoyData, todayIndex }));
 }
 
 
