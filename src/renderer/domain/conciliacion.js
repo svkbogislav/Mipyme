@@ -437,14 +437,21 @@
   }
 
   // ─── Crear gasto/venta desde un movimiento sin match ──────────────────
-  function crearDesdeMovimiento(state, mov, account_id) {
+  function crearDesdeMovimiento(state, mov, account_id, categoriaOverride) {
     if (mov.monto < 0) {
-      // Cargo → gasto en "Por clasificar"
+      // Cargo → gasto. Categoría: override del usuario > sugerencia del
+      // categorizador (reglas base + aprendido) > "Por clasificar".
+      let categoria = categoriaOverride;
+      if (!categoria && window.Categorizador) {
+        const sug = window.Categorizador.sugerir(mov.descripcion, mov.monto, state);
+        if (sug && sug.categoria) categoria = sug.categoria;
+      }
+      if (!categoria) categoria = 'Por clasificar';
       const gasto = {
         id: window.uid(),
         fecha: mov.fecha,
         monto: Math.abs(mov.monto),
-        categoria: 'Por clasificar',
+        categoria,
         proveedor: mov.descripcion,
         descripcion: mov.descripcion,
         metodo: 'Transferencia',

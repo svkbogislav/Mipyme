@@ -3812,7 +3812,7 @@
       <div id="concResumen" style="background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:10px 12px; margin-bottom:12px; font-size:13px"></div>
       <div id="concListaMatches" style="max-height:50vh; overflow-y:auto; border:1px solid var(--border); border-radius:9px"></div>
       <div style="font-size:11px; color:var(--text-muted); margin-top:8px">
-        <strong>Verde:</strong> match encontrado, se marcará como conciliado. <strong>Naranja:</strong> sin match, se creará como gasto/venta nuevo (categoría "Por clasificar"). <strong>Gris:</strong> ignorar.
+        <strong>Verde:</strong> match encontrado, se marcará como conciliado. <strong>Naranja:</strong> sin match, se creará nuevo — la app <strong>detecta la categoría</strong> automáticamente (la marca "● auto"); si la corriges, lo recuerda para la próxima. <strong>Gris:</strong> ignorar.
       </div>
     </div>
 
@@ -3904,6 +3904,7 @@
 <script src="../src/renderer/domain/giros-sii.js"></script>
 <!-- SheetJS (xlsx): parser de cartolas bancarias en Excel. Expone window.XLSX. -->
 <script src="../node_modules/xlsx/dist/xlsx.full.min.js"></script>
+<script src="../src/renderer/domain/categorizador.js"></script>
 <script src="../src/renderer/domain/conciliacion.js"></script>
 <!-- Views (render functions extraídas del inline). Se cargan ANTES del script
      inline. Cada archivo expone window.renderXxx() — el inline DELETE su
@@ -8399,7 +8400,7 @@ function _procesarArchivoCartola(file) {
       candidatos: m.candidatos,
       decision: m.candidatos.length > 0
         ? { tipo: 'match', candidato: m.candidatos[0] }
-        : { tipo: 'crear' }
+        : { tipo: 'crear', categoria: _sugerirCatConc(m.mov) }
     }));
     _conciliacionStaging = {
       account_id: document.getElementById('concAccount').value,
@@ -8533,18 +8534,49 @@ function _renderConciliacionPaso2() {
       </div>
       <select onchange="cambiarDecisionConciliacion(${idx}, this.value)" style="width:auto; min-width:240px; max-width:380px">
         ${candidatosOpts}
-        <option value="crear" ${d.tipo === 'crear' ? 'selected' : ''}>Crear nuevo ${m.monto >= 0 ? 'ingreso' : 'gasto'} ("Por clasificar")</option>
+        <option value="crear" ${d.tipo === 'crear' ? 'selected' : ''}>Crear nuevo ${m.monto >= 0 ? 'ingreso' : 'gasto'}</option>
         <option value="ignorar" ${d.tipo === 'ignorar' ? 'selected' : ''}>Ignorar este movimiento</option>
       </select>
+      ${(d.tipo === 'crear' && m.monto < 0) ? `<select onchange="setCategoriaConciliacion(${idx}, this.value)" title="Categoría detectada — corrígela si está mal y la app lo recordará" style="width:auto; min-width:170px; max-width:240px">
+        ${_opcionesCategoriaConc(d.categoria)}
+      </select>${d.categoria ? `<span style="font-size:10px; color:#15803d; white-space:nowrap" title="Sugerida automáticamente">● auto</span>` : ''}` : ''}
     </div>`;
   }).join('');
+}
+
+// Sugerencia de categoría para un cargo (monto<0) usando el categorizador
+// híbrido (aprendido + reglas base). Para abonos no aplica (ventas no tienen
+// categoría). Devuelve string o null.
+function _sugerirCatConc(mov) {
+  if (!mov || mov.monto >= 0 || !window.Categorizador) return null;
+  const s = window.Categorizador.sugerir(mov.descripcion, mov.monto, state);
+  return (s && s.categoria) || null;
+}
+
+// <option>s del selector de categoría en la revisión de cartola.
+function _opcionesCategoriaConc(sel) {
+  const cats = (state.config && state.config.categorias) ? state.config.categorias.slice() : [];
+  if (!cats.includes('Por clasificar')) cats.push('Por clasificar');
+  const selVal = sel || 'Por clasificar';
+  if (sel && !cats.includes(sel)) cats.unshift(sel);
+  return cats.map(c =>
+    `<option value="${escapeHtml(c)}" ${c === selVal ? 'selected' : ''}>${escapeHtml(c)}</option>`
+  ).join('');
+}
+
+function setCategoriaConciliacion(idx, valor) {
+  if (!_conciliacionStaging) return;
+  const it = _conciliacionStaging.items[idx];
+  if (!it || it.decision.tipo !== 'crear') return;
+  it.decision.categoria = valor;
+  it.decision.categoriaManual = true; // el usuario la fijó/confirmó
 }
 
 function cambiarDecisionConciliacion(idx, valor) {
   if (!_conciliacionStaging) return;
   const it = _conciliacionStaging.items[idx];
   if (!it) return;
-  if (valor === 'crear') it.decision = { tipo: 'crear' };
+  if (valor === 'crear') it.decision = { tipo: 'crear', categoria: _sugerirCatConc(it.mov) };
   else if (valor === 'ignorar') it.decision = { tipo: 'ignorar' };
   else if (valor.startsWith('match:')) {
     const ci = Number(valor.split(':')[1]);
@@ -8562,7 +8594,12 @@ function confirmarConciliacion() {
       Conciliacion.aplicarMatch(state, it.mov, it.decision.candidato, account_id);
       aplicados++;
     } else if (it.decision.tipo === 'crear') {
-      Conciliacion.crearDesdeMovimiento(state, it.mov, account_id);
+      const cat = it.decision.categoria || null;
+      Conciliacion.crearDesdeMovimiento(state, it.mov, account_id, cat);
+      // Aprende solo lo que el usuario fijó/confirmó explícitamente.
+      if (it.decision.categoriaManual && cat && window.Categorizador) {
+        window.Categorizador.aprender(it.mov.descripcion, cat, state);
+      }
       creados++;
     }
   });
