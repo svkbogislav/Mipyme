@@ -41,6 +41,7 @@
   // en Configuración → Categorías.
   const CATEGORIAS_POR_TIPO = {
     servicios: [
+      'Proveedores',
       'Honorarios pagados',
       'Arriendo oficina',
       'Internet / Telefonía',
@@ -52,6 +53,7 @@
       'Otros'
     ],
     retail: [
+      'Proveedores',
       'Insumos / Mercadería',
       'Arriendo local',
       'Sueldos',
@@ -63,6 +65,7 @@
       'Otros'
     ],
     ecommerce: [
+      'Proveedores',
       'Insumos / Mercadería',
       'Logística',
       'Marketing',
@@ -75,6 +78,7 @@
     ],
     otro: [
       // Mismas que el defaultState legacy
+      'Proveedores',
       'Insumos / Mercadería',
       'Logística',
       'Marketing',

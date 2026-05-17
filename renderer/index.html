@@ -8579,6 +8579,18 @@ function bootstrapDatos() {
   // o respaldo. La data del dueño vive en un archivo local privado, fuera
   // del binario distribuido.)
 
+  // Migración única: agregar categoría "Proveedores" si falta (negocios
+  // creados antes de que existiera). El usuario puede borrarla después.
+  if (Array.isArray(state.config.categorias) && !state.config._catProvMigrado) {
+    if (!state.config.categorias.includes('Proveedores')) {
+      const iOtros = state.config.categorias.indexOf('Otros');
+      if (iOtros >= 0) state.config.categorias.splice(iOtros, 0, 'Proveedores');
+      else state.config.categorias.unshift('Proveedores');
+    }
+    state.config._catProvMigrado = true;
+    saveState();
+  }
+
   // Genera/actualiza comisión e IVA estimados según ventas + config.
   try { sincronizarCostosEstimados(); } catch (e) { console.warn('[costosEst]', e); }
 }
