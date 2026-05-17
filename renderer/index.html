@@ -2584,13 +2584,13 @@
         <summary>
           <svg class="cs-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           <span class="cs-title">Reportes para el contador</span>
-          <span class="cs-hint">Exportar gastos, ventas, P&amp;L del mes</span>
+          <span class="cs-hint">Gastos, ventas y resumen de ganancias del mes</span>
         </summary>
         <div class="cs-body">
 
       <div class="card" style="margin-bottom:14px">
         <h3>Reportes mensuales</h3>
-        <div class="card-sub">Exporta gastos y ventas del mes, o imprime un P&amp;L listo para enviar al contador.</div>
+        <div class="card-sub">Exporta gastos y ventas del mes, o imprime el <strong>resumen de ganancias</strong> listo para enviar al contador.</div>
         <div class="row" style="margin-top:10px">
           <div>
             <label>Período</label>
@@ -2610,8 +2610,11 @@
           </button>
           <button class="btn primary" onclick="abrirReportePnL()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-            P&amp;L imprimible (PDF)
+            Resumen de ganancias (PDF)
           </button>
+        </div>
+        <div style="font-size:12px; color:var(--text-muted); margin-top:12px; padding-top:12px; border-top:1px solid var(--border); line-height:1.6">
+          ⓘ El <strong>resumen de ganancias</strong> —el contador lo llama <strong>P&amp;L</strong> o <strong>estado de resultados</strong>— muestra en una hoja cuánto <strong>vendiste</strong>, cuánto <strong>gastaste</strong> y cuánto <strong>ganaste</strong> (o perdiste) en el período. Es lo que normalmente te pide el contador una vez al mes.
         </div>
       </div>
 
@@ -3411,6 +3414,10 @@
           <strong>Explorar por mi cuenta</strong>
           <div style="font-size:11px; color:var(--text-muted); margin-top:2px">El checklist del Dashboard me va a guiar</div>
         </button>
+      </div>
+
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn ghost" onclick="wizardAtras()" style="margin-right:auto">← Atrás</button>
       </div>
     </div>
   </div>
@@ -13103,7 +13110,7 @@ const TOUR_STOPS = [
     view: 'config',
     emoji: '📄',
     titulo: 'Reportes para el contador',
-    texto: 'En <strong>Configuración → Reportes</strong> generas el reporte mensual: CSV de gastos, CSV de ventas y P&amp;L imprimible. Una vez al mes, generas y mandas al contador por email.'
+    texto: 'En <strong>Configuración → Reportes</strong> generas el reporte mensual: CSV de gastos, CSV de ventas y el <strong>resumen de ganancias</strong> (lo que el contador llama P&amp;L: cuánto vendiste, gastaste y ganaste). Una vez al mes, generas y mandas al contador por email.'
   }
 ];
 
