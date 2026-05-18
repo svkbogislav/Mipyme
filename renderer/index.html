@@ -2635,23 +2635,41 @@
             </div>
 
             <div style="padding:12px 0; border-top:1px solid var(--border)">
-              <label style="display:inline-flex; align-items:center; gap:8px; margin:0 0 10px; cursor:pointer; font-weight:600">
+              <label style="display:inline-flex; align-items:center; gap:8px; margin:0 0 12px; cursor:pointer; font-weight:600">
                 <input type="checkbox" id="cfgComisionActivo" style="width:auto; margin:0" onchange="guardarCostosEstimados()" />
-                Descontar comisión de Shopify por venta
+                Descontar comisiones de Shopify por venta
               </label>
-              <div style="display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start; padding-left:26px">
-                <div>
-                  <div style="font-size:12px; margin-bottom:4px">Comisión base Shopify</div>
+
+              <div style="padding-left:26px; margin-bottom:14px">
+                <div style="font-size:12px; font-weight:600; margin-bottom:6px">Comisión base Shopify <span style="font-weight:400; color:var(--text-muted)">— a TODAS las ventas Shopify</span></div>
+                <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:center">
                   <div style="display:flex; align-items:center; gap:6px"><input id="cfgComisionBasePct" type="number" min="0" max="100" step="0.01" style="width:80px; text-align:right" oninput="guardarCostosEstimados()" /> %</div>
-                  <div style="font-size:10px; color:var(--text-muted); margin-top:2px">se aplica a TODAS las ventas Shopify</div>
-                </div>
-                <div>
-                  <div style="font-size:12px; margin-bottom:4px">+ recargo si el pago es Mercado Pago</div>
-                  <div style="display:flex; align-items:center; gap:6px"><input id="cfgComisionMpPct" type="number" min="0" max="100" step="0.01" style="width:80px; text-align:right" oninput="guardarCostosEstimados()" /> %</div>
-                  <div style="font-size:10px; color:var(--text-muted); margin-top:2px">solo a pedidos pagados con Mercado Pago</div>
+                  <div style="display:flex; align-items:center; gap:6px; font-size:12px">¿Cuándo se cobra?
+                    <select id="cfgComisionBaseCuando" onchange="guardarCostosEstimados()" style="font-size:12px; padding:3px 4px">
+                      <option value="inmediato">Inmediato (al recibir el pago)</option>
+                      <option value="finmes">A fin de mes</option>
+                      <option value="diafijo">Día fijo del mes</option>
+                    </select>
+                    <input id="cfgComisionBaseDia" type="number" min="1" max="31" placeholder="día" title="Día del mes" style="width:60px; text-align:right; display:none" oninput="guardarCostosEstimados()" />
+                  </div>
                 </div>
               </div>
-              <div style="font-size:11px; color:var(--text-muted); margin-top:8px; padding-left:26px">Ej: base 2% · Mercado Pago +2% → MP paga 4%, el resto 2%. Solo aplica a ventas de Shopify (las manuales/efectivo no tienen comisión).</div>
+
+              <div style="padding-left:26px">
+                <div style="font-size:12px; font-weight:600; margin-bottom:6px">Comisión Mercado Pago <span style="font-weight:400; color:var(--text-muted)">— solo a pedidos pagados con Mercado Pago (adicional a la base)</span></div>
+                <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:center">
+                  <div style="display:flex; align-items:center; gap:6px"><input id="cfgComisionMpPct" type="number" min="0" max="100" step="0.01" style="width:80px; text-align:right" oninput="guardarCostosEstimados()" /> %</div>
+                  <div style="display:flex; align-items:center; gap:6px; font-size:12px">¿Cuándo se cobra?
+                    <select id="cfgComisionMpCuando" onchange="guardarCostosEstimados()" style="font-size:12px; padding:3px 4px">
+                      <option value="inmediato">Inmediato (al recibir el pago)</option>
+                      <option value="finmes">A fin de mes</option>
+                      <option value="diafijo">Día fijo del mes</option>
+                    </select>
+                    <input id="cfgComisionMpDia" type="number" min="1" max="31" placeholder="día" title="Día del mes" style="width:60px; text-align:right; display:none" oninput="guardarCostosEstimados()" />
+                  </div>
+                </div>
+              </div>
+              <div style="font-size:11px; color:var(--text-muted); margin-top:10px; padding-left:26px">Ej: base 2% inmediato + Mercado Pago 2% inmediato → MP paga 4%, el resto 2%, descontado al recibir el pago. Si la cobran a fin de mes, ese mes la comisión recién baja la caja el último día. Solo ventas de Shopify (manuales/efectivo no tienen comisión).</div>
             </div>
 
             <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 0; border-top:1px solid var(--border)">
@@ -8704,18 +8722,42 @@ function bootstrapDatos() {
    y se regeneran idempotentemente — toda agregación que suma state.gastos
    (dashboard, presupuesto, flujo de caja, P&L) los toma solo. */
 function _cfgCostosEstimados() {
-  if (!state.config.costosEstimados) {
-    state.config.costosEstimados = { comision: { activo: false, basePct: 2, mpPct: 2 }, iva: { activo: false, pct: 19 } };
-  }
+  const def = () => ({
+    activo: false,
+    base: { pct: 2, cuando: 'inmediato', dia: 1 },
+    mp:   { pct: 2, cuando: 'inmediato', dia: 1 }
+  });
+  if (!state.config.costosEstimados) state.config.costosEstimados = { comision: def(), iva: { activo: false, pct: 19 } };
   const c = state.config.costosEstimados;
-  if (!c.comision) c.comision = { activo: false, basePct: 2, mpPct: 2 };
-  // Migración del modelo viejo (pct único) → base + recargo Mercado Pago
-  if (c.comision.basePct === undefined) {
-    c.comision.basePct = (c.comision.pct !== undefined) ? Number(c.comision.pct) : 2;
-    c.comision.mpPct = (c.comision.mpPct !== undefined) ? Number(c.comision.mpPct) : 2;
+  if (!c.comision) c.comision = def();
+  const cm = c.comision;
+  // Migración: modelos viejos (pct único → basePct/mpPct → base/mp con timing)
+  if (!cm.base || !cm.mp) {
+    const bp = (cm.basePct !== undefined) ? Number(cm.basePct)
+             : (cm.pct !== undefined ? Number(cm.pct) : 2);
+    const mp = (cm.mpPct !== undefined) ? Number(cm.mpPct) : 2;
+    cm.base = { pct: bp, cuando: 'inmediato', dia: 1 };
+    cm.mp = { pct: mp, cuando: 'inmediato', dia: 1 };
+    delete cm.basePct; delete cm.mpPct; delete cm.pct;
   }
+  ['base', 'mp'].forEach(k => {
+    if (!cm[k].cuando) cm[k].cuando = 'inmediato';
+    if (!cm[k].dia) cm[k].dia = 1;
+  });
   if (!c.iva) c.iva = { activo: false, pct: 19 };
   return c;
+}
+
+// Fecha del cargo de comisión de un mes según cuándo se cobra.
+function _fechaCargoComision(ym, cuando, dia, hoyYM, hoyYMD) {
+  const last = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0).getDate();
+  if (cuando === 'finmes') return `${ym}-${String(last).padStart(2, '0')}`;
+  if (cuando === 'diafijo') {
+    const d = Math.min(Math.max(Number(dia) || 1, 1), last);
+    return `${ym}-${String(d).padStart(2, '0')}`;
+  }
+  // inmediato: mes en curso → hoy (se va descontando); meses pasados → fin de mes
+  return (ym === hoyYM) ? hoyYMD : `${ym}-${String(last).padStart(2, '0')}`;
 }
 
 function _esPagoMercadoPago(v) {
@@ -8725,64 +8767,73 @@ function _esPagoMercadoPago(v) {
 function sincronizarCostosEstimados() {
   if (!state || !state.config) return false;
   const cfg = _cfgCostosEstimados();
-  const basePct = Number(cfg.comision.basePct) || 0;
-  const mpPct = Number(cfg.comision.mpPct) || 0;
+  const B = cfg.comision.base, MP = cfg.comision.mp;
+  const basePct = Number(B.pct) || 0;
+  const mpPct = Number(MP.pct) || 0;
   const comOn = !!cfg.comision.activo && (basePct > 0 || mpPct > 0);
   const ivaOn = !!cfg.iva.activo && Number(cfg.iva.pct) > 0;
   const hoyYM = nuevoMesActualYM();
+  const _h = new Date();
+  const hoyYMD = `${_h.getFullYear()}-${String(_h.getMonth() + 1).padStart(2, '0')}-${String(_h.getDate()).padStart(2, '0')}`;
 
-  // Comisión: por pedido SHOPIFY (no manual/efectivo), según su medio de
-  // pago. Mercado Pago = base + recargo; resto = base.
-  const comPorMes = {};
+  // Comisión por pedido SHOPIFY válido: base a todas, recargo MP solo si
+  // el pago fue Mercado Pago. Se acumula por mes y por TIPO (base / mp),
+  // porque cada uno puede cobrarse en distinto momento.
+  const baseMes = {}, mpMes = {};
   if (comOn) {
     let ventas = [];
     try { ventas = obtenerVentasClasificadas(); } catch { ventas = []; }
     ventas.forEach(v => {
-      if (v.manual) return;            // ventas manuales/efectivo: sin comisión
-      if (v._filterReason) return;     // test/cancelado/no pagado: no cuenta
+      if (v.manual || v._filterReason) return;
       const ym = ymOf(v.fecha);
       if (!ym || ym > hoyYM) return;
-      const rate = basePct + (_esPagoMercadoPago(v) ? mpPct : 0);
-      if (rate <= 0) return;
-      comPorMes[ym] = (comPorMes[ym] || 0) + Number(v.total || 0) * rate / 100;
+      const total = Number(v.total || 0);
+      if (basePct > 0) baseMes[ym] = (baseMes[ym] || 0) + total * basePct / 100;
+      if (mpPct > 0 && _esPagoMercadoPago(v)) mpMes[ym] = (mpMes[ym] || 0) + total * mpPct / 100;
     });
   }
 
-  // IVA: estimación simple = % sobre TODAS las ventas del mes.
-  const vpm = ventasPorMes();
-
+  const vpm = ventasPorMes(); // IVA: % sobre TODAS las ventas del mes
   const deseados = [];
-  Object.keys(comPorMes).forEach(ym => {
-    const m = Math.round(comPorMes[ym]);
-    if (m > 0) deseados.push({ tipo: 'comision', ym, monto: m, pct: `${basePct}+${mpPct}` });
-  });
+  const pushCom = (mapa, tipo, pct, cuando, dia, etq) => {
+    Object.keys(mapa).forEach(ym => {
+      const m = Math.round(mapa[ym]);
+      if (m <= 0) return;
+      deseados.push({
+        tipo, ym, monto: m,
+        fecha: _fechaCargoComision(ym, cuando, dia, hoyYM, hoyYMD),
+        desc: `${etq} (${pct}% · ${cuando === 'finmes' ? 'fin de mes' : cuando === 'diafijo' ? 'día ' + (dia || 1) : 'inmediato'})`,
+        sig: `${pct}|${cuando}|${dia || ''}`
+      });
+    });
+  };
+  pushCom(baseMes, 'comision_base', basePct, B.cuando, B.dia, 'Comisión base Shopify');
+  pushCom(mpMes, 'comision_mp', mpPct, MP.cuando, MP.dia, 'Comisión Mercado Pago');
   if (ivaOn) Object.keys(vpm).forEach(ym => {
     const vts = Number(vpm[ym] || 0);
     if (vts <= 0 || ym > hoyYM) return;
-    deseados.push({ tipo: 'iva', ym, monto: Math.round(vts * Number(cfg.iva.pct) / 100), pct: Number(cfg.iva.pct) });
+    const last = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0).getDate();
+    deseados.push({ tipo: 'iva', ym, monto: Math.round(vts * Number(cfg.iva.pct) / 100), fecha: `${ym}-${String(last).padStart(2, '0')}`, desc: `IVA estimado (${cfg.iva.pct}%)`, sig: String(cfg.iva.pct) });
   });
 
   if (!Array.isArray(state.gastos)) state.gastos = [];
   const firmaPrev = state.gastos.filter(g => g.auto_estimado)
-    .map(g => `${g.auto_estimado}|${ymOf(g.fecha)}|${Number(g.monto)}|${g._pct}`).sort().join(';');
-  const firmaNew = deseados.map(x => `${x.tipo}|${x.ym}|${x.monto}|${x.pct}`).sort().join(';');
-  if (firmaPrev === firmaNew) return false; // sin cambios → no tocar ni guardar
+    .map(g => `${g.auto_estimado}|${g.fecha}|${Number(g.monto)}|${g._pct}`).sort().join(';');
+  const firmaNew = deseados.map(x => `${x.tipo}|${x.fecha}|${x.monto}|${x.sig}`).sort().join(';');
+  if (firmaPrev === firmaNew) return false;
 
   state.gastos = state.gastos.filter(g => !g.auto_estimado);
   deseados.forEach(x => {
-    const lastDay = new Date(Number(x.ym.slice(0, 4)), Number(x.ym.slice(5, 7)), 0).getDate();
     state.gastos.push({
       id: uid(),
-      fecha: `${x.ym}-${String(lastDay).padStart(2, '0')}`,
+      fecha: x.fecha,
       monto: x.monto,
-      categoria: x.tipo === 'comision' ? 'Comisiones de venta' : 'Impuestos',
+      categoria: x.tipo === 'iva' ? 'Impuestos' : 'Comisiones de venta',
       proveedor: 'Estimado automático',
-      descripcion: x.tipo === 'comision'
-        ? `Comisión Shopify estimada (base ${basePct}% · Mercado Pago +${mpPct}%)`
-        : `IVA estimado (${x.pct}%)`,
+      descripcion: x.desc,
       metodo: 'Estimado',
       auto_estimado: x.tipo,
-      _pct: x.pct,
+      _pct: x.sig,
       account_id: state.config.cuenta_default_id,
       created_at: new Date().toISOString()
     });
@@ -8794,10 +8845,19 @@ function sincronizarCostosEstimados() {
 function guardarCostosEstimados() {
   const cfg = _cfgCostosEstimados();
   const num = id => Math.max(0, Math.min(100, Number(document.getElementById(id)?.value) || 0));
+  const val = id => (document.getElementById(id) || {}).value;
   cfg.comision.activo = !!document.getElementById('cfgComisionActivo')?.checked;
-  cfg.comision.basePct = num('cfgComisionBasePct');
-  cfg.comision.mpPct = num('cfgComisionMpPct');
-  delete cfg.comision.pct; // limpiar modelo viejo
+  cfg.comision.base = {
+    pct: num('cfgComisionBasePct'),
+    cuando: val('cfgComisionBaseCuando') || 'inmediato',
+    dia: Math.min(Math.max(Number(val('cfgComisionBaseDia')) || 1, 1), 31)
+  };
+  cfg.comision.mp = {
+    pct: num('cfgComisionMpPct'),
+    cuando: val('cfgComisionMpCuando') || 'inmediato',
+    dia: Math.min(Math.max(Number(val('cfgComisionMpDia')) || 1, 1), 31)
+  };
+  delete cfg.comision.basePct; delete cfg.comision.mpPct; delete cfg.comision.pct;
   cfg.iva.activo = !!document.getElementById('cfgIvaActivo')?.checked;
   cfg.iva.pct = num('cfgIvaPct');
   saveState();
@@ -8815,8 +8875,16 @@ function refrescarCostosEstimadosUI() {
   const set = (id, val) => { const e = document.getElementById(id); if (e) e.value = val; };
   const chk = (id, val) => { const e = document.getElementById(id); if (e) e.checked = !!val; };
   chk('cfgComisionActivo', cfg.comision.activo);
-  set('cfgComisionBasePct', cfg.comision.basePct);
-  set('cfgComisionMpPct', cfg.comision.mpPct);
+  const B = cfg.comision.base, MP = cfg.comision.mp;
+  set('cfgComisionBasePct', B.pct);  set('cfgComisionBaseCuando', B.cuando);  set('cfgComisionBaseDia', B.dia);
+  set('cfgComisionMpPct', MP.pct);   set('cfgComisionMpCuando', MP.cuando);   set('cfgComisionMpDia', MP.dia);
+  // Mostrar el input de día solo si "día fijo"
+  const showDia = (selId, diaId) => {
+    const s = document.getElementById(selId), d = document.getElementById(diaId);
+    if (s && d) d.style.display = (s.value === 'diafijo') ? '' : 'none';
+  };
+  showDia('cfgComisionBaseCuando', 'cfgComisionBaseDia');
+  showDia('cfgComisionMpCuando', 'cfgComisionMpDia');
   chk('cfgIvaActivo', cfg.iva.activo);
   set('cfgIvaPct', cfg.iva.pct);
   const info = document.getElementById('costosEstimadosInfo');
