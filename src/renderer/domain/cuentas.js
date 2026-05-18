@@ -91,11 +91,14 @@
       return ym >= desdeYM;
     };
 
-    // Restar gastos asignados a esta cuenta. Los "auto_estimado" (comisión
-    // Shopify / IVA estimados) NO se restan del saldo real: son provisiones
-    // para la utilidad, no plata que efectivamente salió del banco.
+    // Restar gastos asignados a esta cuenta.
+    //   - Comisión estimada (auto_estimado:'comision'): SÍ baja la caja —
+    //     la pasarela (Shopify/Mercado Pago) descuenta su comisión ANTES
+    //     de depositarte; la venta entra bruta pero te llega neta.
+    //   - IVA estimado (auto_estimado:'iva'): NO baja la caja — esa plata
+    //     sí la recibes; es una provisión para el F29 que pagas después.
     (state.gastos || []).forEach(g => {
-      if (g.auto_estimado) return;
+      if (g.auto_estimado === 'iva') return;
       const accId = g.account_id || state.config.cuenta_default_id;
       if (accId === cuentaId && incluirEnSaldo(g.fecha)) saldo -= Number(g.monto || 0);
     });
