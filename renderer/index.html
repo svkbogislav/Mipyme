@@ -914,17 +914,16 @@
     }
   }
 
-  /* Mobile chico: sidebar horizontal con scroll si overflowea (12+ items) */
+  /* Pantalla angosta: la barra de navegación ENVUELVE en varias filas
+     (no se corta por la derecha). Cada ítem no parte su texto. */
   @media (max-width: 900px) {
     .sidebar {
-      overflow-x: auto;
-      flex-wrap: nowrap !important;
-      -webkit-overflow-scrolling: touch;
-      /* Esconder scrollbar visualmente pero mantener funcionalidad */
-      scrollbar-width: none;
+      flex-wrap: wrap !important;
+      overflow-x: hidden;
+      max-width: 100%;
+      align-content: flex-start;
     }
-    .sidebar::-webkit-scrollbar { display: none; }
-    .nav-item { flex-shrink: 0; white-space: nowrap; }
+    .nav-item { flex: 0 0 auto; white-space: nowrap; }
   }
 
   /* Modal full-screen en mobile chico — mejor UX que un modal flotando */
