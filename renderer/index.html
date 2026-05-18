@@ -1786,13 +1786,13 @@
       </div>
 
       <div class="card" style="margin-bottom:14px">
-        <h3>🧾 Facturas electrónicas (XML)</h3>
-        <div class="card-sub">Sube el <strong>XML</strong> de tus facturas electrónicas (el que entrega el SII o tu proveedor). La app lee solo proveedor, RUT, folio, fecha y montos, y crea el gasto (o la venta, si la emitiste tú) automáticamente. Puedes soltar varios a la vez.</div>
+        <h3>🧾 Facturas electrónicas (XML o PDF)</h3>
+        <div class="card-sub">Sube el <strong>XML</strong> (exacto) o el <strong>PDF</strong> de tus facturas/boletas. La app lee RUT, folio, fecha y montos, y crea el gasto (o la venta, si la emitiste tú) automáticamente. Puedes soltar varios a la vez.</div>
         <div class="file-drop" id="dropZoneFacturasXML" onclick="document.getElementById('facturaXMLFile').click()" style="margin-top:12px">
-          <strong>Haz click o arrastra tus XML acá</strong>
-          <div style="font-size:12px; color:var(--text-muted); margin-top:6px">Acepta uno o varios <code>.xml</code> de DTE (factura 33/34, boleta, nota de crédito, etc.). Detecta duplicados.</div>
+          <strong>Haz click o arrastra tus archivos acá</strong>
+          <div style="font-size:12px; color:var(--text-muted); margin-top:6px">Acepta <code>.xml</code> de DTE (lo más exacto) y <code>.pdf</code> de factura/boleta con texto. Detecta duplicados. Si un PDF es escaneado (solo imagen) avisa y conviene el XML.</div>
         </div>
-        <input type="file" id="facturaXMLFile" accept=".xml,application/xml,text/xml" multiple style="display:none" onchange="cargarFacturasXML(event)" />
+        <input type="file" id="facturaXMLFile" accept=".xml,application/xml,text/xml,.pdf,application/pdf" multiple style="display:none" onchange="cargarFacturasXML(event)" />
       </div>
 
       <div class="card" style="margin-bottom:14px">
@@ -4010,6 +4010,9 @@
 <script src="../node_modules/xlsx/dist/xlsx.full.min.js"></script>
 <script src="../src/renderer/domain/categorizador.js"></script>
 <script src="../src/renderer/domain/dte-xml.js"></script>
+<!-- pdf.js (legacy UMD) para leer facturas en PDF. Expone window.pdfjsLib. -->
+<script src="../node_modules/pdfjs-dist/legacy/build/pdf.min.js"></script>
+<script src="../src/renderer/domain/factura-pdf.js"></script>
 <script src="../src/renderer/domain/conciliacion.js"></script>
 <!-- Views (render functions extraídas del inline). Se cargan ANTES del script
      inline. Cada archivo expone window.renderXxx() — el inline DELETE su
@@ -9056,16 +9059,26 @@ function _dteKeyYaImportado(key) {
   return enG || enV;
 }
 
+// Lee un archivo de factura: XML como texto, PDF como ArrayBuffer.
+function _leerFacturaFile(f) {
+  const esPdf = /\.pdf$/i.test(f.name || '') || f.type === 'application/pdf';
+  return new Promise(res => {
+    const r = new FileReader();
+    r.onerror = () => res({ ok: false, name: f.name });
+    if (esPdf) {
+      r.onload = () => res({ ok: true, kind: 'pdf', buffer: r.result, name: f.name });
+      r.readAsArrayBuffer(f);
+    } else {
+      r.onload = () => res({ ok: true, kind: 'xml', text: String(r.result || ''), name: f.name });
+      r.readAsText(f);
+    }
+  });
+}
+
 function cargarFacturasXML(event) {
   const files = event && event.target && event.target.files;
   if (!files || !files.length) return;
-  const lecturas = Array.from(files).map(f => new Promise(res => {
-    const r = new FileReader();
-    r.onload = () => res({ ok: true, text: String(r.result || ''), name: f.name });
-    r.onerror = () => res({ ok: false, name: f.name });
-    r.readAsText(f);
-  }));
-  Promise.all(lecturas).then(_procesarFacturasXML);
+  Promise.all(Array.from(files).map(_leerFacturaFile)).then(_procesarFacturasXML);
   event.target.value = ''; // permite re-subir el mismo archivo
 }
 
@@ -9082,27 +9095,28 @@ function _bindFacturasXMLDropZone() {
   dz.addEventListener('drop', e => {
     const files = e.dataTransfer && e.dataTransfer.files;
     if (!files || !files.length) return;
-    const lecturas = Array.from(files).map(f => new Promise(res => {
-      const r = new FileReader();
-      r.onload = () => res({ ok: true, text: String(r.result || ''), name: f.name });
-      r.onerror = () => res({ ok: false, name: f.name });
-      r.readAsText(f);
-    }));
-    Promise.all(lecturas).then(_procesarFacturasXML);
+    Promise.all(Array.from(files).map(_leerFacturaFile)).then(_procesarFacturasXML);
   });
 }
 
-function _procesarFacturasXML(lecturas) {
-  if (!window.DTEXML) { toast('Parser de XML no disponible', 'error'); return; }
+async function _procesarFacturasXML(lecturas) {
+  if (!window.DTEXML) { toast('Parser de facturas no disponible', 'error'); return; }
   const ownRUT = _normalizarRUT(state.config && state.config.rut);
   const items = [];
   const vistos = new Set();
   let errores = 0;
 
-  lecturas.forEach(l => {
-    if (!l.ok) { errores++; return; }
-    const res = window.DTEXML.parse(l.text);
-    if (!res.ok) { errores++; return; }
+  for (const l of lecturas) {
+    if (!l.ok) { errores++; continue; }
+    let res;
+    if (l.kind === 'pdf') {
+      if (!window.FacturaPDF) { errores++; continue; }
+      try { res = await window.FacturaPDF.parse(l.buffer); }
+      catch (e) { res = { ok: false, error: e && e.message }; }
+    } else {
+      res = window.DTEXML.parse(l.text);
+    }
+    if (!res || !res.ok) { errores++; continue; }
     res.documentos.forEach(d => {
       const key = _dteKey(d);
       // Emisor = nosotros → es una venta que emitimos; si no, es un gasto
@@ -9119,10 +9133,10 @@ function _procesarFacturasXML(lecturas) {
         incluir: !dup,
       });
     });
-  });
+  }
 
   if (items.length === 0) {
-    toast(errores ? 'No pude leer ninguna factura válida de esos XML' : 'Sin facturas en el archivo', 'error');
+    toast(errores ? 'No pude leer ninguna factura válida de esos archivos (XML o PDF)' : 'Sin facturas en el archivo', 'error');
     return;
   }
   _facturasXMLStaging = { items, errores };

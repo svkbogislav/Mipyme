@@ -112,6 +112,7 @@
   },
   "dependencies": {
     "electron-updater": "^6.8.3",
+    "pdfjs-dist": "^3.11.174",
     "xlsx": "^0.18.5"
   }
 }
