@@ -5203,6 +5203,27 @@ function resetearPersonalizar() {
 
 document.getElementById('periodSelector').addEventListener('change', renderDashboard);
 
+// Enter dentro de un modal de formulario → dispara su botón principal
+// (ej. "Guardar"). No aplica en textarea (Enter = salto de línea), ni en
+// selects/datalist/botones, ni en inputs con su propio manejo de Enter.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+  const modal = [...document.querySelectorAll('.modal-overlay.show')].pop();
+  if (!modal) return;
+  const t = e.target;
+  if (!t || !modal.contains(t)) return;
+  const tag = (t.tagName || '').toUpperCase();
+  if (tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
+  if (t.isContentEditable) return;
+  if (tag === 'INPUT' && t.hasAttribute('list')) return; // datalist (ej. giros) usa Enter para agregar
+  // Botón principal: el de la barra de acciones, o el último .btn.primary visible del modal.
+  const btn = modal.querySelector('.modal-actions .btn.primary:not([disabled])')
+           || [...modal.querySelectorAll('.btn.primary:not([disabled])')].pop();
+  if (!btn || btn.offsetParent === null) return;
+  e.preventDefault();
+  btn.click();
+});
+
 // Akaunting palette (extraída del dashboard original — verde/rosa/índigo)
 const AK = {
   income: '#6FBA88',
