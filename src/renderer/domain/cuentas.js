@@ -91,8 +91,11 @@
       return ym >= desdeYM;
     };
 
-    // Restar gastos asignados a esta cuenta
+    // Restar gastos asignados a esta cuenta. Los "auto_estimado" (comisión
+    // Shopify / IVA estimados) NO se restan del saldo real: son provisiones
+    // para la utilidad, no plata que efectivamente salió del banco.
     (state.gastos || []).forEach(g => {
+      if (g.auto_estimado) return;
       const accId = g.account_id || state.config.cuenta_default_id;
       if (accId === cuentaId && incluirEnSaldo(g.fecha)) saldo -= Number(g.monto || 0);
     });
