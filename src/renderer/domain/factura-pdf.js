@@ -46,7 +46,7 @@
     if (m) return `${m[1]}-${String(+m[2]).padStart(2, '0')}-${String(+m[3]).padStart(2, '0')}`;
     // "12 de mayo de 2026"
     const meses = { enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, julio: 7, agosto: 8, septiembre: 9, setiembre: 9, octubre: 10, noviembre: 11, diciembre: 12 };
-    m = txt.toLowerCase().match(/(\d{1,2})\s+de\s+([a-záéíóú]+)\s+de\s+(\d{4})/);
+    m = txt.toLowerCase().match(/(\d{1,2})\s+de\s+([a-záéíóú]+)\s+del?\s+(\d{4})/);
     if (m && meses[m[2]]) return `${m[3]}-${String(meses[m[2]]).padStart(2, '0')}-${String(+m[1]).padStart(2, '0')}`;
     return '';
   }
@@ -65,14 +65,34 @@
     else if (/FACTURA\s+DE\s+COMPRA/.test(U)) tipoDTE = 46;
     else if (/FACTURA/.test(U)) tipoDTE = 33;
 
-    // RUTs (formato chileno). El 1º suele ser el emisor (recuadro SII arriba).
-    const ruts = (T.match(/\b\d{1,2}\.?\d{3}\.?\d{3}\s*-\s*[\dkK]\b/g) || [])
-      .map(r => r.replace(/\s/g, ''));
-    const rutEmisor = ruts[0] || '';
+    // RUTs (formato chileno, admite espacio antes del dígito: "12.345.678- 9")
+    const reRUT = /\d{1,2}\.?\d{3}\.?\d{3}\s*-\s*[\dkK]/g;
+    const norm = r => r.replace(/\s/g, '').toUpperCase();
+    const ruts = (T.match(reRUT) || []).map(norm);
+
+    // Emisor: el RUT que va JUSTO ANTES del tipo de documento (recuadro SII:
+    // "R.U.T.: 76.587.991-4  FACTURA ELECTRONICA Nº336").
+    let rutEmisor = '';
+    const mEmi = U.match(/(\d{1,2}\.?\d{3}\.?\d{3}\s*-\s*[\dKK])[^A-Z0-9]{0,8}(?:S\.?\s*I\.?\s*I\.?\s*)?(?:FACTURA|BOLETA|NOTA\s+DE|GU[IÍ]A|LIQUIDACI)/);
+    if (mEmi) rutEmisor = norm(mEmi[1]);
+
+    // Receptor: el RUT después de "SEÑOR(ES)/CLIENTE/RECEPTOR".
     let rutReceptor = '';
-    const mRecep = U.match(/(?:SE[NÑ]OR(?:\(ES\)|ES)?|CLIENTE|RECEPTOR|R\.?U\.?T\.?\s*RECEP)[^0-9]{0,40}(\d{1,2}\.?\d{3}\.?\d{3}\s*-\s*[\dkK])/);
-    if (mRecep) rutReceptor = mRecep[1].replace(/\s/g, '');
+    const mRecep = U.match(/(?:SE[NÑ]OR\(ES\)|SE[NÑ]ORES|SE[NÑ]OR|CLIENTE|RECEPTOR)[^]{0,180}?R\.?U\.?T\.?\s*:?\s*(\d{1,2}\.?\d{3}\.?\d{3}\s*-\s*[\dKK])/);
+    if (mRecep) rutReceptor = norm(mRecep[1]);
+
+    // Fallbacks: completar con los RUTs encontrados sin pisar lo ya resuelto.
+    if (!rutEmisor) rutEmisor = ruts.find(r => r !== rutReceptor) || ruts[0] || '';
     if (!rutReceptor) rutReceptor = ruts.find(r => r !== rutEmisor) || '';
+
+    // Razón social emisor: el texto inicial antes de "GIRO:".
+    let razonEmisor = '';
+    const mRz = T.match(/^\s*([A-Za-zÁÉÍÓÚÑáéíóúñ0-9 .,&'\-]{3,70}?)\s+Giro\s*:/i);
+    if (mRz) razonEmisor = mRz[1].trim();
+    // Razón social receptor: entre "SEÑOR(ES):" y "R.U.T."
+    let razonReceptor = '';
+    const mRzR = T.match(/SE[NÑ]OR(?:\(ES\)|ES|)\s*:?\s*([^]{3,80}?)\s+R\.?U\.?T\.?\s*:/i);
+    if (mRzR) razonReceptor = mRzR[1].trim();
 
     // Folio: "N° 1234" cerca del tipo de documento, o "FOLIO 1234"
     let folio = '';
@@ -103,10 +123,10 @@
       folio: folio || '',
       fecha: fecha || '',
       rutEmisor,
-      razonEmisor: '',          // del PDF la razón social es poco fiable; se usa el RUT
+      razonEmisor: razonEmisor || '',
       giroEmisor: '',
       rutReceptor,
-      razonReceptor: '',
+      razonReceptor: razonReceptor || '',
       neto, iva, exento,
       total: Math.round(total),
       items: [],
