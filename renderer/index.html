@@ -2592,7 +2592,7 @@
           </div>
           <div style="flex:1">
             <label>RUT del negocio <span style="font-weight:400; color:var(--text-muted)">— para clasificar facturas (venta tuya vs gasto)</span></label>
-            <input id="cfgRUT" placeholder="76.123.456-7" />
+            <input id="cfgRUT" placeholder="76.123.456-7" autocomplete="off" oninput="_formatearInputRUT(this)" />
           </div>
         </div>
         <div class="row" style="margin-bottom:10px">
@@ -3400,18 +3400,22 @@
     <!-- Paso 2: datos fiscales del negocio (todos opcionales) -->
     <div class="wiz-step" id="wizStep2" style="display:none">
       <h3 style="margin:0 0 4px 0">📋 Datos del negocio</h3>
-      <p style="margin:0 0 14px 0; color:var(--text-muted); font-size:13px">Sirven para los reportes al contador. Todos opcionales — sáltalos si no los tienes a mano.</p>
+      <p style="margin:0 0 14px 0; color:var(--text-muted); font-size:13px">Sirven para los reportes al contador y para clasificar facturas. El RUT es obligatorio (salvo empresa ficticia); el resto es opcional.</p>
 
-      <div class="row" style="margin-bottom:10px">
+      <div class="row" style="margin-bottom:6px">
         <div>
-          <label>RUT empresa</label>
-          <input id="wizRUT" placeholder="76.123.456-7" />
+          <label>RUT empresa <span style="color:var(--danger)">*</span> <span style="font-weight:400; color:var(--text-muted)">(obligatorio)</span></label>
+          <input id="wizRUT" placeholder="76.123.456-7 (obligatorio)" autocomplete="off" oninput="_formatearInputRUT(this)" />
         </div>
         <div>
           <label>Giro / actividad <span style="font-weight:400; color:var(--text-muted)">(puedes agregar varios)</span></label>
           <div id="wizGirosWidget"></div>
         </div>
       </div>
+      <label style="display:flex; align-items:center; gap:8px; margin:0 0 12px; cursor:pointer; font-size:13px; color:var(--text-muted)">
+        <input type="checkbox" id="wizEmpresaFicticia" style="width:auto; margin:0" onchange="_toggleEmpresaFicticia()" />
+        Mi empresa es ficticia / de práctica — no tiene RUT
+      </label>
 
       <div class="row" style="margin-bottom:10px">
         <div>
@@ -6759,6 +6763,32 @@ function renderCashflow() {
    momento (config + wizard). Antes era un input único solo en el
    onboarding: no permitía varios giros ni editarlo después.
    ================================================================= */
+
+// Autoformatea un RUT chileno mientras se escribe: 12345678K → 12.345.678-K
+function formatearRUT(str) {
+  let s = String(str || '').replace(/[^0-9kK]/g, '').toUpperCase();
+  if (!s) return '';
+  if (s.length === 1) return s;
+  let cuerpo = s.slice(0, -1).slice(0, 8); // RUT chileno: hasta 8 dígitos
+  const dv = s.slice(-1);
+  cuerpo = cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return cuerpo + '-' + dv;
+}
+// Aplica el formato al input y deja el cursor al final (suficiente para RUT).
+function _formatearInputRUT(el) {
+  if (!el) return;
+  el.value = formatearRUT(el.value);
+}
+// Onboarding: el RUT es obligatorio salvo que la empresa sea ficticia.
+function _toggleEmpresaFicticia() {
+  const chk = document.getElementById('wizEmpresaFicticia');
+  const inp = document.getElementById('wizRUT');
+  if (!chk || !inp) return;
+  inp.disabled = !!chk.checked;
+  if (chk.checked) inp.value = '';
+  inp.placeholder = chk.checked ? 'No aplica (empresa ficticia)' : '76.123.456-7 (obligatorio)';
+}
+
 function _girosArray() {
   if (Array.isArray(state.config.giros)) return state.config.giros.slice();
   const g = (state.config.giro || '').trim();
@@ -13790,6 +13820,8 @@ function abrirOnboarding() {
   const nombreActual = state.config.nombre || '';
   document.getElementById('wizNombre').value = (nombreActual === 'Mi negocio') ? '' : nombreActual;
   document.getElementById('wizRUT').value = state.config.rut || '';
+  { const chk = document.getElementById('wizEmpresaFicticia');
+    if (chk) { chk.checked = !!state.config.empresaFicticia; _toggleEmpresaFicticia(); } }
   renderGirosWidget('wizGirosWidget');
   document.getElementById('wizCiudad').value = state.config.ciudad || '';
   document.getElementById('wizIVA').value = state.config.aplica_iva === false ? 'no' : 'si';
@@ -13905,8 +13937,18 @@ function wizardSiguiente() {
     setTimeout(() => document.getElementById('wizRUT').focus(), 100);
 
   } else if (_wizardStep === 2) {
-    // Datos fiscales (todos opcionales). Guardar lo que esté lleno.
-    state.config.rut = (document.getElementById('wizRUT').value || '').trim();
+    // Datos fiscales. RUT obligatorio salvo empresa ficticia.
+    const ficticia = !!(document.getElementById('wizEmpresaFicticia') || {}).checked;
+    const rutVal = (document.getElementById('wizRUT').value || '').trim();
+    if (!ficticia && !rutVal) {
+      toast('El RUT de la empresa es obligatorio. Si tu empresa es ficticia, marca la casilla.', 'error');
+      document.getElementById('wizRUT').classList.add('input-invalid');
+      document.getElementById('wizRUT').focus();
+      return;
+    }
+    document.getElementById('wizRUT').classList.remove('input-invalid');
+    state.config.empresaFicticia = ficticia;
+    state.config.rut = ficticia ? '' : rutVal;
     // Los giros ya los persiste el widget (state.config.giros) en cada cambio.
     state.config.ciudad = (document.getElementById('wizCiudad').value || '').trim();
     state.config.aplica_iva = document.getElementById('wizIVA').value === 'si';
