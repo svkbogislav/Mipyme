@@ -9164,12 +9164,26 @@ function _renderModalFacturasXML() {
         <td>${escapeHtml(d.folio || '—')}</td>
         <td>${escapeHtml(d.fecha || '—')}</td>
         <td><strong>${escapeHtml(d.razonEmisor || d.rutEmisor || '—')}</strong><div style="font-size:11px;color:var(--text-muted)">${escapeHtml(d.rutEmisor || '')}</div></td>
-        <td>${it.destino === 'venta' ? '<span class="badge" style="background:#dbeafe;color:#1d4ed8">Venta</span>' : '<span class="badge">Gasto</span>'}${it.dup ? ' <span class="badge warning" style="font-size:10px">duplicado</span>' : ''}</td>
+        <td>
+          <select onchange="_setDestinoFactura(${idx}, this.value)" ${it.dup ? 'disabled' : ''} style="font-size:11px; padding:3px 4px">
+            <option value="gasto" ${it.destino === 'gasto' ? 'selected' : ''}>Gasto (de proveedor)</option>
+            <option value="venta" ${it.destino === 'venta' ? 'selected' : ''}>Venta / cobro (la emití yo)</option>
+            <option value="ignorar" ${it.destino === 'ignorar' ? 'selected' : ''}>Ignorar</option>
+          </select>${it.dup ? ' <span class="badge warning" style="font-size:10px">duplicado</span>' : ''}
+        </td>
         <td class="num">${clp(it.monto)}</td>
       </tr>`;
     }).join('')}</tbody>`;
   const btn = document.getElementById('btnImportarFacturasXML');
   if (btn) btn.textContent = `Importar ${nuevos}`;
+}
+
+function _setDestinoFactura(idx, val) {
+  if (!_facturasXMLStaging) return;
+  const it = _facturasXMLStaging.items[idx];
+  if (!it) return;
+  it.destino = val;
+  it.incluir = (val !== 'ignorar') && !it.dup;
 }
 
 function cerrarModalFacturasXML() {
