@@ -2634,15 +2634,24 @@
               Si importas tus ventas (ej. Shopify), la comisión de la pasarela y el IVA no vienen en los datos. Actívalos acá y la app los <strong>estima y descuenta solo</strong> cada mes sobre tus ventas. Son <strong>estimaciones</strong> para tener una foto realista de la utilidad — no reemplazan a tu contador.
             </div>
 
-            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 0; border-top:1px solid var(--border)">
-              <label style="display:inline-flex; align-items:center; gap:8px; margin:0; cursor:pointer; font-weight:600; min-width:230px">
+            <div style="padding:12px 0; border-top:1px solid var(--border)">
+              <label style="display:inline-flex; align-items:center; gap:8px; margin:0 0 10px; cursor:pointer; font-weight:600">
                 <input type="checkbox" id="cfgComisionActivo" style="width:auto; margin:0" onchange="guardarCostosEstimados()" />
-                Descontar comisión sobre ventas
+                Descontar comisión de Shopify por venta
               </label>
-              <div style="display:flex; align-items:center; gap:6px">
-                <input id="cfgComisionPct" type="number" min="0" max="100" step="0.01" style="width:90px; text-align:right" oninput="guardarCostosEstimados()" /> %
+              <div style="display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start; padding-left:26px">
+                <div>
+                  <div style="font-size:12px; margin-bottom:4px">Comisión base Shopify</div>
+                  <div style="display:flex; align-items:center; gap:6px"><input id="cfgComisionBasePct" type="number" min="0" max="100" step="0.01" style="width:80px; text-align:right" oninput="guardarCostosEstimados()" /> %</div>
+                  <div style="font-size:10px; color:var(--text-muted); margin-top:2px">se aplica a TODAS las ventas Shopify</div>
+                </div>
+                <div>
+                  <div style="font-size:12px; margin-bottom:4px">+ recargo si el pago es Mercado Pago</div>
+                  <div style="display:flex; align-items:center; gap:6px"><input id="cfgComisionMpPct" type="number" min="0" max="100" step="0.01" style="width:80px; text-align:right" oninput="guardarCostosEstimados()" /> %</div>
+                  <div style="font-size:10px; color:var(--text-muted); margin-top:2px">solo a pedidos pagados con Mercado Pago</div>
+                </div>
               </div>
-              <span style="font-size:11px; color:var(--text-muted)">de cada venta (ej. Transbank ~1,19% · Shopify Payments ~2%)</span>
+              <div style="font-size:11px; color:var(--text-muted); margin-top:8px; padding-left:26px">Ej: base 2% · Mercado Pago +2% → MP paga 4%, el resto 2%. Solo aplica a ventas de Shopify (las manuales/efectivo no tienen comisión).</div>
             </div>
 
             <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 0; border-top:1px solid var(--border)">
@@ -8696,28 +8705,61 @@ function bootstrapDatos() {
    (dashboard, presupuesto, flujo de caja, P&L) los toma solo. */
 function _cfgCostosEstimados() {
   if (!state.config.costosEstimados) {
-    state.config.costosEstimados = { comision: { activo: false, pct: 2 }, iva: { activo: false, pct: 19 } };
+    state.config.costosEstimados = { comision: { activo: false, basePct: 2, mpPct: 2 }, iva: { activo: false, pct: 19 } };
   }
   const c = state.config.costosEstimados;
-  if (!c.comision) c.comision = { activo: false, pct: 2 };
+  if (!c.comision) c.comision = { activo: false, basePct: 2, mpPct: 2 };
+  // Migración del modelo viejo (pct único) → base + recargo Mercado Pago
+  if (c.comision.basePct === undefined) {
+    c.comision.basePct = (c.comision.pct !== undefined) ? Number(c.comision.pct) : 2;
+    c.comision.mpPct = (c.comision.mpPct !== undefined) ? Number(c.comision.mpPct) : 2;
+  }
   if (!c.iva) c.iva = { activo: false, pct: 19 };
   return c;
+}
+
+function _esPagoMercadoPago(v) {
+  return /mercad[o0]\s*pag[o0]|mercadopago/i.test(String((v && v.gateway) || ''));
 }
 
 function sincronizarCostosEstimados() {
   if (!state || !state.config) return false;
   const cfg = _cfgCostosEstimados();
-  const comOn = !!cfg.comision.activo && Number(cfg.comision.pct) > 0;
+  const basePct = Number(cfg.comision.basePct) || 0;
+  const mpPct = Number(cfg.comision.mpPct) || 0;
+  const comOn = !!cfg.comision.activo && (basePct > 0 || mpPct > 0);
   const ivaOn = !!cfg.iva.activo && Number(cfg.iva.pct) > 0;
-
-  const vpm = ventasPorMes();
   const hoyYM = nuevoMesActualYM();
+
+  // Comisión: por pedido SHOPIFY (no manual/efectivo), según su medio de
+  // pago. Mercado Pago = base + recargo; resto = base.
+  const comPorMes = {};
+  if (comOn) {
+    let ventas = [];
+    try { ventas = obtenerVentasClasificadas(); } catch { ventas = []; }
+    ventas.forEach(v => {
+      if (v.manual) return;            // ventas manuales/efectivo: sin comisión
+      if (v._filterReason) return;     // test/cancelado/no pagado: no cuenta
+      const ym = ymOf(v.fecha);
+      if (!ym || ym > hoyYM) return;
+      const rate = basePct + (_esPagoMercadoPago(v) ? mpPct : 0);
+      if (rate <= 0) return;
+      comPorMes[ym] = (comPorMes[ym] || 0) + Number(v.total || 0) * rate / 100;
+    });
+  }
+
+  // IVA: estimación simple = % sobre TODAS las ventas del mes.
+  const vpm = ventasPorMes();
+
   const deseados = [];
-  Object.keys(vpm).forEach(ym => {
+  Object.keys(comPorMes).forEach(ym => {
+    const m = Math.round(comPorMes[ym]);
+    if (m > 0) deseados.push({ tipo: 'comision', ym, monto: m, pct: `${basePct}+${mpPct}` });
+  });
+  if (ivaOn) Object.keys(vpm).forEach(ym => {
     const vts = Number(vpm[ym] || 0);
-    if (vts <= 0 || ym > hoyYM) return; // no estimar meses futuros
-    if (comOn) deseados.push({ tipo: 'comision', ym, monto: Math.round(vts * Number(cfg.comision.pct) / 100), pct: Number(cfg.comision.pct) });
-    if (ivaOn) deseados.push({ tipo: 'iva', ym, monto: Math.round(vts * Number(cfg.iva.pct) / 100), pct: Number(cfg.iva.pct) });
+    if (vts <= 0 || ym > hoyYM) return;
+    deseados.push({ tipo: 'iva', ym, monto: Math.round(vts * Number(cfg.iva.pct) / 100), pct: Number(cfg.iva.pct) });
   });
 
   if (!Array.isArray(state.gastos)) state.gastos = [];
@@ -8735,7 +8777,9 @@ function sincronizarCostosEstimados() {
       monto: x.monto,
       categoria: x.tipo === 'comision' ? 'Comisiones de venta' : 'Impuestos',
       proveedor: 'Estimado automático',
-      descripcion: x.tipo === 'comision' ? `Comisión estimada sobre ventas (${x.pct}%)` : `IVA estimado (${x.pct}%)`,
+      descripcion: x.tipo === 'comision'
+        ? `Comisión Shopify estimada (base ${basePct}% · Mercado Pago +${mpPct}%)`
+        : `IVA estimado (${x.pct}%)`,
       metodo: 'Estimado',
       auto_estimado: x.tipo,
       _pct: x.pct,
@@ -8749,10 +8793,13 @@ function sincronizarCostosEstimados() {
 
 function guardarCostosEstimados() {
   const cfg = _cfgCostosEstimados();
+  const num = id => Math.max(0, Math.min(100, Number(document.getElementById(id)?.value) || 0));
   cfg.comision.activo = !!document.getElementById('cfgComisionActivo')?.checked;
-  cfg.comision.pct = Math.max(0, Math.min(100, Number(document.getElementById('cfgComisionPct')?.value) || 0));
+  cfg.comision.basePct = num('cfgComisionBasePct');
+  cfg.comision.mpPct = num('cfgComisionMpPct');
+  delete cfg.comision.pct; // limpiar modelo viejo
   cfg.iva.activo = !!document.getElementById('cfgIvaActivo')?.checked;
-  cfg.iva.pct = Math.max(0, Math.min(100, Number(document.getElementById('cfgIvaPct')?.value) || 0));
+  cfg.iva.pct = num('cfgIvaPct');
   saveState();
   sincronizarCostosEstimados();
   refrescarCostosEstimadosUI();
@@ -8768,7 +8815,8 @@ function refrescarCostosEstimadosUI() {
   const set = (id, val) => { const e = document.getElementById(id); if (e) e.value = val; };
   const chk = (id, val) => { const e = document.getElementById(id); if (e) e.checked = !!val; };
   chk('cfgComisionActivo', cfg.comision.activo);
-  set('cfgComisionPct', cfg.comision.pct);
+  set('cfgComisionBasePct', cfg.comision.basePct);
+  set('cfgComisionMpPct', cfg.comision.mpPct);
   chk('cfgIvaActivo', cfg.iva.activo);
   set('cfgIvaPct', cfg.iva.pct);
   const info = document.getElementById('costosEstimadosInfo');

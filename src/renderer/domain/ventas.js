@@ -50,6 +50,8 @@
       cancelado: !!o.cancelled_at,
       test: esPedidoTest(o, testPatterns),
       items: o.line_items || o.items || [],
+      gateway: (Array.isArray(o.payment_gateway_names) ? o.payment_gateway_names.join(', ') : '')
+        || o.gateway || o.payment_gateway || '',
       manual: false
     };
   }

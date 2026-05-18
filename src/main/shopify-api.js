@@ -127,6 +127,10 @@ async function fetchOrdersDetailed(diasAtras = 60, creds) {
     cancelled_at: o.cancelled_at,
     financial_status: o.financial_status,
     fulfillment_status: o.fulfillment_status,
+    // Medio(s) de pago — para estimar comisión por gateway (ej. Mercado Pago)
+    payment_gateway_names: Array.isArray(o.payment_gateway_names) ? o.payment_gateway_names
+      : (o.gateway ? [o.gateway] : []),
+    gateway: o.gateway || (Array.isArray(o.payment_gateway_names) ? o.payment_gateway_names[0] : '') || '',
     currency: o.currency,
     total_price: Number(o.total_price || 0),
     subtotal_price: Number(o.subtotal_price || 0),
