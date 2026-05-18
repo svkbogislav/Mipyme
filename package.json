@@ -29,6 +29,7 @@
     "appId": "cl.mipyme.app",
     "productName": "Mipyme",
     "copyright": "© 2026 Mipyme",
+    "npmRebuild": false,
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -38,7 +39,9 @@
       "preload.js",
       "src/**/*",
       "renderer/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/canvas/**/*",
+      "!node_modules/pdfjs-dist/**/*.map"
     ],
     "extraResources": [
       {
