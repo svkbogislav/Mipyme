@@ -390,6 +390,8 @@
   body[data-perfil="personal"] .nav-item[data-view="productos"],
   body[data-perfil="personal"] .nav-item[data-view="activos"],
   body[data-perfil="personal"] [data-empresa-only] { display: none !important; }
+  /* Lo que es solo del modo personal (ej. Metas de ahorro) */
+  body:not([data-perfil="personal"]) [data-personal-only] { display: none !important; }
   .modal {
     background: var(--surface); border-radius: var(--radius); padding: 24px;
     width: 480px; max-width: 92vw; max-height: 90vh; overflow: auto;
@@ -992,6 +994,10 @@
     <div class="nav-item" data-view="presupuesto">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v4H3zM3 11h18v4H3zM3 19h18v2H3z"/></svg>
       Presupuesto
+    </div>
+    <div class="nav-item" data-view="metas" data-personal-only>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.5" fill="currentColor"/></svg>
+      Metas
     </div>
     <div class="nav-item" data-view="cashflow">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M7 14l4-4 4 4 5-5"/></svg>
@@ -2239,6 +2245,29 @@
           En <strong>Presupuesto por categoría</strong> repartes cuánto destinas a cada gasto variable (en $ o en %, tú eliges con el botón) y ves qué porción de tus costos se va en cada cosa. El <strong>Flujo de caja</strong> muestra lo que entró y salió de verdad cada mes.
         </div>
       </div>
+    </section>
+
+    <!-- =========== METAS DE AHORRO (modo personal) =========== -->
+    <section class="view" id="view-metas">
+      <div class="topbar">
+        <div>
+          <h1>Metas de ahorro</h1>
+          <div class="sub">Define cuánto quieres juntar y para cuándo. Registra tus aportes y mira cuánto te falta.</div>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn primary" onclick="abrirModalMeta()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            Nueva meta
+          </button>
+        </div>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-label">Metas activas</div><div class="kpi-value" id="metasCount">0</div></div>
+        <div class="kpi"><div class="kpi-label">Ahorrado (total metas)</div><div class="kpi-value num-pos" id="metasAhorrado">$0</div></div>
+        <div class="kpi"><div class="kpi-label">Objetivo (total)</div><div class="kpi-value" id="metasObjetivo">$0</div></div>
+        <div class="kpi"><div class="kpi-label">Falta</div><div class="kpi-value num-neg" id="metasFalta">$0</div></div>
+      </div>
+      <div id="metasLista"></div>
     </section>
 
     <!-- =========== FACTURACIÓN ELECTRÓNICA (SII / LibreDTE) =========== -->
@@ -3977,6 +4006,41 @@
   </div>
 </div>
 
+<!-- ===== MODAL: Nueva / editar meta de ahorro ===== -->
+<div class="modal-overlay" id="modalMeta" onclick="if(event.target===this) cerrarModalMeta()">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header"><h2 id="modalMetaTitulo" style="margin:0">Nueva meta</h2><button class="modal-close" onclick="cerrarModalMeta()">✕</button></div>
+    <input type="hidden" id="metaId" />
+    <div style="margin-bottom:10px"><label>¿Para qué ahorras?</label><input id="metaNombre" placeholder="Ej: Vacaciones, fondo de emergencia, pie depto" autocomplete="off" /></div>
+    <div class="row" style="margin-bottom:10px">
+      <div><label>Monto objetivo (CLP)</label><input id="metaObjetivo" type="text" inputmode="numeric" data-clp="true" placeholder="0" /></div>
+      <div><label>Fecha objetivo <span style="font-weight:400;color:var(--text-muted)">(opcional)</span></label><input id="metaFecha" type="month" /></div>
+    </div>
+    <div style="margin-bottom:10px"><label>Ya tengo ahorrado <span style="font-weight:400;color:var(--text-muted)">(opcional)</span></label><input id="metaInicial" type="text" inputmode="numeric" data-clp="true" placeholder="0" /></div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="metaBtnEliminar" onclick="eliminarMeta()" style="margin-right:auto; color:var(--danger); display:none">Eliminar meta</button>
+      <button class="btn" onclick="cerrarModalMeta()">Cancelar</button>
+      <button class="btn primary" onclick="guardarMeta()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: Agregar aporte a una meta ===== -->
+<div class="modal-overlay" id="modalAporte" onclick="if(event.target===this) cerrarModalAporte()">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header"><h2 style="margin:0">Agregar aporte</h2><button class="modal-close" onclick="cerrarModalAporte()">✕</button></div>
+    <input type="hidden" id="aporteMetaId" />
+    <div class="row" style="margin-bottom:10px">
+      <div><label>Monto (CLP)</label><input id="aporteMonto" type="text" inputmode="numeric" data-clp="true" placeholder="0" /></div>
+      <div><label>Fecha</label><input id="aporteFecha" type="date" /></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="cerrarModalAporte()">Cancelar</button>
+      <button class="btn primary" onclick="guardarAporteMeta()">Agregar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== MODAL: Nueva versión disponible =====
      Se abre automáticamente al boot cuando electron-updater detecta una
      versión nueva en GitHub Releases. Muestra las release notes y permite
@@ -4198,6 +4262,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     if (view === 'cashflow') renderCashflow();
     if (view === 'facturacion') renderFacturacion();
     if (view === 'presupuesto') renderPresupuesto();
+    if (view === 'metas') renderMetas();
     if (view === 'productos') renderProductos();
     if (view === 'activos') renderActivos();
     if (view === 'contactos') renderContactos();
@@ -8418,6 +8483,154 @@ function aplicarPerfilUI() {
   if (vTit) vTit.textContent = personal ? 'Ingresos' : 'Ventas';
   const vSub = document.querySelector('#view-ventas .topbar .sub');
   if (vSub && personal) vSub.textContent = 'Lo que entra: sueldo, honorarios, arriendos, extras';
+}
+
+/* =================================================================
+   METAS DE AHORRO (modo personal · Etapa 2)
+   Cada meta: { id, nombre, objetivo, fechaObjetivo(YYYY-MM)?, inicial,
+   aportes:[{id,fecha,monto}], created_at }. Progreso = inicial + Σ aportes.
+   ================================================================= */
+function _metas() {
+  if (!Array.isArray(state.config.metas)) state.config.metas = [];
+  return state.config.metas;
+}
+function _metaAhorrado(m) {
+  return Number(m.inicial || 0) + (m.aportes || []).reduce((s, a) => s + Number(a.monto || 0), 0);
+}
+function _metaRitmoMensual(m) {
+  const ap = (m.aportes || []).filter(a => a.fecha);
+  if (!ap.length) return 0;
+  const fechas = ap.map(a => a.fecha).sort();
+  const d0 = new Date(fechas[0] + 'T12:00:00');
+  const hoy = new Date();
+  const meses = Math.max(1, (hoy.getFullYear() - d0.getFullYear()) * 12 + (hoy.getMonth() - d0.getMonth()) + 1);
+  const total = ap.reduce((s, a) => s + Number(a.monto || 0), 0);
+  return total / meses;
+}
+
+function renderMetas() {
+  const metas = _metas();
+  const ahorrado = metas.reduce((s, m) => s + _metaAhorrado(m), 0);
+  const objetivo = metas.reduce((s, m) => s + Number(m.objetivo || 0), 0);
+  const falta = Math.max(0, objetivo - ahorrado);
+  document.getElementById('metasCount').textContent = String(metas.length);
+  document.getElementById('metasAhorrado').textContent = clp(ahorrado);
+  document.getElementById('metasObjetivo').textContent = clp(objetivo);
+  document.getElementById('metasFalta').textContent = clp(falta);
+
+  const cont = document.getElementById('metasLista');
+  if (!metas.length) {
+    cont.innerHTML = `<div class="card"><div class="empty" style="padding:24px"><h4>Aún no tienes metas</h4><p style="margin:6px 0 12px">Crea una meta de ahorro (vacaciones, fondo de emergencia, pie de un depto…) y registra tus aportes para ver el progreso.</p><button class="btn primary" onclick="abrirModalMeta()">+ Nueva meta</button></div></div>`;
+    return;
+  }
+  cont.innerHTML = metas.map(m => {
+    const ah = _metaAhorrado(m);
+    const obj = Number(m.objetivo || 0);
+    const pct = obj > 0 ? Math.min(100, ah / obj * 100) : (ah > 0 ? 100 : 0);
+    const fal = Math.max(0, obj - ah);
+    const ritmo = _metaRitmoMensual(m);
+    const listo = obj > 0 && ah >= obj;
+    let proyeccion = '';
+    if (listo) proyeccion = '<span style="color:var(--success); font-weight:600">🎉 ¡Meta cumplida!</span>';
+    else if (ritmo > 0 && fal > 0) {
+      const n = Math.ceil(fal / ritmo);
+      const d = new Date(); d.setMonth(d.getMonth() + n);
+      proyeccion = `A tu ritmo (${clp(Math.round(ritmo))}/mes) la logras en <strong>${n} mes${n === 1 ? '' : 'es'}</strong> (~${d.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}).`;
+    } else proyeccion = 'Aún sin aportes — agrega uno para estimar cuándo la logras.';
+    let requiere = '';
+    if (!listo && m.fechaObjetivo) {
+      const [y, mo] = m.fechaObjetivo.split('-').map(Number);
+      const hoy = new Date();
+      const mesesRest = (y - hoy.getFullYear()) * 12 + (mo - 1 - hoy.getMonth());
+      if (mesesRest > 0) requiere = `<div style="font-size:12px; color:var(--text-muted); margin-top:4px">Para llegar antes de ${m.fechaObjetivo}: necesitas <strong>${clp(Math.ceil(fal / mesesRest))}/mes</strong>.</div>`;
+      else requiere = `<div style="font-size:12px; color:var(--danger); margin-top:4px">La fecha objetivo (${m.fechaObjetivo}) ya pasó.</div>`;
+    }
+    const color = listo ? 'var(--success)' : (pct >= 66 ? 'var(--success)' : pct >= 33 ? 'var(--warning)' : 'var(--primary)');
+    return `<div class="card" style="margin-bottom:12px">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap">
+        <div><h3 style="margin:0">${escapeHtml(m.nombre || 'Meta')}</h3>
+          <div style="font-size:13px; color:var(--text-muted); margin-top:2px"><strong style="color:var(--text)">${clp(ah)}</strong> de ${clp(obj)} · falta ${clp(fal)}${m.fechaObjetivo ? ` · para ${escapeHtml(m.fechaObjetivo)}` : ''}</div>
+        </div>
+        <div style="display:flex; gap:6px; flex-shrink:0">
+          <button class="btn sm primary" onclick="abrirModalAporte('${m.id}')">+ Aporte</button>
+          <button class="btn sm ghost" onclick="abrirModalMeta('${m.id}')">Editar</button>
+        </div>
+      </div>
+      <div style="background:var(--surface-2); border-radius:999px; height:14px; overflow:hidden; margin:12px 0 8px">
+        <div style="height:100%; width:${pct.toFixed(0)}%; background:${color}; border-radius:999px; transition:width .3s"></div>
+      </div>
+      <div style="font-size:13px; color:var(--text-muted); line-height:1.5">${proyeccion}</div>
+      ${requiere}
+    </div>`;
+  }).join('');
+}
+
+function abrirModalMeta(id) {
+  const m = id ? _metas().find(x => x.id === id) : null;
+  document.getElementById('modalMetaTitulo').textContent = m ? 'Editar meta' : 'Nueva meta';
+  document.getElementById('metaId').value = m ? m.id : '';
+  document.getElementById('metaNombre').value = m ? (m.nombre || '') : '';
+  Forms.setearMontoCLP(document.getElementById('metaObjetivo'), m ? m.objetivo : '');
+  Forms.setearMontoCLP(document.getElementById('metaInicial'), m ? m.inicial : '');
+  document.getElementById('metaFecha').value = m && m.fechaObjetivo ? m.fechaObjetivo : '';
+  document.getElementById('metaBtnEliminar').style.display = m ? '' : 'none';
+  document.getElementById('modalMeta').classList.add('show');
+  setTimeout(() => document.getElementById('metaNombre').focus(), 80);
+}
+function cerrarModalMeta() { document.getElementById('modalMeta').classList.remove('show'); }
+function guardarMeta() {
+  const nombre = document.getElementById('metaNombre').value.trim();
+  const objetivo = Forms.parsearCLP(document.getElementById('metaObjetivo').value);
+  if (!nombre) { toast('Ponle un nombre a la meta', 'error'); return; }
+  if (!(objetivo > 0)) { toast('El monto objetivo debe ser mayor a 0', 'error'); return; }
+  const id = document.getElementById('metaId').value;
+  const metas = _metas();
+  const datos = {
+    nombre, objetivo,
+    inicial: Forms.parsearCLP(document.getElementById('metaInicial').value),
+    fechaObjetivo: document.getElementById('metaFecha').value || ''
+  };
+  if (id) {
+    const m = metas.find(x => x.id === id);
+    if (m) Object.assign(m, datos);
+  } else {
+    metas.push({ id: uid(), ...datos, aportes: [], created_at: new Date().toISOString() });
+  }
+  saveState();
+  cerrarModalMeta();
+  renderMetas();
+  toast(id ? 'Meta actualizada' : 'Meta creada', 'success');
+}
+function eliminarMeta() {
+  const id = document.getElementById('metaId').value;
+  if (!id) return;
+  if (!confirm('¿Eliminar esta meta y sus aportes registrados? (No toca tus cuentas.)')) return;
+  state.config.metas = _metas().filter(m => m.id !== id);
+  saveState();
+  cerrarModalMeta();
+  renderMetas();
+  toast('Meta eliminada', '');
+}
+function abrirModalAporte(metaId) {
+  document.getElementById('aporteMetaId').value = metaId;
+  Forms.setearMontoCLP(document.getElementById('aporteMonto'), '');
+  document.getElementById('aporteFecha').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('modalAporte').classList.add('show');
+  setTimeout(() => document.getElementById('aporteMonto').focus(), 80);
+}
+function cerrarModalAporte() { document.getElementById('modalAporte').classList.remove('show'); }
+function guardarAporteMeta() {
+  const metaId = document.getElementById('aporteMetaId').value;
+  const m = _metas().find(x => x.id === metaId);
+  if (!m) { toast('No encontré la meta', 'error'); return; }
+  const monto = Forms.parsearCLP(document.getElementById('aporteMonto').value);
+  if (!(monto > 0)) { toast('El aporte debe ser mayor a 0', 'error'); return; }
+  if (!Array.isArray(m.aportes)) m.aportes = [];
+  m.aportes.push({ id: uid(), fecha: document.getElementById('aporteFecha').value || new Date().toISOString().slice(0, 10), monto });
+  saveState();
+  cerrarModalAporte();
+  renderMetas();
+  toast('Aporte registrado', 'success');
 }
 
 function aplicarBusinessUI() {
