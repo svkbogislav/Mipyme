@@ -14204,6 +14204,13 @@ const COSTOS_FIJOS_SUGERIDOS = {
     { categoria: 'Honorarios',             descripcion: 'Contador externo' },
     { categoria: 'Apps / Software',        descripcion: 'Software' },
     { categoria: 'Marketing',              descripcion: 'Marketing / publicidad' }
+  ],
+  personal: [
+    { categoria: 'Vivienda (arriendo/dividendo)', descripcion: 'Arriendo o dividendo' },
+    { categoria: 'Servicios (luz/agua/internet)', descripcion: 'Luz / agua / gas / internet' },
+    { categoria: 'Transporte',             descripcion: 'Bencina / transporte / TAG' },
+    { categoria: 'Salud',                  descripcion: 'Isapre / seguro / gimnasio' },
+    { categoria: 'Ocio / Entretención',    descripcion: 'Suscripciones (Netflix, Spotify…)' }
   ]
 };
 
@@ -14363,10 +14370,26 @@ function wizardSiguiente() {
     state.config.presupuesto = Categorias.getPresupuestoPorTipo(_wizardTipoSeleccionado);
     saveState();
     try { aplicarPerfilUI(); } catch {}
+    if (_wizardPerfil === 'personal') {
+      // Personal: no hay datos fiscales (RUT/giro/IVA). Saltar el paso 2.
+      state.config.empresaFicticia = true;
+      state.config.aplica_iva = false;
+      state.config.rut = '';
+      saveState();
+      _mostrarWizardPaso(3);
+      setTimeout(() => document.getElementById('wizSaldoCaja').focus(), 100);
+      return;
+    }
     _mostrarWizardPaso(2);
     setTimeout(() => document.getElementById('wizRUT').focus(), 100);
 
   } else if (_wizardStep === 2) {
+    if (_wizardPerfil === 'personal') { // seguridad: personal no usa este paso
+      state.config.empresaFicticia = true; state.config.aplica_iva = false; state.config.rut = '';
+      saveState(); _mostrarWizardPaso(3);
+      setTimeout(() => document.getElementById('wizSaldoCaja').focus(), 100);
+      return;
+    }
     // Datos fiscales. RUT obligatorio salvo empresa ficticia.
     const ficticia = !!(document.getElementById('wizEmpresaFicticia') || {}).checked;
     const rutVal = (document.getElementById('wizRUT').value || '').trim();
@@ -14471,7 +14494,10 @@ function wizardSiguiente() {
 
 function wizardAtras() {
   if (_wizardStep <= 1) return;
-  _mostrarWizardPaso(_wizardStep - 1);
+  let destino = _wizardStep - 1;
+  // En modo personal el paso 2 (datos fiscales) no existe → saltarlo.
+  if (destino === 2 && _wizardPerfil === 'personal') destino = 1;
+  _mostrarWizardPaso(destino);
 }
 
 function cerrarOnboarding(skipped) {
