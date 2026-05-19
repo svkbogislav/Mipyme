@@ -384,6 +384,12 @@
     z-index: 100;
   }
   .modal-overlay.show { display: flex; }
+  /* Modo Personal: ocultar todo lo que es solo de empresa */
+  body[data-perfil="personal"] .nav-item[data-view="facturacion"],
+  body[data-perfil="personal"] .nav-item[data-view="contactos"],
+  body[data-perfil="personal"] .nav-item[data-view="productos"],
+  body[data-perfil="personal"] .nav-item[data-view="activos"],
+  body[data-perfil="personal"] [data-empresa-only] { display: none !important; }
   .modal {
     background: var(--surface); border-radius: var(--radius); padding: 24px;
     width: 480px; max-width: 92vw; max-height: 90vh; overflow: auto;
@@ -2589,12 +2595,12 @@
             <label>Nombre del negocio</label>
             <input id="cfgNombre" />
           </div>
-          <div style="flex:1">
+          <div style="flex:1" data-empresa-only>
             <label>RUT del negocio <span style="font-weight:400; color:var(--text-muted)">— para clasificar facturas (venta tuya vs gasto)</span></label>
             <input id="cfgRUT" placeholder="76.123.456-7" autocomplete="off" oninput="_formatearInputRUT(this)" />
           </div>
         </div>
-        <div class="row" style="margin-bottom:10px">
+        <div class="row" style="margin-bottom:10px" data-empresa-only>
           <div style="flex:1">
             <label>Giros / actividades (SII) <span style="font-weight:400; color:var(--text-muted)">— puedes tener varios</span></label>
             <div id="cfgGirosWidget"></div>
@@ -2622,7 +2628,7 @@
         </div>
       </details>
 
-      <details class="config-section">
+      <details class="config-section" data-empresa-only>
         <summary>
           <svg class="cs-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           <span class="cs-title">Comisiones e impuestos automáticos</span>
@@ -2729,7 +2735,7 @@
         </div>
       </details>
 
-      <details class="config-section">
+      <details class="config-section" data-empresa-only>
         <summary>
           <svg class="cs-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           <span class="cs-title">Conexiones (Shopify y publicidad)</span>
@@ -3405,14 +3411,28 @@
     <!-- Paso 1: nombre + tipo de negocio -->
     <div class="wiz-step" id="wizStep1">
       <h3 style="margin:0 0 4px 0">👋 Bienvenido</h3>
-      <p style="margin:0 0 14px 0; color:var(--text-muted); font-size:13px">Configuremos tu negocio en 2 minutos. Todo lo que pongas acá lo puedes cambiar después.</p>
+      <p style="margin:0 0 14px 0; color:var(--text-muted); font-size:13px">Configuremos esto en 2 minutos. Todo lo que pongas acá lo puedes cambiar después.</p>
 
       <div style="margin-bottom:14px">
-        <label>¿Cómo se llama tu negocio?</label>
+        <label>¿Qué vas a manejar acá?</label>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px">
+          <div class="wiz-perfil-card" id="wizPerfilPyme" onclick="wizardSeleccionarPerfil('pyme')" style="border:2px solid var(--border); border-radius:9px; padding:12px; cursor:pointer; text-align:center">
+            <div style="font-size:22px">🏢</div><strong>Un negocio</strong>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:2px">Ventas, gastos, facturación, etc.</div>
+          </div>
+          <div class="wiz-perfil-card" id="wizPerfilPersonal" onclick="wizardSeleccionarPerfil('personal')" style="border:2px solid var(--border); border-radius:9px; padding:12px; cursor:pointer; text-align:center">
+            <div style="font-size:22px">👤</div><strong>Mis finanzas personales</strong>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:2px">Sueldo, gastos, ahorro, deudas</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <label id="wizNombreLabel">¿Cómo se llama tu negocio?</label>
         <input id="wizNombre" placeholder="Ej: Pastelería de la abuela" />
       </div>
 
-      <div>
+      <div id="wizTiposBox">
         <label>¿Qué tipo es?</label>
         <div id="wizTiposGrid" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px"></div>
       </div>
@@ -8372,6 +8392,34 @@ function renderMasterDashboard() {
   }
 }
 
+function esPerfilPersonal() {
+  return !!(state && state.config && state.config.perfil === 'personal');
+}
+
+// Aplica el "Modo Personal": oculta lo de empresa (vía body[data-perfil]
+// + CSS) y relabela textos clave. Idempotente; se llama en init y en
+// cada cambio de perfil/negocio.
+function _setNavLabel(view, label) {
+  const it = document.querySelector(`.nav-item[data-view="${view}"]`);
+  if (!it) return;
+  for (const n of it.childNodes) {
+    if (n.nodeType === 3 && n.textContent.trim()) { n.textContent = ' ' + label; return; }
+  }
+}
+function aplicarPerfilUI() {
+  const personal = esPerfilPersonal();
+  document.body.dataset.perfil = personal ? 'personal' : 'pyme';
+  // Relabel navegación
+  _setNavLabel('ventas', personal ? 'Ingresos' : 'Ventas');
+  _setNavLabel('deudas', personal ? 'Mis deudas' : 'Por pagar');
+  _setNavLabel('cobros', personal ? 'Me deben' : 'Por cobrar');
+  // Título de la vista de ingresos/ventas
+  const vTit = document.querySelector('#view-ventas .topbar h1');
+  if (vTit) vTit.textContent = personal ? 'Ingresos' : 'Ventas';
+  const vSub = document.querySelector('#view-ventas .topbar .sub');
+  if (vSub && personal) vSub.textContent = 'Lo que entra: sueldo, honorarios, arriendos, extras';
+}
+
 function aplicarBusinessUI() {
   const logo = document.getElementById('brandLogo');
   const text = document.getElementById('brandNameText');
@@ -8412,6 +8460,7 @@ function aplicarBusinessUI() {
     logo.style.borderRadius = '9px';
   }
   if (text) text.textContent = b.nombre;
+  try { aplicarPerfilUI(); } catch {}
 }
 
 // Id reservado para la vista consolidada "Master Dashboard" — no es un negocio
@@ -13950,6 +13999,7 @@ const WIZARD_TOTAL_PASOS = 5;
 function abrirOnboarding() {
   _wizardStep = 1;
   _wizardTipoSeleccionado = null;
+  setTimeout(() => wizardSeleccionarPerfil(state.config.perfil === 'personal' ? 'personal' : 'pyme'), 0);
 
   // Reset campos. Si el nombre actual es genérico, dejar input vacío para
   // forzar al usuario a escribir el suyo (sin obligarlo — sigue siendo opcional).
@@ -14007,6 +14057,34 @@ function _mostrarWizardPaso(n) {
   _renderWizardProgress();
 }
 
+let _wizardPerfil = 'pyme';
+function wizardSeleccionarPerfil(p) {
+  _wizardPerfil = (p === 'personal') ? 'personal' : 'pyme';
+  const pyme = document.getElementById('wizPerfilPyme');
+  const per = document.getElementById('wizPerfilPersonal');
+  const on = el => { if (el) { el.style.borderColor = 'var(--primary)'; el.style.background = 'var(--primary-soft)'; } };
+  const off = el => { if (el) { el.style.borderColor = 'var(--border)'; el.style.background = ''; } };
+  (_wizardPerfil === 'personal' ? on : off)(per);
+  (_wizardPerfil === 'pyme' ? on : off)(pyme);
+  const box = document.getElementById('wizTiposBox');
+  const lbl = document.getElementById('wizNombreLabel');
+  const nom = document.getElementById('wizNombre');
+  if (_wizardPerfil === 'personal') {
+    if (box) box.style.display = 'none';        // sin "tipo de negocio"
+    if (lbl) lbl.textContent = 'Nombre del perfil (opcional)';
+    if (nom) nom.placeholder = 'Ej: Mis finanzas';
+    _wizardTipoSeleccionado = 'personal';       // categorías personales
+    const nx = document.getElementById('wizStep1Next'); if (nx) nx.disabled = false;
+  } else {
+    if (box) box.style.display = '';
+    if (lbl) lbl.textContent = '¿Cómo se llama tu negocio?';
+    if (nom) nom.placeholder = 'Ej: Pastelería de la abuela';
+    if (_wizardTipoSeleccionado === 'personal') _wizardTipoSeleccionado = null;
+    const nx = document.getElementById('wizStep1Next');
+    if (nx) nx.disabled = !_wizardTipoSeleccionado;
+  }
+}
+
 function wizardSeleccionarTipo(tipo) {
   _wizardTipoSeleccionado = tipo;
   document.querySelectorAll('.wiz-tipo-card').forEach(c => {
@@ -14049,8 +14127,9 @@ function _toggleCostoMontoInput(idx) {
 
 function wizardSiguiente() {
   if (_wizardStep === 1) {
+    if (_wizardPerfil === 'personal') _wizardTipoSeleccionado = 'personal';
     if (!_wizardTipoSeleccionado) {
-      toast('Elige un tipo de negocio', 'error');
+      toast(_wizardPerfil === 'personal' ? 'Continúa' : 'Elige un tipo de negocio', 'error');
       return;
     }
     // Aplicar nombre: actualizar config Y business (sidebar)
@@ -14065,10 +14144,12 @@ function wizardSiguiente() {
         saveBusinesses();
       }
     }
+    state.config.perfil = _wizardPerfil;
     state.config.tipoNegocio = _wizardTipoSeleccionado;
     state.config.categorias = Categorias.getCategoriasPorTipo(_wizardTipoSeleccionado);
     state.config.presupuesto = Categorias.getPresupuestoPorTipo(_wizardTipoSeleccionado);
     saveState();
+    try { aplicarPerfilUI(); } catch {}
     _mostrarWizardPaso(2);
     setTimeout(() => document.getElementById('wizRUT').focus(), 100);
 

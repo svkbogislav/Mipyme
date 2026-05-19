@@ -90,6 +90,18 @@
       'Impuestos',
       'Bancarios',
       'Otros'
+    ],
+    personal: [
+      'Vivienda (arriendo/dividendo)',
+      'Alimentación',
+      'Transporte',
+      'Servicios (luz/agua/internet)',
+      'Salud',
+      'Educación',
+      'Ocio / Entretención',
+      'Deudas / Créditos',
+      'Ahorro',
+      'Otros'
     ]
   };
 
@@ -141,6 +153,19 @@
       'Apps / Software': 2,
       'Impuestos': 5,
       'Bancarios': 1,
+      'Otros': 2
+    },
+    // Referencia tipo 50/30/20 adaptado (necesidades/gustos/ahorro+deuda).
+    personal: {
+      'Vivienda (arriendo/dividendo)': 28,
+      'Alimentación': 16,
+      'Transporte': 10,
+      'Servicios (luz/agua/internet)': 7,
+      'Salud': 6,
+      'Educación': 5,
+      'Ocio / Entretención': 10,
+      'Deudas / Créditos': 8,
+      'Ahorro': 8,
       'Otros': 2
     }
   };
