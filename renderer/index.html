@@ -1939,7 +1939,7 @@
       <!-- Aging AR: distribución por antigüedad. La Ley 21.131 obliga a
            pagar a 30 días desde recepción de la factura; tras vencer
            devenga intereses automáticos (~2%/mes por defecto). -->
-      <div class="card" style="margin-bottom:14px">
+      <div class="card" style="margin-bottom:14px" data-empresa-only>
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap">
           <div>
             <h3 style="margin:0">Hace cuánto te deben</h3>
@@ -8478,11 +8478,22 @@ function aplicarPerfilUI() {
   _setNavLabel('ventas', personal ? 'Ingresos' : 'Ventas');
   _setNavLabel('deudas', personal ? 'Mis deudas' : 'Por pagar');
   _setNavLabel('cobros', personal ? 'Me deben' : 'Por cobrar');
-  // Título de la vista de ingresos/ventas
-  const vTit = document.querySelector('#view-ventas .topbar h1');
-  if (vTit) vTit.textContent = personal ? 'Ingresos' : 'Ventas';
-  const vSub = document.querySelector('#view-ventas .topbar .sub');
-  if (vSub && personal) vSub.textContent = 'Lo que entra: sueldo, honorarios, arriendos, extras';
+  // Títulos/subtítulos de vistas reencuadradas en modo personal
+  const setVista = (sel, tit, sub) => {
+    const h = document.querySelector(`${sel} .topbar h1`);
+    const s = document.querySelector(`${sel} .topbar .sub`);
+    if (h) h.textContent = tit;
+    if (s && sub) s.textContent = sub;
+  };
+  if (personal) {
+    setVista('#view-ventas', 'Ingresos', 'Lo que entra: sueldo, honorarios, arriendos, extras');
+    setVista('#view-deudas', 'Mis deudas', 'Créditos, tarjetas y préstamos: a quién le debes, cuánto y cuándo lo pagas');
+    setVista('#view-cobros', 'Me deben', 'Plata que te deben (préstamos a conocidos): cuánto y cuándo te la devuelven');
+  } else {
+    setVista('#view-ventas', 'Ventas', 'Lo que entró: registrado a mano o sincronizado desde Shopify');
+    setVista('#view-deudas', 'Por pagar', 'Acreedores, vencimientos, pagos parciales y saldo por pagar');
+    setVista('#view-cobros', 'Por cobrar', 'Clientes que te deben, vencimientos, pagos recibidos y saldo por cobrar');
+  }
 }
 
 /* =================================================================
