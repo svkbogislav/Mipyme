@@ -389,6 +389,7 @@
   body[data-perfil="personal"] .nav-item[data-view="contactos"],
   body[data-perfil="personal"] .nav-item[data-view="productos"],
   body[data-perfil="personal"] .nav-item[data-view="activos"],
+  body[data-perfil="personal"] .nav-item[data-view="analisis"],
   body[data-perfil="personal"] [data-empresa-only] { display: none !important; }
   /* Lo que es solo del modo personal (ej. Metas de ahorro) */
   body:not([data-perfil="personal"]) [data-personal-only] { display: none !important; }
@@ -4939,7 +4940,15 @@ function renderChecklistInicio() {
   const hayRecurrente = (state.config.recurrentes || []).length > 0;
   const hayReporte = state.config._primerReporteGenerado === true;
 
-  const items = [
+  const personalCk = esPerfilPersonal();
+  const items = personalCk ? [
+    { id: 'wiz',   done: true,              label: 'Finanzas configuradas',       cta: null },
+    { id: 'saldo', done: hayCuentaConSaldo, label: 'Cuánto tienes hoy registrado', cta: { texto: 'Configurar →', accion: "document.querySelector('.nav-item[data-view=cuentas]')?.click()" } },
+    { id: 'recur', done: hayRecurrente,     label: 'Gastos fijos del mes',         cta: { texto: 'Agregar →',    accion: "abrirModalRecurrente()" } },
+    { id: 'venta', done: hayVenta,          label: 'Primer ingreso registrado',    cta: { texto: 'Registrar →',  accion: "abrirModalVentaManual()" } },
+    { id: 'gasto', done: hayGasto,          label: 'Primer gasto registrado',      cta: { texto: 'Registrar →',  accion: "abrirModalGasto()" } },
+    { id: 'meta',  done: (state.config.metas || []).length > 0, label: 'Primera meta de ahorro', cta: { texto: 'Crear →', accion: "document.querySelector('.nav-item[data-view=metas]')?.click()" } },
+  ] : [
     { id: 'wiz',     done: true,             label: 'Negocio configurado',          cta: null },
     { id: 'saldo',   done: hayCuentaConSaldo, label: 'Saldo inicial registrado',     cta: { texto: 'Configurar →', accion: "document.querySelector('.nav-item[data-view=cuentas]')?.click()" } },
     { id: 'recur',   done: hayRecurrente,     label: 'Gastos fijos mensuales',       cta: { texto: 'Agregar →',    accion: "abrirModalRecurrente()" } },
@@ -4967,7 +4976,7 @@ function renderChecklistInicio() {
       <span style="font-size:24px; flex-shrink:0">🎬</span>
       <div style="flex:1; min-width:0">
         <div style="font-size:13px; font-weight:600">¿Primera vez con la app?</div>
-        <div style="font-size:11px; opacity:0.9; margin-top:2px">Tour rápido de 1 minuto por las 5 vistas principales</div>
+        <div style="font-size:11px; opacity:0.9; margin-top:2px">Tour rápido de 1 minuto por las vistas principales</div>
       </div>
       <span style="font-size:18px">→</span>
     </div>`;
@@ -6369,7 +6378,7 @@ function poblarSelectVmCuenta(seleccionadaId) {
 }
 
 function abrirModalVentaManual() {
-  document.getElementById('modalVMTitulo').textContent = 'Nueva venta';
+  document.getElementById('modalVMTitulo').textContent = esPerfilPersonal() ? 'Nuevo ingreso' : 'Nueva venta';
   document.getElementById('vmId').value = '';
   document.getElementById('vmFecha').value = new Date().toISOString().slice(0, 10);
   document.getElementById('vmMonto').value = '';
@@ -6385,7 +6394,7 @@ function abrirModalVentaManual() {
 function editarVentaManual(id) {
   const v = (state.ventasManuales || []).find(x => x.id === id);
   if (!v) return;
-  document.getElementById('modalVMTitulo').textContent = 'Editar venta';
+  document.getElementById('modalVMTitulo').textContent = esPerfilPersonal() ? 'Editar ingreso' : 'Editar venta';
   document.getElementById('vmId').value = id;
   document.getElementById('vmFecha').value = v.fecha || '';
   Forms.setearMontoCLP(document.getElementById('vmMonto'), v.monto);
@@ -14794,7 +14803,70 @@ const TOUR_STOPS = [
   }
 ];
 
+// Tour para modo personal: mismas paradas útiles pero sin negocio/Shopify/
+// contador/Ley 21.131, y agrega Metas y Patrimonio.
+const TOUR_STOPS_PERSONAL = [
+  {
+    view: 'dashboard',
+    emoji: '📊',
+    titulo: 'Tu Dashboard',
+    texto: 'Acá ves cómo van tus finanzas HOY. El bloque <strong>Runway</strong> te dice cuántos meses te aguanta la plata al ritmo que gastas. Verde = tranquilo; rojo = ojo, estás gastando más de lo que entra.'
+  },
+  {
+    view: 'ventas',
+    emoji: '💵',
+    titulo: 'Ingresos',
+    texto: 'Acá registras lo que entra: tu <strong>sueldo</strong>, honorarios, arriendos, ventas, cualquier plata. Click <strong>"Nuevo ingreso"</strong> y queda anotado en 5 segundos.'
+  },
+  {
+    view: 'gastos',
+    emoji: '💸',
+    titulo: 'Gastos',
+    texto: 'Acá lo que sale. Los gastos fijos que marcaste en el wizard (arriendo, cuentas, suscripciones) se generan solos cada mes — no los reingresas. Para gastos puntuales, click <strong>"Nuevo gasto"</strong>.'
+  },
+  {
+    view: 'subir',
+    emoji: '🏦',
+    titulo: 'Subir cartola del banco',
+    texto: '¿No quieres anotar gasto por gasto? Acá <strong>subes la cartola de tu banco</strong> (Excel o CSV) y la app la lee: registra automáticamente lo que <strong>entró</strong> y lo que <strong>salió</strong>. La forma más rápida de cargar un mes entero.'
+  },
+  {
+    view: 'cuentas',
+    emoji: '🏦',
+    titulo: 'Cuentas',
+    texto: 'Tu efectivo y cuentas del banco en un solo lugar. Los saldos se actualizan solos: cada ingreso suma y cada gasto resta.'
+  },
+  {
+    view: 'presupuesto',
+    emoji: '🎯',
+    titulo: 'Presupuesto',
+    texto: 'Define cuánto quieres gastar por categoría al mes (vivienda, comida, transporte…) y la app te muestra cuánto llevas y si te estás pasando.'
+  },
+  {
+    view: 'metas',
+    emoji: '🐷',
+    titulo: 'Metas de ahorro',
+    texto: 'Crea metas (un viaje, fondo de emergencia, el pie de un depto), anota tus aportes y la app te dice cuánto guardar por mes y cuándo la logras.'
+  },
+  {
+    view: 'deudas',
+    emoji: '📤',
+    titulo: 'Mis deudas',
+    texto: 'Tus créditos y tarjetas: a quién le debes, cuánto y cuándo. Anota cada pago y el saldo baja solo. Así sabes cuánto te falta para estar libre de deudas.'
+  },
+  {
+    view: 'patrimonio',
+    emoji: '🏛️',
+    titulo: 'Patrimonio neto',
+    texto: 'Lo que <strong>tienes</strong> (cuentas + bienes) menos lo que <strong>debes</strong> = tu patrimonio neto. Con una foto cada mes para ver si va creciendo.'
+  }
+];
+
 let _tourStep = 0;
+
+function _tourStops() {
+  return esPerfilPersonal() ? TOUR_STOPS_PERSONAL : TOUR_STOPS;
+}
 
 function iniciarTour() {
   // Cerrar cualquier modal abierto antes de empezar
@@ -14805,12 +14877,13 @@ function iniciarTour() {
 }
 
 function _tourMostrar(n) {
-  if (n < 1 || n > TOUR_STOPS.length) {
+  const stops = _tourStops();
+  if (n < 1 || n > stops.length) {
     _tourTerminar(true);
     return;
   }
   _tourStep = n;
-  const stop = TOUR_STOPS[n - 1];
+  const stop = stops[n - 1];
 
   // Navegar a la vista correspondiente (simula click en sidebar item)
   const navItem = document.querySelector(`.nav-item[data-view="${stop.view}"]`);
@@ -14820,17 +14893,17 @@ function _tourMostrar(n) {
   document.getElementById('tourEmoji').textContent = stop.emoji;
   document.getElementById('tourTitulo').textContent = stop.titulo;
   document.getElementById('tourTexto').innerHTML = stop.texto;
-  document.getElementById('tourProgreso').textContent = `${n} / ${TOUR_STOPS.length}`;
+  document.getElementById('tourProgreso').textContent = `${n} / ${stops.length}`;
 
   // Botones de navegación
   const btnAtras = document.getElementById('tourBtnAtras');
   const btnSig = document.getElementById('tourBtnSiguiente');
   btnAtras.style.visibility = n === 1 ? 'hidden' : 'visible';
-  btnSig.textContent = n === TOUR_STOPS.length ? 'Listo, terminar' : 'Siguiente →';
+  btnSig.textContent = n === stops.length ? 'Listo, terminar' : 'Siguiente →';
 }
 
 function tourSiguiente() {
-  if (_tourStep >= TOUR_STOPS.length) {
+  if (_tourStep >= _tourStops().length) {
     _tourTerminar(false);
     return;
   }
