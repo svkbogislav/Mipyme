@@ -2646,23 +2646,23 @@
       <div class="topbar">
         <div>
           <h1>Configuración</h1>
-          <div class="sub">Tu negocio, conexiones, reportes y datos</div>
+          <div class="sub" id="cfgSecSub">Tu negocio, conexiones, reportes y datos</div>
         </div>
       </div>
 
       <details class="config-section" open>
         <summary>
           <svg class="cs-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-          <span class="cs-title">Tu negocio</span>
+          <span class="cs-title" id="cfgSecTitle">Tu negocio</span>
           <span class="cs-hint">Nombre, saldo inicial, mes de inicio</span>
         </summary>
         <div class="cs-body">
 
       <div class="card" style="margin-bottom:14px">
-        <h3>Empresa</h3>
+        <h3 id="cfgEmpresaH3">Empresa</h3>
         <div class="row" style="margin-bottom:10px">
           <div style="flex:1">
-            <label>Nombre del negocio</label>
+            <label id="cfgNombreLbl">Nombre del negocio</label>
             <input id="cfgNombre" />
           </div>
           <div style="flex:1" data-empresa-only>
@@ -2690,7 +2690,7 @@
         <div style="margin-top:14px">
           <button class="btn primary" onclick="guardarConfigManual()">Guardar</button>
         </div>
-        <div style="font-size:11px; color:var(--text-muted); margin-top:12px; padding-top:12px; border-top:1px solid var(--border)">
+        <div style="font-size:11px; color:var(--text-muted); margin-top:12px; padding-top:12px; border-top:1px solid var(--border)" id="cfgInfoExtra">
           ⓘ Las <strong>categorías de gastos</strong> y los <strong>pedidos test a excluir</strong> ahora se configuran en la vista <strong>Gastos → Configuración</strong>. Los <strong>gastos fijos mensuales</strong> ahora se administran desde <strong>Presupuesto</strong>.
         </div>
       </div>
@@ -8550,6 +8550,16 @@ function aplicarPerfilUI() {
     if (h) h.textContent = tit;
     if (s && sub) s.textContent = sub;
   };
+  // Configuración → sección "Tu negocio / Empresa"
+  const setTxt = (id, t) => { const e = document.getElementById(id); if (e) e.textContent = t; };
+  setTxt('cfgSecSub', personal ? 'Tu perfil, conexiones, respaldo y datos' : 'Tu negocio, conexiones, reportes y datos');
+  setTxt('cfgSecTitle', personal ? 'Tu perfil' : 'Tu negocio');
+  setTxt('cfgEmpresaH3', personal ? 'Perfil' : 'Empresa');
+  setTxt('cfgNombreLbl', personal ? 'Nombre del perfil' : 'Nombre del negocio');
+  const cfgInfo = document.getElementById('cfgInfoExtra');
+  if (cfgInfo) cfgInfo.innerHTML = personal
+    ? 'ⓘ Las <strong>categorías de gastos</strong> se configuran en la vista <strong>Gastos → Configuración</strong>. Los <strong>gastos fijos mensuales</strong> se administran desde <strong>Presupuesto</strong>.'
+    : 'ⓘ Las <strong>categorías de gastos</strong> y los <strong>pedidos test a excluir</strong> ahora se configuran en la vista <strong>Gastos → Configuración</strong>. Los <strong>gastos fijos mensuales</strong> ahora se administran desde <strong>Presupuesto</strong>.';
   if (personal) {
     setVista('#view-ventas', 'Ingresos', 'Lo que entra: sueldo, honorarios, arriendos, extras');
     setVista('#view-deudas', 'Mis deudas', 'Créditos, tarjetas y préstamos: a quién le debes, cuánto y cuándo lo pagas');
