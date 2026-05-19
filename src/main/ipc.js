@@ -16,6 +16,7 @@ const shopifyOAuth = require('./shopify-oauth');
 const metaApi = require('./meta-api');
 const googleApi = require('./google-api');
 const siiApi = require('./sii-api');
+const preciosApi = require('./precios-api');
 const updater = require('./updater');
 const attachments = require('./attachments');
 
@@ -45,6 +46,9 @@ function register({ getMainWindow }) {
   ipcMain.handle('sii:listarEmitidos', async (_e, args)  => siiApi.listarEmitidos(args));
   ipcMain.handle('sii:emitirBHE',      async (_e, args)  => siiApi.emitirBHE(args));
   ipcMain.handle('sii:listarBHE',      async (_e, args)  => siiApi.listarBHE(args));
+
+  // === Cotización de inversiones (Yahoo / CoinGecko / mindicador, sin keys) ===
+  ipcMain.handle('precios:cotizar',    async (_e, items) => preciosApi.cotizar(items));
 
   // === Attachments ===
   ipcMain.handle('app:attachFile',     async ()            => attachments.attachFile(win()));

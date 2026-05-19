@@ -79,6 +79,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   siiEmitirBHE:      (args)  => ipcRenderer.invoke('sii:emitirBHE', args),
   siiListarBHE:      (args)  => ipcRenderer.invoke('sii:listarBHE', args),
 
+  // Cotización de inversiones (acciones USA/Santiago, ETF, cripto, USD, UF).
+  // items=[{tipo,simbolo}] → {usdclp, uf, cotizaciones:{SIM:{precio,moneda}}, errores}
+  cotizarInversiones: (items) => ipcRenderer.invoke('precios:cotizar', items),
+
   // Marca de que estamos corriendo en Electron (para el HTML lo detecte)
   isElectron: true,
   platform: process.platform,

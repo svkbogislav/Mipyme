@@ -2301,8 +2301,22 @@
       </div>
       <div class="card" style="margin-bottom:14px">
         <h3 style="margin:0 0 4px">Bienes (lo que tienes además de la plata)</h3>
-        <div class="card-sub" style="margin-bottom:10px">Auto, departamento, inversiones, etc. Pon un valor aproximado de mercado.</div>
+        <div class="card-sub" style="margin-bottom:10px">Auto, departamento, etc. Pon un valor aproximado de mercado.</div>
         <div class="table-wrap"><table id="patBienes"></table></div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:4px">
+          <div>
+            <h3 style="margin:0 0 4px">Inversiones (se valorizan solas)</h3>
+            <div class="card-sub">Acciones (USA y Bolsa de Santiago), ETF, cripto, dólares o UF. El precio se actualiza solo.</div>
+          </div>
+          <div style="display:flex; gap:8px; flex-shrink:0">
+            <button class="btn sm ghost" id="invBtnActualizar" onclick="actualizarPreciosInversiones()">↻ Actualizar precios</button>
+            <button class="btn sm primary" onclick="abrirModalInversion()">+ Agregar inversión</button>
+          </div>
+        </div>
+        <div id="invPrecioInfo" style="font-size:11px; color:var(--text-muted); margin:6px 0 10px"></div>
+        <div class="table-wrap"><table id="patInversiones"></table></div>
       </div>
       <div class="card">
         <h3 style="margin:0 0 4px">Evolución mensual</h3>
@@ -4093,6 +4107,41 @@
       <button class="btn ghost" id="bienBtnEliminar" onclick="eliminarBien()" style="margin-right:auto; color:var(--danger); display:none">Eliminar</button>
       <button class="btn" onclick="cerrarModalBien()">Cancelar</button>
       <button class="btn primary" onclick="guardarBien()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: Inversión (patrimonio · se valoriza sola) ===== -->
+<div class="modal-overlay" id="modalInversion" onclick="if(event.target===this) cerrarModalInversion()">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header"><h2 id="modalInvTitulo" style="margin:0">Agregar inversión</h2><button class="modal-close" onclick="cerrarModalInversion()">✕</button></div>
+    <input type="hidden" id="invId" />
+    <div style="margin-bottom:10px">
+      <label>Tipo</label>
+      <select id="invTipo" onchange="_invOnTipoChange()">
+        <option value="accion_cl">Acción chilena (Bolsa de Santiago)</option>
+        <option value="accion">Acción USA (NYSE / Nasdaq)</option>
+        <option value="etf">ETF (ej. VOO, SPY)</option>
+        <option value="cripto">Cripto (Bitcoin, Ethereum…)</option>
+        <option value="usd">Dólares (USD)</option>
+        <option value="uf">Monto en UF</option>
+        <option value="manual">Otro / manual (yo pongo el valor)</option>
+      </select>
+    </div>
+    <div style="margin-bottom:10px" id="invSimboloBox">
+      <label id="invSimboloLbl">Nemotécnico / símbolo</label>
+      <input id="invSimbolo" placeholder="Ej: FALABELLA" autocomplete="off" oninput="this.value=this.value.toUpperCase()" />
+      <div id="invSimboloHint" style="font-size:11px; color:var(--text-muted); margin-top:4px"></div>
+    </div>
+    <div style="margin-bottom:10px"><label>Nombre (cómo lo quieres ver)</label><input id="invNombre" placeholder="Ej: Falabella" autocomplete="off" /></div>
+    <div class="row" style="margin-bottom:10px">
+      <div><label id="invCantidadLbl">Cantidad (acciones)</label><input id="invCantidad" type="text" inputmode="decimal" placeholder="0" autocomplete="off" /></div>
+      <div id="invPrecioManualBox"><label id="invPrecioManualLbl">Valor total hoy (CLP)</label><input id="invPrecioManual" type="text" inputmode="numeric" data-clp="true" placeholder="0" /></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="invBtnEliminar" onclick="eliminarInversion()" style="margin-right:auto; color:var(--danger); display:none">Eliminar</button>
+      <button class="btn" onclick="cerrarModalInversion()">Cancelar</button>
+      <button class="btn primary" onclick="guardarInversion()">Guardar</button>
     </div>
   </div>
 </div>
@@ -8732,9 +8781,10 @@ function _bienes() {
 function _patrimonioActual() {
   const cuentas = (state.config.cuentas || []).reduce((s, c) => s + calcularSaldoCuenta(c.id), 0);
   const bienes = _bienes().reduce((s, b) => s + Number(b.valor || 0), 0);
+  const inversiones = (typeof _invTotalCLP === 'function') ? _invTotalCLP() : 0;
   const pasivos = (state.deudas || []).reduce((s, d) => s + Math.max(0, Number(saldoPendienteDeuda(d) || 0)), 0);
-  const activos = cuentas + bienes;
-  return { cuentas, bienes, activos, pasivos, neto: activos - pasivos };
+  const activos = cuentas + bienes + inversiones;
+  return { cuentas, bienes, inversiones, activos, pasivos, neto: activos - pasivos };
 }
 function _snapshotPatrimonio(p) {
   if (!Array.isArray(state.config.patrimonioSnaps)) state.config.patrimonioSnaps = [];
@@ -8770,7 +8820,8 @@ function renderPatrimonio() {
   document.getElementById('patComposicion').innerHTML = `
     <tbody>
       <tr><td>💳 Plata en cuentas</td><td class="num num-pos">${clp(p.cuentas)}</td></tr>
-      <tr><td>🏠 Bienes (auto, depto, inversiones…)</td><td class="num num-pos">${clp(p.bienes)}</td></tr>
+      <tr><td>🏠 Bienes (auto, depto…)</td><td class="num num-pos">${clp(p.bienes)}</td></tr>
+      <tr><td>📈 Inversiones (acciones, ETF, cripto…)</td><td class="num num-pos">${clp(p.inversiones || 0)}</td></tr>
       <tr style="font-weight:600"><td>Total que tienes</td><td class="num num-pos">${clp(p.activos)}</td></tr>
       <tr><td>📉 Deudas pendientes</td><td class="num num-neg">−${clp(p.pasivos)}</td></tr>
       <tr style="font-weight:700; background:var(--surface-2)"><td>Patrimonio neto</td><td class="num ${p.neto >= 0 ? 'num-pos' : 'num-neg'}">${clp(p.neto)}</td></tr>
@@ -8787,6 +8838,8 @@ function renderPatrimonio() {
         <td class="num">${clp(b.valor)}</td>
         <td style="text-align:right"><button class="btn sm ghost" onclick="abrirModalBien('${b.id}')">Editar</button></td></tr>`).join('')}</tbody>`
     : `<tbody><tr><td style="padding:14px; color:var(--text-muted)">Sin bienes cargados. Agrega tu auto, departamento, inversiones, etc. para que el patrimonio sea real.</td></tr></tbody>`;
+
+  if (typeof renderInversiones === 'function') renderInversiones();
 
   const ev = snaps.slice(-12).reverse();
   document.getElementById('patEvolucion').innerHTML = ev.length
@@ -8827,6 +8880,216 @@ function eliminarBien() {
   cerrarModalBien();
   renderPatrimonio();
   toast('Bien eliminado', '');
+}
+
+/* =================================================================
+   INVERSIONES (modo personal · se valorizan solas)
+   Cada inversión: { id, tipo, simbolo, nombre, cantidad,
+     precioManual, precioAuto, monedaAuto, tsAuto }
+   tipo: 'accion_cl' (Bolsa Santiago, Yahoo .SN) | 'accion' (USA) |
+         'etf' | 'cripto' (CoinGecko id) | 'usd' | 'uf' | 'manual'
+   El precio se trae sin API keys (Yahoo / CoinGecko / mindicador.cl).
+   ================================================================= */
+function _inversiones() {
+  if (!Array.isArray(state.config.inversiones)) state.config.inversiones = [];
+  return state.config.inversiones;
+}
+function _fxSnap() {
+  if (!state.config.fxSnapshot) state.config.fxSnapshot = { usdclp: 0, uf: 0, ts: 0 };
+  return state.config.fxSnapshot;
+}
+function _numDec(v) {
+  const n = parseFloat(String(v == null ? '' : v).replace(/\./g, '').replace(',', '.').replace(/[^\d.\-]/g, ''));
+  return isFinite(n) ? n : 0;
+}
+function _invSimboloYahoo(inv) {
+  const s = String(inv.simbolo || '').trim().toUpperCase();
+  return inv.tipo === 'accion_cl' && s && !s.includes('.') ? s + '.SN' : s;
+}
+function _invTipoLabel(t) {
+  return ({
+    accion_cl: 'Acción Chile', accion: 'Acción USA', etf: 'ETF',
+    cripto: 'Cripto', usd: 'Dólares', uf: 'UF', manual: 'Manual'
+  })[t] || 'Inversión';
+}
+// Valor actual en CLP de una inversión.
+function _invValorCLP(inv) {
+  const fx = _fxSnap();
+  const cant = _numDec(inv.cantidad);
+  if (inv.tipo === 'manual') return Number(inv.precioManual || 0);
+  if (inv.tipo === 'usd') return cant * (fx.usdclp || 0) || Number(inv.precioManual || 0);
+  if (inv.tipo === 'uf')  return cant * (fx.uf || 0)     || Number(inv.precioManual || 0);
+  // accion / accion_cl / etf / cripto
+  if (inv.precioAuto != null) {
+    const enClp = inv.monedaAuto === 'USD' ? (inv.precioAuto * (fx.usdclp || 0)) : Number(inv.precioAuto || 0);
+    if (enClp > 0) return cant * enClp;
+  }
+  // Fallback: precio manual por unidad si nunca se cotizó
+  return cant * Number(inv.precioManual || 0);
+}
+function _invTotalCLP() {
+  return _inversiones().reduce((s, i) => s + _invValorCLP(i), 0);
+}
+
+function renderInversiones() {
+  const inv = _inversiones();
+  const tabla = document.getElementById('patInversiones');
+  if (!tabla) return;
+  if (!inv.length) {
+    tabla.innerHTML = `<tbody><tr><td style="padding:14px; color:var(--text-muted)">Sin inversiones. Agrega tus acciones, ETF o cripto y se valorizan solas con el precio del día.</td></tr></tbody>`;
+  } else {
+    tabla.innerHTML = `<thead><tr><th>Inversión</th><th>Tipo</th><th class="num">Cantidad</th><th class="num">Precio</th><th class="num">Valor (CLP)</th><th></th></tr></thead><tbody>${inv.map(i => {
+      const val = _invValorCLP(i);
+      let precioTxt = '—';
+      if (i.tipo === 'manual') precioTxt = 'manual';
+      else if (i.tipo === 'usd') precioTxt = _fxSnap().usdclp ? `$${Math.round(_fxSnap().usdclp)}/USD` : 'sin dólar';
+      else if (i.tipo === 'uf') precioTxt = _fxSnap().uf ? `$${Math.round(_fxSnap().uf)}/UF` : 'sin UF';
+      else if (i.precioAuto != null) precioTxt = `${i.monedaAuto === 'USD' ? 'US$' : '$'}${i.precioAuto.toLocaleString('es-CL', { maximumFractionDigits: 2 })}`;
+      const cantTxt = (i.tipo === 'manual') ? '—' : _numDec(i.cantidad).toLocaleString('es-CL', { maximumFractionDigits: 6 });
+      return `<tr>
+        <td><strong>${escapeHtml(i.nombre || i.simbolo || '—')}</strong>${i.simbolo && i.tipo !== 'manual' ? `<div style="font-size:11px; color:var(--text-muted)">${escapeHtml(_invSimboloYahoo(i))}</div>` : ''}</td>
+        <td><span style="font-size:11px; padding:2px 7px; border-radius:99px; background:var(--surface-2)">${_invTipoLabel(i.tipo)}</span></td>
+        <td class="num">${cantTxt}</td>
+        <td class="num">${precioTxt}</td>
+        <td class="num num-pos"><strong>${clp(val)}</strong></td>
+        <td style="text-align:right"><button class="btn sm ghost" onclick="abrirModalInversion('${i.id}')">Editar</button></td>
+      </tr>`;
+    }).join('')}<tr style="font-weight:700; background:var(--surface-2)"><td colspan="4">Total inversiones</td><td class="num num-pos">${clp(_invTotalCLP())}</td><td></td></tr></tbody>`;
+  }
+  const fx = _fxSnap();
+  const info = document.getElementById('invPrecioInfo');
+  if (info) {
+    if (fx.ts) {
+      const d = new Date(fx.ts);
+      info.textContent = `Precios al ${d.toLocaleDateString('es-CL')} ${d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}` +
+        (fx.usdclp ? ` · dólar $${Math.round(fx.usdclp)}` : '') + (fx.uf ? ` · UF $${Math.round(fx.uf)}` : '');
+    } else {
+      info.textContent = inv.length ? 'Aún sin cotizar — dale "Actualizar precios".' : '';
+    }
+  }
+}
+
+let _invActualizando = false;
+async function actualizarPreciosInversiones(silencioso) {
+  const inv = _inversiones();
+  if (!inv.length) { if (!silencioso) toast('No tienes inversiones cargadas', ''); return; }
+  if (!window.electronAPI || !window.electronAPI.cotizarInversiones) {
+    if (!silencioso) toast('La cotización automática solo funciona en la app de escritorio', 'error');
+    return;
+  }
+  if (_invActualizando) return;
+  _invActualizando = true;
+  const btn = document.getElementById('invBtnActualizar');
+  if (btn) { btn.disabled = true; btn.textContent = '↻ Actualizando…'; }
+  try {
+    const items = inv
+      .filter(i => ['accion', 'accion_cl', 'etf', 'cripto'].includes(i.tipo) && i.simbolo)
+      .map(i => i.tipo === 'cripto'
+        ? { tipo: 'cripto', simbolo: String(i.simbolo).toLowerCase() }
+        : { tipo: i.tipo === 'etf' ? 'etf' : 'accion', simbolo: _invSimboloYahoo(i) });
+    const res = await window.electronAPI.cotizarInversiones(items);
+    if (!res || !res.ok) throw new Error((res && res.error) || 'Sin respuesta');
+    state.config.fxSnapshot = { usdclp: Number(res.usdclp || 0), uf: Number(res.uf || 0), ts: res.ts || Date.now() };
+    const cot = res.cotizaciones || {};
+    let okN = 0; const fallidos = [];
+    inv.forEach(i => {
+      if (i.tipo === 'cripto') {
+        const c = cot[String(i.simbolo).toLowerCase()];
+        if (c) { i.precioAuto = c.precio; i.monedaAuto = c.moneda; i.tsAuto = res.ts; okN++; }
+        else if (i.simbolo) fallidos.push(i.nombre || i.simbolo);
+      } else if (['accion', 'accion_cl', 'etf'].includes(i.tipo)) {
+        const c = cot[_invSimboloYahoo(i).toUpperCase()];
+        if (c) { i.precioAuto = c.precio; i.monedaAuto = c.moneda; i.tsAuto = res.ts; if (!i.nombre && c.nombre) i.nombre = c.nombre; okN++; }
+        else if (i.simbolo) fallidos.push(i.nombre || i.simbolo);
+      }
+    });
+    saveState();
+    if (typeof renderPatrimonio === 'function') renderPatrimonio();
+    if (!silencioso) {
+      if (fallidos.length) toast(`Actualizadas ${okN}. No encontré: ${fallidos.join(', ')} (revisa el símbolo o pon valor manual)`, fallidos.length === inv.length ? 'error' : '');
+      else toast(`✓ Precios actualizados (${okN})`, 'success');
+    }
+  } catch (e) {
+    if (!silencioso) toast('No pude actualizar precios: ' + e.message, 'error');
+  } finally {
+    _invActualizando = false;
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Actualizar precios'; }
+  }
+}
+
+function _invOnTipoChange() {
+  const t = document.getElementById('invTipo').value;
+  const simBox = document.getElementById('invSimboloBox');
+  const simLbl = document.getElementById('invSimboloLbl');
+  const simHint = document.getElementById('invSimboloHint');
+  const sim = document.getElementById('invSimbolo');
+  const cantLbl = document.getElementById('invCantidadLbl');
+  const pmBox = document.getElementById('invPrecioManualBox');
+  const pmLbl = document.getElementById('invPrecioManualLbl');
+  const necesitaSimbolo = ['accion_cl', 'accion', 'etf', 'cripto'].includes(t);
+  simBox.style.display = necesitaSimbolo ? '' : 'none';
+  // Precio manual solo se pide en 'manual' (los demás se cotizan o derivan)
+  pmBox.style.display = (t === 'manual') ? '' : 'none';
+  document.getElementById('invCantidad').parentElement.style.display = (t === 'manual') ? 'none' : '';
+  if (t === 'accion_cl') { simLbl.textContent = 'Nemotécnico (Bolsa de Santiago)'; sim.placeholder = 'Ej: FALABELLA'; simHint.textContent = 'Ej: FALABELLA, CHILE, COPEC, SQM-B, CENCOSUD, LTM. Se consulta como FALABELLA.SN.'; cantLbl.textContent = 'Cantidad (acciones)'; }
+  else if (t === 'accion') { simLbl.textContent = 'Ticker (USA)'; sim.placeholder = 'Ej: AAPL'; simHint.textContent = 'Ej: AAPL, MSFT, TSLA, NVDA. Precio en USD → lo paso a CLP con el dólar del día.'; cantLbl.textContent = 'Cantidad (acciones)'; }
+  else if (t === 'etf') { simLbl.textContent = 'Ticker ETF'; sim.placeholder = 'Ej: VOO'; simHint.textContent = 'Ej: VOO, SPY, QQQ, VT. Precio en USD → CLP automático.'; cantLbl.textContent = 'Cantidad (cuotas)'; }
+  else if (t === 'cripto') { simLbl.textContent = 'Id de la moneda (CoinGecko)'; sim.placeholder = 'Ej: bitcoin'; simHint.textContent = 'En minúscula: bitcoin, ethereum, solana, cardano. Precio USD → CLP automático.'; cantLbl.textContent = 'Cantidad'; }
+  else if (t === 'usd') { cantLbl.textContent = 'Cuántos dólares (USD)'; }
+  else if (t === 'uf') { cantLbl.textContent = 'Cuántas UF'; }
+  else if (t === 'manual') { pmLbl.textContent = 'Valor total hoy (CLP)'; }
+}
+
+function abrirModalInversion(id) {
+  const i = id ? _inversiones().find(x => x.id === id) : null;
+  document.getElementById('modalInvTitulo').textContent = i ? 'Editar inversión' : 'Agregar inversión';
+  document.getElementById('invId').value = i ? i.id : '';
+  document.getElementById('invTipo').value = i ? i.tipo : 'accion_cl';
+  document.getElementById('invSimbolo').value = i ? (i.simbolo || '') : '';
+  document.getElementById('invNombre').value = i ? (i.nombre || '') : '';
+  document.getElementById('invCantidad').value = i && i.cantidad != null ? String(i.cantidad) : '';
+  Forms.setearMontoCLP(document.getElementById('invPrecioManual'), i ? i.precioManual : '');
+  document.getElementById('invBtnEliminar').style.display = i ? '' : 'none';
+  _invOnTipoChange();
+  document.getElementById('modalInversion').classList.add('show');
+  setTimeout(() => document.getElementById(document.getElementById('invSimboloBox').style.display === 'none' ? 'invCantidad' : 'invSimbolo').focus(), 80);
+}
+function cerrarModalInversion() { document.getElementById('modalInversion').classList.remove('show'); }
+function guardarInversion() {
+  const tipo = document.getElementById('invTipo').value;
+  const simbolo = document.getElementById('invSimbolo').value.trim().toUpperCase();
+  let nombre = document.getElementById('invNombre').value.trim();
+  const cantidad = _numDec(document.getElementById('invCantidad').value);
+  const precioManual = Forms.parsearCLP(document.getElementById('invPrecioManual').value);
+  const necesitaSimbolo = ['accion_cl', 'accion', 'etf', 'cripto'].includes(tipo);
+  if (necesitaSimbolo && !simbolo) { toast('Pon el símbolo / nemotécnico', 'error'); return; }
+  if (tipo === 'manual' && precioManual <= 0) { toast('Pon el valor en CLP', 'error'); return; }
+  if (tipo !== 'manual' && cantidad <= 0) { toast('Pon la cantidad', 'error'); return; }
+  if (!nombre) nombre = necesitaSimbolo ? simbolo : _invTipoLabel(tipo);
+  const id = document.getElementById('invId').value;
+  const list = _inversiones();
+  if (id) {
+    const x = list.find(v => v.id === id);
+    if (x) { Object.assign(x, { tipo, simbolo: necesitaSimbolo ? simbolo : '', nombre, cantidad, precioManual });
+      if (!necesitaSimbolo) { delete x.precioAuto; delete x.monedaAuto; } }
+  } else {
+    list.push({ id: uid(), tipo, simbolo: necesitaSimbolo ? simbolo : '', nombre, cantidad, precioManual });
+  }
+  saveState();
+  cerrarModalInversion();
+  renderPatrimonio();
+  // Cotiza al toque lo recién agregado/editado si tiene feed
+  if (necesitaSimbolo) actualizarPreciosInversiones(false);
+  else toast(id ? 'Inversión actualizada' : 'Inversión agregada', 'success');
+}
+function eliminarInversion() {
+  const id = document.getElementById('invId').value;
+  if (!id) return;
+  state.config.inversiones = _inversiones().filter(v => v.id !== id);
+  saveState();
+  cerrarModalInversion();
+  renderPatrimonio();
+  toast('Inversión eliminada', '');
 }
 
 function aplicarBusinessUI() {
@@ -14993,6 +15256,17 @@ function init() {
   setTimeout(intentarAutoSyncAdSpend, 3000);
   // Análisis profundo automático los lunes (si no se corrió en los últimos 6 días)
   intentarAnalisisSemanalLunes();
+  // Inversiones (modo personal): refrescar precios al abrir si la última
+  // cotización fue hace > 6h. Silencioso. Política: al abrir + botón manual.
+  setTimeout(() => {
+    try {
+      if (!esPerfilPersonal()) return;
+      if (!Array.isArray(state.config.inversiones) || !state.config.inversiones.length) return;
+      const fx = state.config.fxSnapshot;
+      const haceMucho = !fx || !fx.ts || (Date.now() - fx.ts) > 6 * 3600 * 1000;
+      if (haceMucho) actualizarPreciosInversiones(true);
+    } catch (e) {}
+  }, 4000);
 }
 
 // Auto-sync diario de Meta + Google ad spend. Silencioso (no asusta al usuario).
