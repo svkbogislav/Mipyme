@@ -3555,16 +3555,16 @@
 
     <!-- Paso 3: saldo inicial -->
     <div class="wiz-step" id="wizStep3" style="display:none">
-      <h3 style="margin:0 0 4px 0">💰 Tu caja hoy</h3>
-      <p style="margin:0 0 14px 0; color:var(--text-muted); font-size:13px">¿Cuánto tienes ahora mismo entre efectivo y cuenta bancaria del negocio? Si tienes ambos, separa los montos.</p>
+      <h3 style="margin:0 0 4px 0" id="wizStep3Title">💰 Tu caja hoy</h3>
+      <p style="margin:0 0 14px 0; color:var(--text-muted); font-size:13px" id="wizStep3Desc">¿Cuánto tienes ahora mismo entre efectivo y cuenta bancaria del negocio? Si tienes ambos, separa los montos.</p>
 
       <div class="row" style="margin-bottom:10px">
         <div>
-          <label>En caja / efectivo (CLP)</label>
+          <label id="wizSaldoCajaLbl">En caja / efectivo (CLP)</label>
           <input id="wizSaldoCaja" type="text" inputmode="numeric" data-clp="true" step="1" min="0" placeholder="0" />
         </div>
         <div>
-          <label>En cuenta bancaria (CLP)</label>
+          <label id="wizSaldoBancoLbl">En cuenta bancaria (CLP)</label>
           <input id="wizSaldoBanco" type="text" inputmode="numeric" data-clp="true" step="1" min="0" placeholder="0" />
         </div>
       </div>
@@ -3578,8 +3578,8 @@
 
     <!-- Paso 4: costos fijos típicos pre-armados por tipo -->
     <div class="wiz-step" id="wizStep4" style="display:none">
-      <h3 style="margin:0 0 4px 0">🔁 Gastos fijos mensuales</h3>
-      <p style="margin:0 0 14px 0; color:var(--text-muted); font-size:13px">Pre-armé una lista típica para tu rubro. Marca los que tienes y pon el monto aproximado — la app los va a generar cada mes solo.</p>
+      <h3 style="margin:0 0 4px 0" id="wizStep4Title">🔁 Gastos fijos mensuales</h3>
+      <p style="margin:0 0 14px 0; color:var(--text-muted); font-size:13px" id="wizStep4Desc">Pre-armé una lista típica para tu rubro. Marca los que tienes y pon el monto aproximado — la app los va a generar cada mes solo.</p>
 
       <div id="wizCostosLista" style="display:flex; flex-direction:column; gap:8px; max-height:340px; overflow-y:auto; padding-right:4px"></div>
 
@@ -3592,25 +3592,25 @@
 
     <!-- Paso 5: cómo vendes + CTAs -->
     <div class="wiz-step" id="wizStep5" style="display:none">
-      <h3 style="margin:0 0 4px 0">✓ Listo · ¿Qué hacemos ahora?</h3>
-      <p style="margin:0 0 14px 0; color:var(--text-muted); font-size:13px">Tu negocio está configurado. Te recomendamos empezar con un tour de 1 minuto para que conozcas dónde está cada cosa.</p>
+      <h3 style="margin:0 0 4px 0" id="wizStep5Title">✓ Listo · ¿Qué hacemos ahora?</h3>
+      <p style="margin:0 0 14px 0; color:var(--text-muted); font-size:13px" id="wizStep5Desc">Tu negocio está configurado. Te recomendamos empezar con un tour de 1 minuto para que conozcas dónde está cada cosa.</p>
 
       <div style="display:flex; flex-direction:column; gap:8px">
         <button class="btn primary" style="justify-content:flex-start; padding:14px; text-align:left" onclick="cerrarOnboarding(false); setTimeout(iniciarTour, 200)">
           <strong>🎬 Hacer un tour de 1 minuto por la app</strong>
-          <div style="font-size:11px; opacity:0.85; margin-top:2px">Recomendado — te muestro las 5 vistas principales y para qué sirven</div>
+          <div style="font-size:11px; opacity:0.85; margin-top:2px">Recomendado — te muestro las vistas principales y para qué sirven</div>
         </button>
-        <button class="btn" style="justify-content:flex-start; padding:14px; text-align:left" onclick="cerrarOnboarding(false); setTimeout(abrirModalVentaManual, 150)">
-          <strong>+ Registrar mi primera venta</strong>
-          <div style="font-size:11px; color:var(--text-muted); margin-top:2px">Saltarme el tour y empezar con datos reales</div>
+        <button class="btn" id="wizBtnVenta" style="justify-content:flex-start; padding:14px; text-align:left" onclick="cerrarOnboarding(false); setTimeout(abrirModalVentaManual, 150)">
+          <strong id="wizBtnVentaT">+ Registrar mi primera venta</strong>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:2px" id="wizBtnVentaS">Saltarme el tour y empezar con datos reales</div>
         </button>
         <button class="btn" style="justify-content:flex-start; padding:14px; text-align:left" onclick="cerrarOnboarding(false); setTimeout(abrirModalGasto, 150)">
-          <strong>+ Registrar mi primer gasto</strong>
-          <div style="font-size:11px; color:var(--text-muted); margin-top:2px">O empezar con lo que sale (suele ser más fácil)</div>
+          <strong id="wizBtnGastoT">+ Registrar mi primer gasto</strong>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:2px" id="wizBtnGastoS">O empezar con lo que sale (suele ser más fácil)</div>
         </button>
         <button class="btn" style="justify-content:flex-start; padding:14px; text-align:left" onclick="cerrarOnboarding(false); setTimeout(abrirModalConciliacion, 150)">
           <strong>🏦 Subir una cartola del banco</strong>
-          <div style="font-size:11px; color:var(--text-muted); margin-top:2px">Carga un mes entero de ventas y gastos de una sola vez (Excel o CSV)</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:2px" id="wizBtnCartolaS">Carga un mes entero de ventas y gastos de una sola vez (Excel o CSV)</div>
         </button>
         <button class="btn" id="wizShopifyBtn" style="justify-content:flex-start; padding:14px; text-align:left; display:none" onclick="cerrarOnboarding(false); document.querySelector('.nav-item[data-view=config]')?.click()">
           <strong>🛒 Conectar mi Shopify</strong>
@@ -14434,15 +14434,18 @@ function abrirOnboarding() {
 function _renderWizardProgress() {
   const wrap = document.getElementById('wizProgress');
   if (!wrap) return;
-  const dots = [];
-  for (let i = 1; i <= WIZARD_TOTAL_PASOS; i++) {
-    const esActual = i === _wizardStep;
-    const esPasado = i < _wizardStep;
+  // Personal salta el paso 2 (datos fiscales): la secuencia real es 1·3·4·5.
+  const secuencia = _wizardPerfil === 'personal' ? [1, 3, 4, 5] : [1, 2, 3, 4, 5];
+  const idxActual = secuencia.indexOf(_wizardStep); // 0-based
+  const dots = secuencia.map((_, i) => {
+    const esActual = i === idxActual;
+    const esPasado = i < idxActual;
     const color = esActual ? 'var(--primary)' : (esPasado ? '#94a3b8' : '#cbd5e1');
     const size = esActual ? '10px' : '8px';
-    dots.push(`<span style="display:inline-block; width:${size}; height:${size}; border-radius:50%; background:${color}; transition:all 0.2s"></span>`);
-  }
-  wrap.innerHTML = `${dots.join('')} <span style="margin-left:8px; font-size:11px; color:var(--text-muted); font-weight:600">Paso ${_wizardStep} de ${WIZARD_TOTAL_PASOS}</span>`;
+    return `<span style="display:inline-block; width:${size}; height:${size}; border-radius:50%; background:${color}; transition:all 0.2s; margin-right:5px"></span>`;
+  });
+  const num = idxActual >= 0 ? idxActual + 1 : _wizardStep;
+  wrap.innerHTML = `${dots.join('')} <span style="margin-left:8px; font-size:11px; color:var(--text-muted); font-weight:600">Paso ${num} de ${secuencia.length}</span>`;
 }
 
 function _mostrarWizardPaso(n) {
@@ -14451,7 +14454,40 @@ function _mostrarWizardPaso(n) {
     const el = document.getElementById(`wizStep${i}`);
     if (el) el.style.display = i === n ? '' : 'none';
   }
+  _aplicarTextosWizardPerfil();
   _renderWizardProgress();
+}
+
+// En modo personal no hay "negocio", "ventas" ni "Shopify". Reescribe los
+// textos de los pasos 3-5 para que hablen de finanzas personales. Idempotente:
+// se llama en cada cambio de paso.
+function _aplicarTextosWizardPerfil() {
+  const personal = _wizardPerfil === 'personal';
+  const set = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt; };
+  // Paso 3 — saldo inicial
+  set('wizStep3Title', personal ? '💰 Cuánto tienes hoy' : '💰 Tu caja hoy');
+  set('wizStep3Desc', personal
+    ? '¿Cuánto tienes ahora mismo entre efectivo y tu cuenta del banco? Si tienes ambos, separa los montos.'
+    : '¿Cuánto tienes ahora mismo entre efectivo y cuenta bancaria del negocio? Si tienes ambos, separa los montos.');
+  set('wizSaldoCajaLbl', personal ? 'Efectivo en mano (CLP)' : 'En caja / efectivo (CLP)');
+  set('wizSaldoBancoLbl', personal ? 'En mi cuenta del banco (CLP)' : 'En cuenta bancaria (CLP)');
+  // Paso 4 — gastos fijos
+  set('wizStep4Title', personal ? '🔁 Gastos fijos del mes' : '🔁 Gastos fijos mensuales');
+  set('wizStep4Desc', personal
+    ? 'Pre-armé una lista típica (arriendo, cuentas, suscripciones…). Marca los que tienes y pon el monto — la app los genera cada mes solo.'
+    : 'Pre-armé una lista típica para tu rubro. Marca los que tienes y pon el monto aproximado — la app los va a generar cada mes solo.');
+  // Paso 5 — listo / CTAs
+  set('wizStep5Title', personal ? '✓ Listo · ¿Qué hacemos ahora?' : '✓ Listo · ¿Qué hacemos ahora?');
+  set('wizStep5Desc', personal
+    ? 'Tus finanzas están configuradas. Te recomendamos un tour de 1 minuto para conocer dónde está cada cosa.'
+    : 'Tu negocio está configurado. Te recomendamos empezar con un tour de 1 minuto para que conozcas dónde está cada cosa.');
+  set('wizBtnVentaT', personal ? '+ Registrar un ingreso' : '+ Registrar mi primera venta');
+  set('wizBtnVentaS', personal ? 'Tu sueldo o cualquier plata que te entre' : 'Saltarme el tour y empezar con datos reales');
+  set('wizBtnGastoT', personal ? '+ Registrar un gasto' : '+ Registrar mi primer gasto');
+  set('wizBtnGastoS', personal ? 'O empezar con lo que sale (suele ser más fácil)' : 'O empezar con lo que sale (suele ser más fácil)');
+  set('wizBtnCartolaS', personal
+    ? 'Carga un mes entero de ingresos y gastos de una sola vez (Excel o CSV)'
+    : 'Carga un mes entero de ventas y gastos de una sola vez (Excel o CSV)');
 }
 
 let _wizardPerfil = 'pyme';
@@ -14684,7 +14720,7 @@ function cerrarOnboarding(skipped) {
   // Re-render UI por si cambió nombre / categorías / saldo / cuentas / recurrentes
   aplicarBusinessUI();
   renderDashboard();
-  if (!skipped) toast('¡Listo! Tu negocio está configurado', 'success');
+  if (!skipped) toast(esPerfilPersonal() ? '¡Listo! Tus finanzas están configuradas' : '¡Listo! Tu negocio está configurado', 'success');
 }
 
 /* =================================================================
