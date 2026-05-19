@@ -999,6 +999,10 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.5" fill="currentColor"/></svg>
       Metas
     </div>
+    <div class="nav-item" data-view="patrimonio" data-personal-only>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V10l7-5 7 5v11M9 21v-6h6v6"/></svg>
+      Patrimonio
+    </div>
     <div class="nav-item" data-view="cashflow">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M7 14l4-4 4 4 5-5"/></svg>
       Flujo de caja
@@ -2268,6 +2272,42 @@
         <div class="kpi"><div class="kpi-label">Falta</div><div class="kpi-value num-neg" id="metasFalta">$0</div></div>
       </div>
       <div id="metasLista"></div>
+    </section>
+
+    <!-- =========== PATRIMONIO NETO (modo personal) =========== -->
+    <section class="view" id="view-patrimonio">
+      <div class="topbar">
+        <div>
+          <h1>Patrimonio neto</h1>
+          <div class="sub">Lo que tienes menos lo que debes. La foto mensual te muestra si vas para arriba.</div>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn primary" onclick="abrirModalBien()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            Agregar bien
+          </button>
+        </div>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-label">Tengo (activos)</div><div class="kpi-value num-pos" id="patActivos">$0</div></div>
+        <div class="kpi"><div class="kpi-label">Debo (pasivos)</div><div class="kpi-value num-neg" id="patPasivos">$0</div></div>
+        <div class="kpi"><div class="kpi-label">Patrimonio neto</div><div class="kpi-value" id="patNeto">$0</div><div class="kpi-delta" id="patNetoDelta" style="color:var(--text-muted)"></div></div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <h3 style="margin:0 0 4px">De qué se compone</h3>
+        <div class="card-sub" style="margin-bottom:10px">Cuentas y bienes que tienes, menos tus deudas.</div>
+        <div class="table-wrap"><table id="patComposicion"></table></div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <h3 style="margin:0 0 4px">Bienes (lo que tienes además de la plata)</h3>
+        <div class="card-sub" style="margin-bottom:10px">Auto, departamento, inversiones, etc. Pon un valor aproximado de mercado.</div>
+        <div class="table-wrap"><table id="patBienes"></table></div>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 4px">Evolución mensual</h3>
+        <div class="card-sub" style="margin-bottom:10px">Una foto al mes. Si el patrimonio sube mes a mes, vas bien.</div>
+        <div class="table-wrap"><table id="patEvolucion"></table></div>
+      </div>
     </section>
 
     <!-- =========== FACTURACIÓN ELECTRÓNICA (SII / LibreDTE) =========== -->
@@ -4041,6 +4081,21 @@
   </div>
 </div>
 
+<!-- ===== MODAL: Bien (patrimonio) ===== -->
+<div class="modal-overlay" id="modalBien" onclick="if(event.target===this) cerrarModalBien()">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header"><h2 id="modalBienTitulo" style="margin:0">Agregar bien</h2><button class="modal-close" onclick="cerrarModalBien()">✕</button></div>
+    <input type="hidden" id="bienId" />
+    <div style="margin-bottom:10px"><label>¿Qué es?</label><input id="bienNombre" placeholder="Ej: Auto, departamento, fondo mutuo, herramientas" autocomplete="off" /></div>
+    <div style="margin-bottom:10px"><label>Valor aproximado (CLP)</label><input id="bienValor" type="text" inputmode="numeric" data-clp="true" placeholder="0" /></div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="bienBtnEliminar" onclick="eliminarBien()" style="margin-right:auto; color:var(--danger); display:none">Eliminar</button>
+      <button class="btn" onclick="cerrarModalBien()">Cancelar</button>
+      <button class="btn primary" onclick="guardarBien()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== MODAL: Nueva versión disponible =====
      Se abre automáticamente al boot cuando electron-updater detecta una
      versión nueva en GitHub Releases. Muestra las release notes y permite
@@ -4263,6 +4318,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     if (view === 'facturacion') renderFacturacion();
     if (view === 'presupuesto') renderPresupuesto();
     if (view === 'metas') renderMetas();
+    if (view === 'patrimonio') renderPatrimonio();
     if (view === 'productos') renderProductos();
     if (view === 'activos') renderActivos();
     if (view === 'contactos') renderContactos();
@@ -8642,6 +8698,116 @@ function guardarAporteMeta() {
   cerrarModalAporte();
   renderMetas();
   toast('Aporte registrado', 'success');
+}
+
+/* =================================================================
+   PATRIMONIO NETO (modo personal · Etapa 4)
+   Activos = saldo de cuentas + bienes (auto/depto/inversiones).
+   Pasivos = saldo pendiente de deudas. Neto = activos − pasivos.
+   Foto mensual en state.config.patrimonioSnaps[{ym,activos,pasivos,neto}].
+   ================================================================= */
+function _bienes() {
+  if (!Array.isArray(state.config.bienes)) state.config.bienes = [];
+  return state.config.bienes;
+}
+function _patrimonioActual() {
+  const cuentas = (state.config.cuentas || []).reduce((s, c) => s + calcularSaldoCuenta(c.id), 0);
+  const bienes = _bienes().reduce((s, b) => s + Number(b.valor || 0), 0);
+  const pasivos = (state.deudas || []).reduce((s, d) => s + Math.max(0, Number(saldoPendienteDeuda(d) || 0)), 0);
+  const activos = cuentas + bienes;
+  return { cuentas, bienes, activos, pasivos, neto: activos - pasivos };
+}
+function _snapshotPatrimonio(p) {
+  if (!Array.isArray(state.config.patrimonioSnaps)) state.config.patrimonioSnaps = [];
+  const ym = nuevoMesActualYM();
+  const snaps = state.config.patrimonioSnaps;
+  const i = snaps.findIndex(s => s.ym === ym);
+  const snap = { ym, activos: Math.round(p.activos), pasivos: Math.round(p.pasivos), neto: Math.round(p.neto) };
+  if (i >= 0) snaps[i] = snap; else snaps.push(snap);
+  snaps.sort((a, b) => a.ym.localeCompare(b.ym));
+  if (snaps.length > 36) state.config.patrimonioSnaps = snaps.slice(-36);
+  saveState();
+}
+
+function renderPatrimonio() {
+  const p = _patrimonioActual();
+  _snapshotPatrimonio(p);
+  document.getElementById('patActivos').textContent = clp(p.activos);
+  document.getElementById('patPasivos').textContent = clp(p.pasivos);
+  const netoEl = document.getElementById('patNeto');
+  netoEl.textContent = clp(p.neto);
+  netoEl.className = 'kpi-value ' + (p.neto >= 0 ? 'num-pos' : 'num-neg');
+
+  const snaps = state.config.patrimonioSnaps || [];
+  const delta = snaps.length >= 2 ? p.neto - snaps[snaps.length - 2].neto : 0;
+  const dEl = document.getElementById('patNetoDelta');
+  if (snaps.length >= 2) {
+    dEl.innerHTML = delta >= 0
+      ? `<span class="up">+${clp(delta)} vs mes pasado</span>`
+      : `<span class="down">${clp(delta)} vs mes pasado</span>`;
+  } else dEl.textContent = 'Primera foto — vuelve el próximo mes para comparar';
+
+  const metasAhorro = _metas().reduce((s, m) => s + _metaAhorrado(m), 0);
+  document.getElementById('patComposicion').innerHTML = `
+    <tbody>
+      <tr><td>💳 Plata en cuentas</td><td class="num num-pos">${clp(p.cuentas)}</td></tr>
+      <tr><td>🏠 Bienes (auto, depto, inversiones…)</td><td class="num num-pos">${clp(p.bienes)}</td></tr>
+      <tr style="font-weight:600"><td>Total que tienes</td><td class="num num-pos">${clp(p.activos)}</td></tr>
+      <tr><td>📉 Deudas pendientes</td><td class="num num-neg">−${clp(p.pasivos)}</td></tr>
+      <tr style="font-weight:700; background:var(--surface-2)"><td>Patrimonio neto</td><td class="num ${p.neto >= 0 ? 'num-pos' : 'num-neg'}">${clp(p.neto)}</td></tr>
+    </tbody>`;
+  if (metasAhorro > 0) {
+    document.getElementById('patComposicion').innerHTML +=
+      `<tfoot><tr><td colspan="2" style="font-size:11px; color:var(--text-muted); padding-top:8px">De tu plata, ~${clp(metasAhorro)} los tienes reservados en metas de ahorro.</td></tr></tfoot>`;
+  }
+
+  const bienes = _bienes();
+  document.getElementById('patBienes').innerHTML = bienes.length
+    ? `<thead><tr><th>Bien</th><th class="num">Valor</th><th></th></tr></thead><tbody>${bienes.map(b => `
+        <tr><td><strong>${escapeHtml(b.nombre || '—')}</strong></td>
+        <td class="num">${clp(b.valor)}</td>
+        <td style="text-align:right"><button class="btn sm ghost" onclick="abrirModalBien('${b.id}')">Editar</button></td></tr>`).join('')}</tbody>`
+    : `<tbody><tr><td style="padding:14px; color:var(--text-muted)">Sin bienes cargados. Agrega tu auto, departamento, inversiones, etc. para que el patrimonio sea real.</td></tr></tbody>`;
+
+  const ev = snaps.slice(-12).reverse();
+  document.getElementById('patEvolucion').innerHTML = ev.length
+    ? `<thead><tr><th>Mes</th><th class="num">Tienes</th><th class="num">Debes</th><th class="num">Patrimonio</th></tr></thead><tbody>${ev.map(s => `
+        <tr><td>${escapeHtml(s.ym)}</td><td class="num num-pos">${clp(s.activos)}</td><td class="num num-neg">${clp(s.pasivos)}</td><td class="num"><strong>${clp(s.neto)}</strong></td></tr>`).join('')}</tbody>`
+    : `<tbody><tr><td style="padding:14px; color:var(--text-muted)">Aún sin historial.</td></tr></tbody>`;
+}
+
+function abrirModalBien(id) {
+  const b = id ? _bienes().find(x => x.id === id) : null;
+  document.getElementById('modalBienTitulo').textContent = b ? 'Editar bien' : 'Agregar bien';
+  document.getElementById('bienId').value = b ? b.id : '';
+  document.getElementById('bienNombre').value = b ? (b.nombre || '') : '';
+  Forms.setearMontoCLP(document.getElementById('bienValor'), b ? b.valor : '');
+  document.getElementById('bienBtnEliminar').style.display = b ? '' : 'none';
+  document.getElementById('modalBien').classList.add('show');
+  setTimeout(() => document.getElementById('bienNombre').focus(), 80);
+}
+function cerrarModalBien() { document.getElementById('modalBien').classList.remove('show'); }
+function guardarBien() {
+  const nombre = document.getElementById('bienNombre').value.trim();
+  const valor = Forms.parsearCLP(document.getElementById('bienValor').value);
+  if (!nombre) { toast('Ponle un nombre al bien', 'error'); return; }
+  const id = document.getElementById('bienId').value;
+  const bienes = _bienes();
+  if (id) { const b = bienes.find(x => x.id === id); if (b) { b.nombre = nombre; b.valor = valor; } }
+  else bienes.push({ id: uid(), nombre, valor });
+  saveState();
+  cerrarModalBien();
+  renderPatrimonio();
+  toast(id ? 'Bien actualizado' : 'Bien agregado', 'success');
+}
+function eliminarBien() {
+  const id = document.getElementById('bienId').value;
+  if (!id) return;
+  state.config.bienes = _bienes().filter(b => b.id !== id);
+  saveState();
+  cerrarModalBien();
+  renderPatrimonio();
+  toast('Bien eliminado', '');
 }
 
 function aplicarBusinessUI() {
