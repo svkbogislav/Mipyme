@@ -120,14 +120,27 @@
         if (ym >= desdeYM && ym <= hoyYM) saldo += Number(monto || 0);
       });
     }
+
+    // Transferencias internas: la cuenta origen baja y la destino sube. NO
+    // afectan ventas/gastos (no entran al P&L), solo mueven plata. Respetan
+    // las mismas reglas de fecha (no contar futuras ni anteriores al saldo
+    // inicial declarado).
+    (state.transferencias || []).forEach(t => {
+      if (!incluirEnSaldo(t.fecha)) return;
+      const monto = Number(t.monto || 0);
+      if (!monto) return;
+      if (t.cuenta_origen === cuentaId)  saldo -= monto;
+      if (t.cuenta_destino === cuentaId) saldo += monto;
+    });
     return saldo;
   }
 
-  // Suma el saldo de todas las cuentas líquidas (excluye tarjetas).
-  // Conveniencia para cuando solo te importa el total líquido disponible.
+  // Suma el saldo de todas las cuentas líquidas (excluye tarjetas y
+  // cuentas que el usuario marcó como "no sumar al total" — útil para
+  // cuentas administradas a nombre de terceros o que querés ver aparte).
   function calcularCajaLiquidaTotal(state, ventasPorMes) {
     return ((state && state.config && state.config.cuentas) || [])
-      .filter(c => TIPOS_LIQUIDOS.has(c.tipo))
+      .filter(c => TIPOS_LIQUIDOS.has(c.tipo) && !c.excluir_del_total)
       .reduce((s, c) => s + calcularSaldoCuenta(state, c.id, ventasPorMes), 0);
   }
 

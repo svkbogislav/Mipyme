@@ -2542,6 +2542,10 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
             Subir cartola del banco
           </button>
+          <button class="btn" onclick="abrirModalTransferencia()" title="Mueve plata entre dos cuentas tuyas sin afectar ingresos/gastos">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            Transferir
+          </button>
           <button class="btn primary" onclick="abrirModalCuenta()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
             Nueva cuenta
@@ -2550,7 +2554,7 @@
       </div>
 
       <div class="kpi-grid">
-        <div class="kpi"><div class="kpi-label">Saldo total (todas las cuentas)</div><div class="kpi-value" id="cuentasTotal">$0</div></div>
+        <div class="kpi"><div class="kpi-label">Saldo total (cuentas que suman)</div><div class="kpi-value" id="cuentasTotal">$0</div><div class="kpi-delta" id="cuentasTotalSub" style="color:var(--text-muted)"></div></div>
         <div class="kpi"><div class="kpi-label">Cuentas activas</div><div class="kpi-value" id="cuentasCantidad">0</div></div>
         <div class="kpi"><div class="kpi-label">Saldo en efectivo</div><div class="kpi-value" id="cuentasEfectivo">$0</div></div>
         <div class="kpi"><div class="kpi-label">Saldo en banco</div><div class="kpi-value" id="cuentasBanco">$0</div></div>
@@ -2560,6 +2564,12 @@
         <h3>Detalle por cuenta</h3>
         <div class="card-sub">Saldo = saldo inicial + ingresos asignados − gastos asignados</div>
         <div class="table-wrap"><table id="tablaCuentas"></table></div>
+      </div>
+
+      <div class="card" id="cardTransferencias" style="margin-bottom:14px; display:none">
+        <h3>Transferencias entre tus cuentas</h3>
+        <div class="card-sub">Mueven plata de una cuenta a otra sin afectar tus ingresos ni gastos (no entran al P&amp;L). Útiles para pagar la tarjeta de crédito, mover plata al banco, etc.</div>
+        <div class="table-wrap" style="margin-top:10px"><table id="tablaTransferencias"></table></div>
       </div>
 
       <div class="card" id="cardCartolasImportadas" style="display:none">
@@ -3317,9 +3327,13 @@
       <input type="checkbox" id="cuentaDefault" style="width:auto; margin:0" />
       Marcar como cuenta predeterminada (se usa por defecto al registrar gastos)
     </label>
-    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-top:6px">
+    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-top:6px" data-empresa-only>
       <input type="checkbox" id="cuentaDepositoVentas" style="width:auto; margin:0" />
       Cuenta donde caen los ingresos de Shopify (suma las ventas al saldo)
+    </label>
+    <label style="display:flex; align-items:flex-start; gap:6px; cursor:pointer; margin-top:6px">
+      <input type="checkbox" id="cuentaExcluirTotal" style="width:auto; margin:3px 0 0" />
+      <span>No sumar al total de caja líquida <span style="color:var(--text-muted); font-weight:400">— la cuenta aparece igual con su saldo, pero no infla el "Saldo total". Útil para cuentas que administras a nombre de terceros o que quieres ver aparte (ej. cuenta de los niños, fondo separado).</span></span>
     </label>
     <div style="margin-top:10px; padding:10px 12px; background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; font-size:12px; color:#92400e">
       <strong>⚠️ Importante:</strong> el saldo inicial se interpreta <strong>al primer día del mes que elijas abajo</strong>. Movimientos (gastos, ingresos, recurrentes) anteriores a esa fecha NO se restan ni suman al saldo actual. Si tu saldo $37.000 corresponde a mayo 2026, marca "mayo 2026" abajo — así los Shopify recurrentes generados desde 2023 no contaminan tu balance.
@@ -3340,6 +3354,36 @@
       <button class="btn danger" id="btnEliminarCuenta" style="margin-right:auto; display:none" onclick="eliminarCuenta()">Eliminar</button>
       <button class="btn" onclick="cerrarModalCuenta()">Cancelar</button>
       <button class="btn primary" onclick="guardarCuenta()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: Transferencia entre cuentas =====
+     Mueve plata de A a B sin tocar ventas/gastos. Vive en state.transferencias
+     y se aplica en calcularSaldoCuenta (origen baja, destino sube). -->
+<div class="modal-overlay" id="modalTransferencia" onclick="if(event.target===this) cerrarModalTransferencia()">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-header"><h2 id="modalTrfTitulo" style="margin:0">Nueva transferencia</h2><button class="modal-close" onclick="cerrarModalTransferencia()">✕</button></div>
+    <input type="hidden" id="trfId" />
+    <div class="row" style="margin-bottom:10px">
+      <div><label>Fecha</label><input id="trfFecha" type="date" /></div>
+      <div><label>Monto (CLP)</label><input id="trfMonto" type="text" inputmode="numeric" data-clp="true" placeholder="0" /></div>
+    </div>
+    <div class="row" style="margin-bottom:10px">
+      <div><label>Desde (cuenta origen)</label><select id="trfOrigen"></select></div>
+      <div><label>Hacia (cuenta destino)</label><select id="trfDestino"></select></div>
+    </div>
+    <div style="margin-bottom:10px">
+      <label>Nota (opcional)</label>
+      <input id="trfNota" placeholder="Ej: pago tarjeta de crédito" autocomplete="off" />
+    </div>
+    <div style="font-size:11px; color:var(--text-muted); padding:8px 10px; background:var(--surface-2); border-radius:8px">
+      ⓘ La transferencia <strong>no</strong> es un ingreso ni un gasto: solo mueve plata entre tus cuentas. Por eso no aparece en P&amp;L ni en presupuesto.
+    </div>
+    <div class="modal-actions">
+      <button class="btn danger" id="trfBtnEliminar" style="margin-right:auto; display:none" onclick="eliminarTransferencia()">Eliminar</button>
+      <button class="btn" onclick="cerrarModalTransferencia()">Cancelar</button>
+      <button class="btn primary" onclick="guardarTransferencia()">Guardar</button>
     </div>
   </div>
 </div>
@@ -10323,11 +10367,17 @@ function renderCuentas() {
   asegurarCuentaDefault();
   const cuentas = state.config.cuentas || [];
   const detalles = cuentas.map(c => ({ ...c, saldo: calcularSaldoCuenta(c.id) }));
-  const total = detalles.reduce((s, c) => s + c.saldo, 0);
-  const efectivo = detalles.filter(c => c.tipo === 'caja').reduce((s, c) => s + c.saldo, 0);
-  const banco = detalles.filter(c => c.tipo === 'banco').reduce((s, c) => s + c.saldo, 0);
+  // El "total" excluye las cuentas marcadas como "no suma al total". El total
+  // informativo (suma todo) lo mostramos como subtítulo si hay alguna excluida.
+  const total = detalles.filter(c => !c.excluir_del_total).reduce((s, c) => s + c.saldo, 0);
+  const totalBruto = detalles.reduce((s, c) => s + c.saldo, 0);
+  const efectivo = detalles.filter(c => c.tipo === 'caja' && !c.excluir_del_total).reduce((s, c) => s + c.saldo, 0);
+  const banco = detalles.filter(c => c.tipo === 'banco' && !c.excluir_del_total).reduce((s, c) => s + c.saldo, 0);
 
   document.getElementById('cuentasTotal').textContent = clp(total);
+  const sub = document.getElementById('cuentasTotalSub');
+  const excluidas = detalles.filter(c => c.excluir_del_total);
+  if (sub) sub.textContent = excluidas.length ? `+ ${clp(totalBruto - total)} en ${excluidas.length} cuenta${excluidas.length === 1 ? '' : 's'} que no suman` : '';
   document.getElementById('cuentasCantidad').textContent = String(cuentas.length);
   document.getElementById('cuentasEfectivo').textContent = clp(efectivo);
   document.getElementById('cuentasBanco').textContent = clp(banco);
@@ -10343,7 +10393,7 @@ function renderCuentas() {
         const isDefault = c.id === state.config.cuenta_default_id;
         return `<tr>
           <td><span style="display:inline-block; width:14px; height:14px; border-radius:4px; background:${escapeHtml(c.color || '#4f46e5')}"></span></td>
-          <td><strong>${escapeHtml(c.nombre)}</strong>${isDefault ? ' <span class="badge" style="font-size:10px; background:var(--primary-soft); color:var(--primary)">predeterminada</span>' : ''}${c.deposito_ventas ? ' <span class="badge" style="font-size:10px; background:#dcfce7; color:#15803d" title="Las ventas de Shopify se suman al saldo de esta cuenta">↘ depósito ventas</span>' : ''}</td>
+          <td><strong>${escapeHtml(c.nombre)}</strong>${isDefault ? ' <span class="badge" style="font-size:10px; background:var(--primary-soft); color:var(--primary)">predeterminada</span>' : ''}${c.deposito_ventas ? ' <span class="badge" style="font-size:10px; background:#dcfce7; color:#15803d" title="Las ventas de Shopify se suman al saldo de esta cuenta">↘ depósito ventas</span>' : ''}${c.excluir_del_total ? ' <span class="badge" style="font-size:10px; background:var(--surface-2); color:var(--text-muted)" title="Esta cuenta no suma al \'Saldo total\' de arriba (solo informativa)">no suma</span>' : ''}</td>
           <td><span class="badge">${escapeHtml(c.tipo)}</span></td>
           <td class="num">${clp(c.saldo_inicial)}</td>
           <td class="num">${fmtNum.format(movs)} mov.</td>
@@ -10355,6 +10405,9 @@ function renderCuentas() {
       }).join('')}
     </tbody>
   `;
+
+  // Transferencias entre cuentas (si hay)
+  if (typeof _renderTablaTransferencias === 'function') _renderTablaTransferencias();
 
   // Cartolas importadas (para poder retirarlas)
   const lotes = (state.cartolaLotes || []).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
@@ -10459,6 +10512,7 @@ function abrirModalCuenta() {
   document.getElementById('cuentaColor').value = '#4f46e5';
   document.getElementById('cuentaDefault').checked = false;
   document.getElementById('cuentaDepositoVentas').checked = false;
+  document.getElementById('cuentaExcluirTotal').checked = false;
   document.getElementById('cuentaSaldoInicialMes').value = '';
   document.getElementById('btnEliminarCuenta').style.display = 'none';
   // En modo "nueva", el preview no aplica (no hay movimientos asignados todavía)
@@ -10478,6 +10532,7 @@ function editarCuenta(id) {
   document.getElementById('cuentaColor').value = c.color || '#4f46e5';
   document.getElementById('cuentaDefault').checked = id === state.config.cuenta_default_id;
   document.getElementById('cuentaDepositoVentas').checked = !!c.deposito_ventas;
+  document.getElementById('cuentaExcluirTotal').checked = !!c.excluir_del_total;
   document.getElementById('cuentaSaldoInicialMes').value = c.saldo_inicial_mes || '';
   // Render preview en vivo + wireo recálculo en cada cambio relevante (idempotente)
   ['cuentaSaldo','cuentaSaldoInicialMes','cuentaDepositoVentas'].forEach(elId => {
@@ -10509,7 +10564,8 @@ function guardarCuenta() {
     saldo_inicial: Forms.parsearCLP(document.getElementById('cuentaSaldo').value),
     saldo_inicial_mes: document.getElementById('cuentaSaldoInicialMes').value || null,
     color: document.getElementById('cuentaColor').value || '#4f46e5',
-    deposito_ventas: depositoVentas
+    deposito_ventas: depositoVentas,
+    excluir_del_total: !!document.getElementById('cuentaExcluirTotal').checked
   };
   if (!state.config.cuentas) state.config.cuentas = [];
   if (id) {
@@ -10528,6 +10584,98 @@ function guardarCuenta() {
   cerrarModalCuenta();
   toast('Cuenta guardada', 'success');
   renderCuentas();
+}
+
+/* =================================================================
+   TRANSFERENCIAS ENTRE CUENTAS
+   Cada transferencia: { id, fecha, cuenta_origen, cuenta_destino, monto, nota }
+   Vive en state.transferencias. Se aplica en calcularSaldoCuenta
+   (origen baja, destino sube). NO afecta P&L (no son ingreso ni gasto).
+   ================================================================= */
+function _transferencias() {
+  if (!Array.isArray(state.transferencias)) state.transferencias = [];
+  return state.transferencias;
+}
+function _poblarSelectCuentaTrf(selId, valor) {
+  const sel = document.getElementById(selId);
+  if (!sel) return;
+  const cuentas = state.config.cuentas || [];
+  sel.innerHTML = cuentas.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.nombre)}</option>`).join('');
+  if (valor) sel.value = valor;
+}
+function abrirModalTransferencia(id) {
+  const cuentas = state.config.cuentas || [];
+  if (cuentas.length < 2) { toast('Necesitas al menos 2 cuentas para transferir', 'error'); return; }
+  const t = id ? _transferencias().find(x => x.id === id) : null;
+  document.getElementById('modalTrfTitulo').textContent = t ? 'Editar transferencia' : 'Nueva transferencia';
+  document.getElementById('trfId').value = t ? t.id : '';
+  document.getElementById('trfFecha').value = t ? (t.fecha || '') : new Date().toISOString().slice(0, 10);
+  Forms.setearMontoCLP(document.getElementById('trfMonto'), t ? t.monto : '');
+  _poblarSelectCuentaTrf('trfOrigen', t ? t.cuenta_origen : (state.config.cuenta_default_id || cuentas[0].id));
+  // Destino default: la segunda cuenta distinta de la origen
+  const origenDef = document.getElementById('trfOrigen').value;
+  const destDef = t ? t.cuenta_destino : (cuentas.find(c => c.id !== origenDef) || cuentas[0]).id;
+  _poblarSelectCuentaTrf('trfDestino', destDef);
+  document.getElementById('trfNota').value = t ? (t.nota || '') : '';
+  document.getElementById('trfBtnEliminar').style.display = t ? '' : 'none';
+  document.getElementById('modalTransferencia').classList.add('show');
+  setTimeout(() => document.getElementById('trfMonto').focus(), 80);
+}
+function cerrarModalTransferencia() { document.getElementById('modalTransferencia').classList.remove('show'); }
+function guardarTransferencia() {
+  const id = document.getElementById('trfId').value;
+  const fecha = document.getElementById('trfFecha').value;
+  const monto = Forms.parsearCLP(document.getElementById('trfMonto').value);
+  const origen = document.getElementById('trfOrigen').value;
+  const destino = document.getElementById('trfDestino').value;
+  const nota = document.getElementById('trfNota').value.trim();
+  if (!fecha) { toast('Pon una fecha', 'error'); return; }
+  if (monto <= 0) { toast('Pon un monto válido', 'error'); return; }
+  if (!origen || !destino) { toast('Elige cuenta origen y destino', 'error'); return; }
+  if (origen === destino) { toast('Origen y destino deben ser cuentas distintas', 'error'); return; }
+  const list = _transferencias();
+  if (id) {
+    const t = list.find(x => x.id === id);
+    if (t) Object.assign(t, { fecha, monto, cuenta_origen: origen, cuenta_destino: destino, nota });
+  } else {
+    list.push({ id: uid(), fecha, monto, cuenta_origen: origen, cuenta_destino: destino, nota });
+  }
+  saveState();
+  cerrarModalTransferencia();
+  renderCuentas();
+  toast(id ? 'Transferencia actualizada' : 'Transferencia registrada', 'success');
+}
+function eliminarTransferencia(id) {
+  const tid = id || document.getElementById('trfId').value;
+  if (!tid) return;
+  state.transferencias = _transferencias().filter(t => t.id !== tid);
+  saveState();
+  cerrarModalTransferencia();
+  renderCuentas();
+  toast('Transferencia eliminada', '');
+}
+function _renderTablaTransferencias() {
+  const card = document.getElementById('cardTransferencias');
+  const tabla = document.getElementById('tablaTransferencias');
+  if (!card || !tabla) return;
+  const list = _transferencias().slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+  if (!list.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const nombreCta = (cid) => {
+    const c = (state.config.cuentas || []).find(x => x.id === cid);
+    return c ? c.nombre : '—';
+  };
+  tabla.innerHTML = `<thead><tr><th>Fecha</th><th>Desde</th><th>Hacia</th><th class="num">Monto</th><th>Nota</th><th></th></tr></thead><tbody>${list.map(t => `
+    <tr>
+      <td>${escapeHtml(t.fecha || '—')}</td>
+      <td>${escapeHtml(nombreCta(t.cuenta_origen))}</td>
+      <td>→ ${escapeHtml(nombreCta(t.cuenta_destino))}</td>
+      <td class="num"><strong>${clp(t.monto)}</strong></td>
+      <td>${escapeHtml(t.nota || '')}</td>
+      <td style="text-align:right; white-space:nowrap">
+        <button class="btn sm ghost" onclick="abrirModalTransferencia('${escapeHtml(t.id)}')">Editar</button>
+      </td>
+    </tr>`).join('')}</tbody>`;
 }
 
 function eliminarCuenta() {
