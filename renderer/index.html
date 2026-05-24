@@ -1696,6 +1696,26 @@
             </div>
           </div>
 
+          <!-- Presupuesto recomendado: cuánto invertir y dónde -->
+          <div class="card full" data-widget-key="marketing-budget" style="margin-bottom:14px" id="cardBudgetRecomendado">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:4px">
+              <div>
+                <h3 style="margin:0 0 4px">🎯 Presupuesto recomendado</h3>
+                <div class="card-sub">Qué hacer con tu spend según el ROAS de los últimos 3 meses y la tendencia. Es una sugerencia — ajusta según tu margen y caja.</div>
+              </div>
+              <div style="display:flex; gap:6px; align-items:center; flex-shrink:0">
+                <label style="font-size:11px; color:var(--text-muted); margin:0">ROAS objetivo</label>
+                <select id="anaBudgetTarget" style="width:auto; padding:4px 8px; font-size:12px" onchange="renderPresupuestoRecomendado()">
+                  <option value="2">2x — break-even ajustado</option>
+                  <option value="3" selected>3x — saludable</option>
+                  <option value="4">4x — margen amplio</option>
+                  <option value="5">5x — agresivo</option>
+                </select>
+              </div>
+            </div>
+            <div id="anaBudgetRecs" style="margin-top:12px"></div>
+          </div>
+
           <!-- Comparativa side-by-side Meta vs Google -->
           <div class="card full" data-widget-key="marketing-comparativa" style="margin-bottom:14px" id="cardComparativaPlataformas">
             <h3>⚔️ Meta vs Google · comparativa de plataformas</h3>
@@ -14142,6 +14162,11 @@ function renderAnaMarketing(a) {
   // Comparativa side-by-side Meta vs Google
   renderComparativaPlataformas(metaSnaps, googleSnaps, aggsByMonth);
 
+  // Presupuesto recomendado: cache la data y renderiza (también se re-llama
+  // cuando el usuario cambia el "ROAS objetivo" en el selector).
+  _anaBudgetCache = roasFilas;
+  renderPresupuestoRecomendado();
+
   // Tabla ROAS combinado (split Meta vs Google)
   document.getElementById('anaTablaROAS').innerHTML = `
     <thead><tr><th>Mes</th><th class="num">Meta</th><th class="num">Google</th><th class="num">Total spend</th><th class="num">Revenue</th><th class="num">ROAS</th><th class="num">CAC</th></tr></thead>
@@ -14193,6 +14218,166 @@ function renderAnaMarketing(a) {
 // === Comparativa side-by-side Meta vs Google ===
 // Muestra las dos plataformas con métricas clave. Verde = mejor, rojo = peor.
 // Si solo hay una plataforma conectada, muestra solo esa columna.
+// Cache de los 12 meses combinados Meta+Google para que el cambio de
+// "ROAS objetivo" no requiera re-cargar todo el análisis.
+let _anaBudgetCache = null;
+
+// Sugerencia de presupuesto por plataforma.
+//   Recientes (últimos 3m) → la realidad operativa actual.
+//   ROAS objetivo → cuánto retorno mínimo aceptable (configurable).
+//   Tendencia (3m vs 6m anteriores) → ¿la cosa está mejorando o empeorando?
+//
+// Reglas (multiplicador sobre el spend actual):
+//   ROAS < 1   → 0%   "Pausar — estás perdiendo plata"
+//   ROAS < tgt*0.66 → 50% "Bajar fuerte"
+//   ROAS < tgt     → 80% "Bajar"
+//   tgt ≤ ROAS < tgt*1.33 → 100% "Mantener"
+//   tgt*1.33 ≤ ROAS < tgt*2 → 130% "Escalar moderado"
+//   ROAS ≥ tgt*2  → 160% "Escalar agresivo (el ROAS suele bajar al subir spend)"
+function _budgetMultiplier(roas, target) {
+  if (!isFinite(roas) || roas <= 0) return 0;
+  if (roas < 1) return 0;
+  if (roas < target * 0.66) return 0.5;
+  if (roas < target) return 0.8;
+  if (roas < target * 1.33) return 1.0;
+  if (roas < target * 2) return 1.3;
+  return 1.6;
+}
+function _budgetEtiqueta(mult) {
+  if (mult === 0) return { texto: 'Pausar campañas', color: 'var(--danger-text)', bg: 'var(--danger-soft)' };
+  if (mult < 1)   return { texto: 'Bajar spend', color: 'var(--warning-text)', bg: 'var(--warning-soft)' };
+  if (mult === 1) return { texto: 'Mantener',  color: 'var(--text-muted)', bg: 'var(--surface-2)' };
+  if (mult <= 1.3)return { texto: 'Escalar moderado', color: 'var(--success-text)', bg: 'var(--success-soft)' };
+  return                  { texto: 'Escalar agresivo', color: 'var(--success-text)', bg: 'var(--success-soft)' };
+}
+
+function renderPresupuestoRecomendado() {
+  const cont = document.getElementById('anaBudgetRecs');
+  if (!cont) return;
+  const filas = _anaBudgetCache || [];
+  const target = Number(document.getElementById('anaBudgetTarget')?.value || 3);
+  if (!filas.length) { cont.innerHTML = '<div style="font-size:12px; color:var(--text-muted)">Aún no hay data de ad spend.</div>'; return; }
+
+  // Recientes vs históricos
+  const last3 = filas.slice(-3);
+  const prior = filas.slice(-9, -3); // los 6 meses anteriores a los últimos 3
+
+  // Helper: avg de un campo, ROAS efectivo para spend per platform.
+  const _avg = (arr, key) => arr.length ? arr.reduce((s, r) => s + (r[key] || 0), 0) / arr.length : 0;
+  const _sum = (arr, key) => arr.reduce((s, r) => s + (r[key] || 0), 0);
+
+  // ROAS global (rev / spend) en cada ventana — sirve como mejor proxy de retorno por plataforma cuando no tenemos atribución.
+  const roas3   = _sum(last3, 'rev') / Math.max(1, _sum(last3, 'totalSpend'));
+  const roasPrev = prior.length ? (_sum(prior, 'rev') / Math.max(1, _sum(prior, 'totalSpend'))) : 0;
+  const trendDelta = roasPrev > 0 ? (roas3 - roasPrev) / roasPrev : 0; // % cambio
+  const trendIco = trendDelta > 0.10 ? '↑' : (trendDelta < -0.10 ? '↓' : '→');
+  const trendTxt = trendDelta > 0.10 ? `mejorando (+${(trendDelta * 100).toFixed(0)}%)`
+                  : trendDelta < -0.10 ? `empeorando (${(trendDelta * 100).toFixed(0)}%)`
+                  : 'estable';
+  const trendColor = trendDelta > 0.10 ? 'var(--success-text)' : (trendDelta < -0.10 ? 'var(--danger-text)' : 'var(--text-muted)');
+
+  // Multiplicador base por ROAS reciente; ajustado por tendencia (-10% si empeorando, +10% si mejorando, max 1.8)
+  let mult = _budgetMultiplier(roas3, target);
+  if (mult > 0) {
+    if (trendDelta < -0.15) mult = Math.max(0.5, mult * 0.9);
+    if (trendDelta > 0.15) mult = Math.min(1.8, mult * 1.1);
+  }
+  const etiq = _budgetEtiqueta(mult);
+
+  // Construcción por plataforma. El multiplicador es el mismo, pero la distribución entre Meta y Google
+  // la ajustamos por CPC eficiencia (CPC más barato → más clicks por peso → reasignación parcial).
+  const metaSpend3   = _avg(last3, 'metaSpend');
+  const googleSpend3 = _avg(last3, 'googleSpend');
+  const metaClicks3   = _sum(last3, 'metaClicks');
+  const googleClicks3 = _sum(last3, 'googleClicks');
+  const metaCpc   = metaClicks3   > 0 ? _sum(last3, 'metaSpend') / metaClicks3 : 0;
+  const googleCpc = googleClicks3 > 0 ? _sum(last3, 'googleSpend') / googleClicks3 : 0;
+
+  // Total recomendado en CLP
+  const spend3Total = metaSpend3 + googleSpend3;
+  const recomendadoTotal = spend3Total * mult;
+
+  // Reallocation: si una plataforma tiene CPC bastante mejor, sugerir mover hasta 20% del share.
+  let metaShare = spend3Total > 0 ? metaSpend3 / spend3Total : 0.5;
+  let realocacionMsg = '';
+  if (metaCpc > 0 && googleCpc > 0 && Math.abs(metaCpc - googleCpc) / Math.max(metaCpc, googleCpc) > 0.30) {
+    if (metaCpc < googleCpc) {
+      const nueva = Math.min(0.85, metaShare + 0.15);
+      realocacionMsg = `CPC de Meta (${clp(metaCpc)}) es <strong>${(((googleCpc - metaCpc) / googleCpc) * 100).toFixed(0)}% más barato</strong> que Google (${clp(googleCpc)}). Considera mover hasta ${((nueva - metaShare) * 100).toFixed(0)} puntos de share hacia Meta.`;
+      metaShare = nueva;
+    } else {
+      const nueva = Math.max(0.15, metaShare - 0.15);
+      realocacionMsg = `CPC de Google (${clp(googleCpc)}) es <strong>${(((metaCpc - googleCpc) / metaCpc) * 100).toFixed(0)}% más barato</strong> que Meta (${clp(metaCpc)}). Considera mover hasta ${((metaShare - nueva) * 100).toFixed(0)} puntos de share hacia Google.`;
+      metaShare = nueva;
+    }
+  }
+  const metaRec   = recomendadoTotal * metaShare;
+  const googleRec = recomendadoTotal * (1 - metaShare);
+
+  // Δ vs actual
+  const deltaMeta   = metaRec - metaSpend3;
+  const deltaGoogle = googleRec - googleSpend3;
+  const fmtDelta = d => (d >= 0 ? '+' : '') + clp(Math.round(d));
+
+  // HTML
+  const headlineColor = mult === 0 ? 'var(--danger-text)' : (mult >= 1.3 ? 'var(--success-text)' : (mult < 1 ? 'var(--warning-text)' : 'var(--text)'));
+  const headlineMsg = mult === 0
+    ? `Tu ROAS (${roas3.toFixed(2)}x) es menor a 1x — pierdes plata. Pausa todo y revisa antes de seguir invirtiendo.`
+    : mult < 1
+    ? `Tu ROAS (${roas3.toFixed(2)}x) está bajo el objetivo de ${target}x. Sugerido: bajar ${Math.round((1 - mult) * 100)}% el spend mientras optimizas.`
+    : mult === 1
+    ? `Tu ROAS (${roas3.toFixed(2)}x) está en línea con el objetivo de ${target}x. Mantén el ritmo, no escales sin probar primero.`
+    : `Tu ROAS (${roas3.toFixed(2)}x) supera el objetivo de ${target}x. Hay margen para escalar el spend ${Math.round((mult - 1) * 100)}% (ojo: al subir spend el ROAS suele bajar 10-30%).`;
+
+  cont.innerHTML = `
+    <!-- Headline + KPIs -->
+    <div style="padding:12px 14px; background:${etiq.bg}; border:1px solid ${etiq.color}; border-radius:9px; color:${etiq.color}; font-size:13px; line-height:1.5; margin-bottom:12px">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:6px">
+        <strong style="font-size:14px; color:${headlineColor}">${etiq.texto}</strong>
+        <span style="font-size:11px; color:${trendColor}">Tendencia: ${trendIco} ${trendTxt}</span>
+      </div>
+      ${headlineMsg}
+    </div>
+
+    <!-- Tabla por plataforma -->
+    <div class="table-wrap"><table>
+      <thead><tr><th>Plataforma</th><th class="num">Spend actual /mes</th><th class="num">Recomendado /mes</th><th class="num">Δ sugerido</th><th>Acción</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Meta Ads</strong><div style="font-size:11px; color:var(--text-muted)">CPC ${metaCpc > 0 ? clp(metaCpc) : '—'}</div></td>
+          <td class="num">${clp(metaSpend3)}</td>
+          <td class="num"><strong>${clp(metaRec)}</strong></td>
+          <td class="num" style="color:${deltaMeta >= 0 ? 'var(--success-text)' : 'var(--danger-text)'}">${fmtDelta(deltaMeta)}</td>
+          <td><span style="font-size:11px; padding:2px 8px; border-radius:99px; background:${etiq.bg}; color:${etiq.color}; border:1px solid ${etiq.color}">${etiq.texto}</span></td>
+        </tr>
+        <tr>
+          <td><strong>Google Ads</strong><div style="font-size:11px; color:var(--text-muted)">CPC ${googleCpc > 0 ? clp(googleCpc) : '—'}</div></td>
+          <td class="num">${clp(googleSpend3)}</td>
+          <td class="num"><strong>${clp(googleRec)}</strong></td>
+          <td class="num" style="color:${deltaGoogle >= 0 ? 'var(--success-text)' : 'var(--danger-text)'}">${fmtDelta(deltaGoogle)}</td>
+          <td><span style="font-size:11px; padding:2px 8px; border-radius:99px; background:${etiq.bg}; color:${etiq.color}; border:1px solid ${etiq.color}">${etiq.texto}</span></td>
+        </tr>
+        <tr style="font-weight:700; background:var(--surface-2)">
+          <td>Total /mes</td>
+          <td class="num">${clp(spend3Total)}</td>
+          <td class="num">${clp(recomendadoTotal)}</td>
+          <td class="num" style="color:${(deltaMeta + deltaGoogle) >= 0 ? 'var(--success-text)' : 'var(--danger-text)'}">${fmtDelta(deltaMeta + deltaGoogle)}</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table></div>
+
+    ${realocacionMsg ? `<div style="margin-top:10px; padding:10px 12px; background:var(--primary-soft); color:var(--primary-text); border-radius:8px; font-size:12px; line-height:1.5">↔️ ${realocacionMsg}</div>` : ''}
+
+    <div style="margin-top:10px; font-size:11px; color:var(--text-muted); line-height:1.5">
+      <strong>Cómo se calcula:</strong> tomo el spend promedio de los últimos 3 meses y comparo el ROAS con tu objetivo.
+      Si lo superas, sugiero escalar (cap 1.8×); si no llega, bajar o pausar. La distribución entre Meta y Google se ajusta
+      por CPC eficiencia. <strong>Importante:</strong> al duplicar spend, el ROAS típicamente cae 10-30% por saturación — siempre
+      sube en tramos del 20-30% y mide 2 semanas antes del próximo aumento.
+    </div>
+  `;
+}
+
 function renderComparativaPlataformas(metaSnaps, googleSnaps, aggsByMonth) {
   const wrap = document.getElementById('anaComparativaPlataformas');
   const card = document.getElementById('cardComparativaPlataformas');
