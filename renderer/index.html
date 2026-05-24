@@ -2203,7 +2203,7 @@
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:18px; font-size:13px; color:var(--text-muted); align-items:center">
           <div>Te quedan <strong id="presTrackRestante" style="color:var(--text)">$0</strong></div>
-          <div><strong id="presTrackDias" style="color:var(--text)">0</strong> días restantes del mes</div>
+          <div><strong id="presTrackDias" style="color:var(--text)">0</strong> <span id="presTrackDiasLbl">días restantes del mes</span></div>
           <div id="presTrackRitmo"></div>
         </div>
       </div>
@@ -4668,6 +4668,16 @@ const CONFIG_POR_VISTA = {
         label: 'Auto-ajustar % al editar',
         hint: 'Cuando editas un % de una categoría, las demás se ajustan proporcionalmente para mantener el total cerca de 100%.',
         defecto: true
+      },
+      {
+        key: 'dia_pago_ciclo',
+        tipo: 'number',
+        label: 'Día de pago — ¿cómo cuenta el ciclo?',
+        hint: 'Si tu sueldo entra siempre el día X (ej. 25), pon ese número y el plan se recalcula de X-a-X en vez de calendario. Deja en 0 para usar el mes calendario (1 al último día).',
+        defecto: 0,
+        min: 0,
+        max: 31,
+        step: 1
       }
     ],
     onSave: () => {

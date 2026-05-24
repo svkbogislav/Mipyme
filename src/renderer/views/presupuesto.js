@@ -13,6 +13,50 @@
 (function () {
   'use strict';
 
+  // ── Ciclo del presupuesto ──
+  // Por defecto: mes calendario (día 1 a último día del mes).
+  // Si state.config.dia_pago_ciclo = N (1..31), el ciclo es "payday-to-payday":
+  //   - Si HOY ≥ N → ciclo = [N de este mes, N-1 del mes que viene]
+  //   - Si HOY < N → ciclo = [N del mes pasado, N-1 de este mes]
+  // Si el mes no tiene día N (ej. 31 en febrero), se clamp al último día del mes.
+  function _norm(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+  function _ymd(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+  function _ultimoDiaMes(y, m) { return new Date(y, m + 1, 0).getDate(); }
+  function _clampDia(y, m, dia) { return Math.min(dia, _ultimoDiaMes(y, m)); }
+  function _cicloShape(inicio, fin, hoy, modo) {
+    const DIA = 24 * 3600 * 1000;
+    const ini = _norm(inicio), end = _norm(fin), tod = _norm(hoy);
+    const diasTotal = Math.round((end - ini) / DIA) + 1;
+    let diaActual = Math.round((tod - ini) / DIA) + 1;
+    if (diaActual < 1) diaActual = 1;
+    if (diaActual > diasTotal) diaActual = diasTotal;
+    const diasRestantes = Math.max(0, diasTotal - diaActual);
+    return { modo, inicio: _ymd(ini), fin: _ymd(end), diasTotal, diaActual, diasRestantes };
+  }
+  function cicloPresupuesto() {
+    const diaPago = Number((state.config && state.config.dia_pago_ciclo) || 0);
+    const hoy = new Date();
+    if (!diaPago || diaPago < 1 || diaPago > 31) {
+      const y = hoy.getFullYear(), m = hoy.getMonth();
+      return _cicloShape(new Date(y, m, 1), new Date(y, m + 1, 0), hoy, 'mes');
+    }
+    const y = hoy.getFullYear(), m = hoy.getMonth(), d = hoy.getDate();
+    const diaPagoEsteMes = _clampDia(y, m, diaPago);
+    if (d >= diaPagoEsteMes) {
+      const inicio = new Date(y, m, diaPagoEsteMes);
+      const diaPagoSig = _clampDia(y, m + 1, diaPago);
+      const fin = new Date(y, m + 1, diaPagoSig - 1);
+      return _cicloShape(inicio, fin, hoy, 'pago');
+    } else {
+      const diaPagoAnt = _clampDia(y, m - 1, diaPago);
+      const inicio = new Date(y, m - 1, diaPagoAnt);
+      const fin = new Date(y, m, diaPagoEsteMes - 1);
+      return _cicloShape(inicio, fin, hoy, 'pago');
+    }
+  }
+  // Expone para que el resto del renderer lo pueda usar (KPIs, dashboard)
+  if (typeof window !== 'undefined') window.cicloPresupuesto = cicloPresupuesto;
+
   // Modelo MIXTO:
   //   Ingreso − Costos fijos (auto, de Gastos Periódicos) − Variable (% por
   //   categoría) = Utilidad proyectada.
@@ -37,21 +81,25 @@
     // ── Tope variable del mes (modo "lo máximo posible") ──
     const puedeGastar = Math.max(0, base - fijoMensual);
 
-    // ── Gasto variable acumulado este mes (excluye fijos = recurring_id) ──
-    const ymG = (typeof ymOf === 'function') ? ymOf : (x => String(x || '').slice(0, 7));
+    // ── Ciclo del presupuesto (mes calendario o payday-to-payday) ──
+    const ciclo = cicloPresupuesto();
     const ymHoy = (typeof nuevoMesActualYM === 'function') ? nuevoMesActualYM() : hoyYM;
+
+    // ── Gasto variable acumulado en el ciclo (excluye fijos = recurring_id) ──
     let gastadoVar = 0;
     (state.gastos || []).forEach(g => {
       if (g.recurring_id) return;
-      if (ymG(g.fecha) !== ymHoy) return;
+      const fy = String(g.fecha || '').slice(0, 10);
+      if (!fy) return;
+      if (fy < ciclo.inicio || fy > ciclo.fin) return;
       gastadoVar += Number(g.monto || 0);
     });
 
-    // ── Días del mes ──
+    // ── Días del ciclo ──
     const hoy = new Date();
-    const diasMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate();
-    const diaHoy = hoy.getDate();
-    const diasRest = Math.max(0, diasMes - diaHoy);
+    const diasMes = ciclo.diasTotal;
+    const diaHoy = ciclo.diaActual;
+    const diasRest = ciclo.diasRestantes;
 
     // ── HERO ──
     const heroEl = document.getElementById('presPuedesGastar');
@@ -61,8 +109,11 @@
     }
     const heroSub = document.getElementById('presPuedesGastarSub');
     if (heroSub) {
+      const cicloTxt = ciclo.modo === 'pago'
+        ? `<div style="margin-top:6px; font-size:11px; color:var(--text-muted)">Ciclo de pago: <strong>${ciclo.inicio} → ${ciclo.fin}</strong> · día ${ciclo.diaActual} de ${ciclo.diasTotal}</div>`
+        : '';
       heroSub.innerHTML = base > 0
-        ? `Ingreso ${escapeHtml(label)}: <strong>${clp(base)}</strong> &nbsp;−&nbsp; Costos fijos: <strong>${clp(fijoMensual)}</strong>`
+        ? `Ingreso ${escapeHtml(label)}: <strong>${clp(base)}</strong> &nbsp;−&nbsp; Costos fijos: <strong>${clp(fijoMensual)}</strong>${cicloTxt}`
         : 'Sin datos de ventas en el período. Elige otra base o ingresa un monto arriba.';
     }
 
@@ -87,6 +138,8 @@
     }
     const diasEl = document.getElementById('presTrackDias');
     if (diasEl) diasEl.textContent = diasRest;
+    const diasLblEl = document.getElementById('presTrackDiasLbl');
+    if (diasLblEl) diasLblEl.textContent = ciclo.modo === 'pago' ? `días restantes del ciclo (hasta ${ciclo.fin})` : 'días restantes del mes';
     const ritmoEl = document.getElementById('presTrackRitmo');
     if (ritmoEl) {
       if (puedeGastar <= 0) {
@@ -111,20 +164,43 @@
     const vfd = document.getElementById('presVentaFijosDia'); if (vfd) vfd.textContent = diasMes ? `≈ ${clp(ventaFijos / diasMes)} por día` : '';
     const vtd = document.getElementById('presVentaTotalDia'); if (vtd) vtd.textContent = diasMes ? `≈ ${clp(ventaTotal / diasMes)} por día` : '';
 
-    const ventasMes = (typeof ventasPorMes === 'function' ? (ventasPorMes()[ymHoy] || 0) : 0);
+    // Ventas del ciclo (sumamos ventas con fecha en [inicio..fin]).
+    // En modo "mes" esto coincide con ventasPorMes()[ymHoy]; en modo "pago"
+    // hay que recorrer ventasManuales + Shopify entre las fechas exactas.
+    let ventasCiclo = 0;
+    if (ciclo.modo === 'mes') {
+      ventasCiclo = (typeof ventasPorMes === 'function' ? (ventasPorMes()[ymHoy] || 0) : 0);
+    } else {
+      (state.ventasManuales || []).forEach(v => {
+        const f = String(v.fecha || '').slice(0, 10);
+        if (f && f >= ciclo.inicio && f <= ciclo.fin) ventasCiclo += Number(v.monto || 0);
+      });
+      // Sumar Shopify si está disponible
+      if (typeof shopify !== 'undefined' && Array.isArray(shopify.orders)) {
+        const testPats = (typeof getTestPatterns === 'function') ? getTestPatterns() : [];
+        shopify.orders.forEach(o => {
+          if (!o || o.cancelled_at) return;
+          const f = String(o.created_at || o.fecha || '').slice(0, 10);
+          if (!f || f < ciclo.inicio || f > ciclo.fin) return;
+          ventasCiclo += Number(o.total_price ?? o.total ?? 0);
+        });
+      }
+    }
+    const periodoLbl = ciclo.modo === 'pago' ? 'este ciclo' : 'este mes';
+    const finProyLbl = ciclo.modo === 'pago' ? `al ${ciclo.fin}` : 'a fin de mes';
     const vEst = document.getElementById('presVentaEstado');
     if (vEst) {
-      if (ventasMes <= 0) {
-        vEst.innerHTML = '<span style="color:var(--text-muted)">Aún no hay ventas registradas este mes para proyectar.</span>';
+      if (ventasCiclo <= 0) {
+        vEst.innerHTML = `<span style="color:var(--text-muted)">Aún no hay ventas registradas ${periodoLbl} para proyectar.</span>`;
       } else {
-        const proyVenta = diaHoy > 0 ? ventasMes / diaHoy * diasMes : ventasMes;
+        const proyVenta = diaHoy > 0 ? ventasCiclo / diaHoy * diasMes : ventasCiclo;
         const cubreFijos = proyVenta >= ventaFijos;
         const cubreTodo = proyVenta >= ventaTotal;
         let icon, color, msg;
-        if (cubreTodo) { icon = '✅'; color = 'var(--success)'; msg = 'vas a cubrir fijos y tu gasto variable típico. Mes sano.'; }
+        if (cubreTodo) { icon = '✅'; color = 'var(--success)'; msg = `vas a cubrir fijos y tu gasto variable típico. ${ciclo.modo === 'pago' ? 'Ciclo' : 'Mes'} sano.`; }
         else if (cubreFijos) { icon = '⚠️'; color = 'var(--warning)'; msg = 'cubres los fijos pero quedas justo para lo variable. Sin colchón.'; }
-        else { icon = '🚨'; color = 'var(--danger)'; msg = `no alcanzas a cubrir los fijos: este mes pierdes plata. Te faltan ${clp(ventaFijos - proyVenta)} de venta.`; }
-        vEst.innerHTML = `Este mes llevas vendido <strong>${clp(ventasMes)}</strong>. Proyectado a fin de mes: <strong>${clp(proyVenta)}</strong>.<br><span style="color:${color}; font-weight:600">${icon} A ese ritmo ${msg}</span>`;
+        else { icon = '🚨'; color = 'var(--danger)'; msg = `no alcanzas a cubrir los fijos: ${periodoLbl} pierdes plata. Te faltan ${clp(ventaFijos - proyVenta)} de venta.`; }
+        vEst.innerHTML = `${ciclo.modo === 'pago' ? 'En este ciclo' : 'Este mes'} llevas vendido <strong>${clp(ventasCiclo)}</strong>. Proyectado ${finProyLbl}: <strong>${clp(proyVenta)}</strong>.<br><span style="color:${color}; font-weight:600">${icon} A ese ritmo ${msg}</span>`;
       }
     }
 
