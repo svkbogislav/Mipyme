@@ -1368,22 +1368,22 @@
           </button>
           <button class="btn primary" onclick="abrirModalVentaManual()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-            Nueva venta
+            <span id="ventasBtnNuevoTxt">Nueva venta</span>
           </button>
-          <button class="btn ghost" onclick="document.getElementById('shopifyFile').click()" title="Importar JSON exportado de Shopify">
+          <button class="btn ghost" data-empresa-only onclick="document.getElementById('shopifyFile').click()" title="Importar JSON exportado de Shopify">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5-5 5 5M12 5v15"/></svg>
             Importar JSON
           </button>
           <input type="file" id="shopifyFile" accept=".json" style="display:none" onchange="cargarArchivoShopify(event)" />
-          <button class="btn ghost" onclick="recargarShopify()">Re-cargar Shopify</button>
+          <button class="btn ghost" data-empresa-only onclick="recargarShopify()">Re-cargar Shopify</button>
         </div>
       </div>
 
       <div class="kpi-grid">
-        <div class="kpi" title="Revenue total acumulado de toda la historia del negocio (Shopify + manual)."><div class="kpi-label">Total ventas</div><div class="kpi-value" id="vTotal">$0</div></div>
-        <div class="kpi" title="Cantidad de pedidos pagados (excluye tests y cancelados)."><div class="kpi-label">N° de pedidos</div><div class="kpi-value" id="vPedidos">0</div></div>
-        <div class="kpi" title="Revenue total / número de pedidos. Indica el valor típico de cada venta."><div class="kpi-label">Ticket promedio</div><div class="kpi-value" id="vTicket">$0</div></div>
-        <div class="kpi" title="Cuándo fue la última sincronización con Shopify."><div class="kpi-label">Última actualización</div><div class="kpi-value" style="font-size:14px" id="vUpdated">—</div></div>
+        <div class="kpi" title="Total acumulado de toda la historia."><div class="kpi-label" id="vTotalLbl">Total ventas</div><div class="kpi-value" id="vTotal">$0</div></div>
+        <div class="kpi" title="Cantidad de pedidos/ingresos pagados."><div class="kpi-label" id="vPedidosLbl">N° de pedidos</div><div class="kpi-value" id="vPedidos">0</div></div>
+        <div class="kpi" title="Promedio por pedido/ingreso."><div class="kpi-label" id="vTicketLbl">Ticket promedio</div><div class="kpi-value" id="vTicket">$0</div></div>
+        <div class="kpi" data-empresa-only title="Cuándo fue la última sincronización con Shopify."><div class="kpi-label">Última actualización</div><div class="kpi-value" style="font-size:14px" id="vUpdated">—</div></div>
       </div>
 
       <div class="card">
@@ -6421,7 +6421,12 @@ function renderVentasTabla() {
   const bD = document.getElementById('ventasVistaDia');
   if (bP && bD) { (_ventasVista === 'dia' ? _off : _on)(bP); (_ventasVista === 'dia' ? _on : _off)(bD); }
   const tit = document.getElementById('ventasCardTitulo');
-  if (tit) tit.textContent = _ventasVista === 'dia' ? 'Ventas por día' : 'Pedidos';
+  if (tit) {
+    const personal = esPerfilPersonal();
+    tit.textContent = _ventasVista === 'dia'
+      ? (personal ? 'Ingresos por día' : 'Ventas por día')
+      : (personal ? 'Ingresos' : 'Pedidos');
+  }
 
   // ── Vista "Por día": tabla agregada (fecha · n° · total · ticket) ──
   if (_ventasVista === 'dia') {
@@ -8796,6 +8801,10 @@ function aplicarPerfilUI() {
   setTxt('ventasCardTitulo', personal ? 'Ingresos' : 'Pedidos');
   const vPed = document.getElementById('ventasVistaPedido');
   if (vPed) vPed.textContent = personal ? 'Por ingreso' : 'Por pedido';
+  setTxt('ventasBtnNuevoTxt', personal ? 'Nuevo ingreso' : 'Nueva venta');
+  setTxt('vTotalLbl',   personal ? 'Total ingresos'      : 'Total ventas');
+  setTxt('vPedidosLbl', personal ? 'N° de ingresos'      : 'N° de pedidos');
+  setTxt('vTicketLbl',  personal ? 'Promedio por ingreso' : 'Ticket promedio');
   setTxt('cfgSecSub', personal ? 'Tu perfil, conexiones, respaldo y datos' : 'Tu negocio, conexiones, reportes y datos');
   setTxt('cfgSecTitle', personal ? 'Tu perfil' : 'Tu negocio');
   setTxt('cfgEmpresaH3', personal ? 'Perfil' : 'Empresa');
