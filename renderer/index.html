@@ -3016,7 +3016,7 @@
           <div id="googleAdsResumen" style="margin-top:10px; display:none"></div>
         </div>
 
-        <div style="margin-top:10px; padding:10px 12px; background:#dcfce7; border:1px solid #86efac; border-radius:8px; font-size:12px; color:#166534">
+        <div style="margin-top:10px; padding:10px 12px; background:var(--success-soft); border:1px solid var(--success); border-radius:8px; font-size:12px; color:var(--success)">
           <strong>✓ Conexiones activas:</strong> Meta y Google Ads están operativas. "Probar conexión" hace una llamada real al API; "Sincronizar ad spend" trae 12 meses de spend, impressions, clicks, CPC, conversions. Los snapshots se guardan en localStorage por negocio. El ROAS combinado (Meta + Google vs Shopify revenue) aparece en <strong>Análisis → Marketing</strong>.
         </div>
       </div>
@@ -3070,7 +3070,7 @@
           </div>
         </div>
 
-        <div style="margin-top:10px; padding:10px 12px; background:#fef3c7; border:1px solid #fbbf24; border-radius:8px; font-size:12px; color:#92400e">
+        <div style="margin-top:10px; padding:10px 12px; background:var(--warning-soft); border:1px solid var(--warning); border-radius:8px; font-size:12px; color:var(--warning)">
           <strong>⚠️ Documentos tributarios reales:</strong> en ambiente <strong>producción</strong> cada emisión genera un documento legal ante el SII. La app fuerza certificación por defecto. La emisión de boletas de honorarios (BHE) automatiza el portal del SII vía LibreDTE — requiere tener las credenciales SII configuradas en tu cuenta LibreDTE.
         </div>
       </div>
@@ -3335,7 +3335,7 @@
       <input type="checkbox" id="cuentaExcluirTotal" style="width:auto; margin:3px 0 0" />
       <span>No sumar al total de caja líquida <span style="color:var(--text-muted); font-weight:400">— la cuenta aparece igual con su saldo, pero no infla el "Saldo total". Útil para cuentas que administras a nombre de terceros o que quieres ver aparte (ej. cuenta de los niños, fondo separado).</span></span>
     </label>
-    <div style="margin-top:10px; padding:10px 12px; background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; font-size:12px; color:#92400e">
+    <div style="margin-top:10px; padding:10px 12px; background:var(--warning-soft); border:1px solid var(--warning); border-radius:8px; font-size:12px; color:var(--warning)">
       <strong>⚠️ Importante:</strong> el saldo inicial se interpreta <strong>al primer día del mes que elijas abajo</strong>. Movimientos (gastos, ingresos, recurrentes) anteriores a esa fecha NO se restan ni suman al saldo actual. Si tu saldo $37.000 corresponde a mayo 2026, marca "mayo 2026" abajo — así los Shopify recurrentes generados desde 2023 no contaminan tu balance.
     </div>
     <div class="row" style="margin-top:8px">
@@ -6262,7 +6262,7 @@ function renderAccountBalance() {
   const detalles = cuentas.map(c => ({ ...c, saldo: calcularSaldoCuenta(c.id) }));
   wrap.innerHTML = detalles.map(c => `
     <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border)">
-      <div style="font-size:14px; color:var(--text)">${escapeHtml(c.nombre)}${c.deposito_ventas ? ' <span style="font-size:10px; background:#dcfce7; color:#15803d; padding:1px 5px; border-radius:3px; vertical-align:middle; margin-left:4px">↘ ventas</span>' : ''}</div>
+      <div style="font-size:14px; color:var(--text)">${escapeHtml(c.nombre)}${c.deposito_ventas ? ' <span style="font-size:10px; background:var(--success-soft); color:var(--success); padding:1px 5px; border-radius:3px; vertical-align:middle; margin-left:4px">↘ ventas</span>' : ''}</div>
       <div style="font-size:14px; font-weight:600; color:${c.saldo < 0 ? 'var(--danger)' : 'var(--text)'}">${clp(c.saldo)}</div>
     </div>
   `).join('');
@@ -6341,7 +6341,7 @@ function obtenerVentasClasificadas() {
 
 function badgeFiltro(reason) {
   if (!reason) return '<span class="badge success">Válido</span>';
-  if (reason === 'test')      return '<span class="badge" style="background:#fef3c7; color:#92400e; border:1px solid #fcd34d" title="Cliente matchea un patrón test (ej: tu propio nombre/email). Editable en Configuración → Pedidos test">⚠ Test (excluido)</span>';
+  if (reason === 'test')      return '<span class="badge" style="background:var(--warning-soft); color:var(--warning); border:1px solid var(--warning)" title="Cliente matchea un patrón test (ej: tu propio nombre/email). Editable en Configuración → Pedidos test">⚠ Test (excluido)</span>';
   if (reason === 'cancelado') return '<span class="badge danger" title="Tiene cancelled_at en Shopify (refunded/voided)">✗ Cancelado (excluido)</span>';
   if (reason === 'no_pagado') return '<span class="badge warning" title="financial_status no es paid/partially_paid/authorized">⏳ Sin pagar (excluido)</span>';
   return '';
@@ -6389,7 +6389,7 @@ function renderVentasTabla() {
       if (cancelados > 0) partes.push(`<strong>${cancelados}</strong> cancelados`);
       if (noPagados > 0)  partes.push(`<strong>${noPagados}</strong> sin pagar`);
       banner.innerHTML = `
-        <div style="padding:10px 12px; background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; font-size:12px; color:#92400e">
+        <div style="padding:10px 12px; background:var(--warning-soft); border:1px solid var(--warning); border-radius:8px; font-size:12px; color:var(--warning)">
           📊 De <strong>${totalCache}</strong> pedidos en cache, <strong>${validos}</strong> aparecen en el análisis. Excluidos: ${partes.join(', ')}.
         </div>`;
     } else {
@@ -6470,10 +6470,10 @@ function renderVentasTabla() {
     </tr></thead>
     <tbody>
       ${ventas.slice(0, 300).map(v => {
-        const filaStyle = v._filterReason ? 'opacity:0.7; background:#fffbf0' : (v.manual ? 'background:#f0f9ff' : '');
+        const filaStyle = v._filterReason ? 'opacity:0.7; background:var(--warning-soft)' : (v.manual ? 'background:var(--primary-soft)' : '');
         const esRecurrente = v.manual && v._recurring_id;
         const origen = v.manual
-          ? `<span class="badge" style="background:#dbeafe; color:#1d4ed8; border:1px solid #93c5fd" title="Registrado manualmente">✎ Manual</span>${esRecurrente ? ' <span class="badge" title="Parte de una serie recurrente" style="margin-left:4px; background:var(--primary-soft); color:var(--primary)">↻ recurrente</span>' : ''}`
+          ? `<span class="badge" style="background:var(--primary-soft); color:var(--primary); border:1px solid var(--primary)" title="Registrado manualmente">✎ Manual</span>${esRecurrente ? ' <span class="badge" title="Parte de una serie recurrente" style="margin-left:4px; background:var(--primary-soft); color:var(--primary)">↻ recurrente</span>' : ''}`
           : `#${escapeHtml(String(v.num))}`;
         const acciones = v.manual
           ? `<button class="btn sm ghost" onclick="editarVentaManual('${v._id}')" style="margin-left:6px; padding:1px 6px; font-size:11px">Editar</button>`
@@ -10554,7 +10554,7 @@ function renderCuentas() {
         const isDefault = c.id === state.config.cuenta_default_id;
         return `<tr>
           <td><span style="display:inline-block; width:14px; height:14px; border-radius:4px; background:${escapeHtml(c.color || '#4f46e5')}"></span></td>
-          <td><strong>${escapeHtml(c.nombre)}</strong>${isDefault ? ' <span class="badge" style="font-size:10px; background:var(--primary-soft); color:var(--primary)">predeterminada</span>' : ''}${c.deposito_ventas ? ' <span class="badge" style="font-size:10px; background:#dcfce7; color:#15803d" title="Las ventas de Shopify se suman al saldo de esta cuenta">↘ depósito ventas</span>' : ''}${c.excluir_del_total ? ' <span class="badge" style="font-size:10px; background:var(--surface-2); color:var(--text-muted)" title="Esta cuenta no suma al \'Saldo total\' de arriba (solo informativa)">no suma</span>' : ''}</td>
+          <td><strong>${escapeHtml(c.nombre)}</strong>${isDefault ? ' <span class="badge" style="font-size:10px; background:var(--primary-soft); color:var(--primary)">predeterminada</span>' : ''}${c.deposito_ventas ? ' <span class="badge" style="font-size:10px; background:var(--success-soft); color:var(--success)" title="Las ventas de Shopify se suman al saldo de esta cuenta">↘ depósito ventas</span>' : ''}${c.excluir_del_total ? ' <span class="badge" style="font-size:10px; background:var(--surface-2); color:var(--text-muted)" title="Esta cuenta no suma al \'Saldo total\' de arriba (solo informativa)">no suma</span>' : ''}</td>
           <td><span class="badge">${escapeHtml(c.tipo)}</span></td>
           <td class="num">${clp(c.saldo_inicial)}</td>
           <td class="num">${fmtNum.format(movs)} mov.</td>
@@ -11690,7 +11690,7 @@ function renderProyeccion12s() {
     </tr></thead>
     <tbody>
       ${filas.map(f => `
-        <tr style="${f.saldoBase < 0 ? 'background:#fee2e2' : ''}">
+        <tr style="${f.saldoBase < 0 ? 'background:var(--danger-soft)' : ''}">
           <td><strong>${f.n}</strong></td>
           <td style="font-size:12px">${lblPeriodo(f)}</td>
           <td class="num num-pos">${clp(f.ventaBase)}</td>
@@ -13057,7 +13057,7 @@ function renderAnaMesActual(a) {
   const tieneCreds = !!(state.config.shopify_config && state.config.shopify_config.token);
   if (tieneCreds && horasDesdeSync >= 6) {
     bannerSync = `
-      <div style="margin-bottom:14px; padding:10px 12px; background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; font-size:12px; color:#92400e; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
+      <div style="margin-bottom:14px; padding:10px 12px; background:var(--warning-soft); border:1px solid var(--warning); border-radius:8px; font-size:12px; color:var(--warning); display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
         <span>⚠️ Última sincronización Shopify hace ${Math.round(horasDesdeSync)}h. Si vendiste hoy, los pedidos pueden no estar reflejados todavía.</span>
         <button class="btn sm primary" onclick="actualizarViaElectron().then(() => renderAnalisis())" style="font-size:11px">Sincronizar ahora</button>
       </div>`;
