@@ -1826,7 +1826,7 @@
       <div class="topbar">
         <div>
           <h1>Gastos</h1>
-          <div class="sub">Registro manual de costos y egresos del negocio</div>
+          <div class="sub" id="gastosViewSub">Registro manual de costos y egresos del negocio</div>
         </div>
         <div class="topbar-actions">
           <button class="btn ghost sm" onclick="cambiarGastosSubTab('config')" title="Configurar categorías y pedidos test">
@@ -6688,7 +6688,11 @@ function abrirModalGasto() {
   poblarProveedoresList();
   _gastoAttachmentPending = null;
   actualizarAttachmentInfo(null);
-  // Reset checkbox recurrente + frecuencia
+  // Reset checkbox recurrente + frecuencia. Importante: restaurar la
+  // visibilidad del toggle, porque al editar un gasto que ya pertenece a una
+  // serie recurrente lo escondemos — y si no lo restituimos acá, el "Nuevo
+  // gasto" siguiente abre sin la opción "Repetir periódicamente".
+  document.getElementById('gastoRecurrente').parentElement.style.display = '';
   document.getElementById('gastoRecurrente').checked = false;
   document.getElementById('gastoRecFrecuencia').value = 'mensual';
   document.getElementById('gastoRecDesde').value = nuevoMesActualYM();
@@ -8645,6 +8649,7 @@ function aplicarPerfilUI() {
   };
   // Configuración → sección "Tu negocio / Empresa"
   const setTxt = (id, t) => { const e = document.getElementById(id); if (e) e.textContent = t; };
+  setTxt('gastosViewSub', personal ? 'Registro manual de tus gastos: arriendo, cuentas, suscripciones, compras' : 'Registro manual de costos y egresos del negocio');
   setTxt('cfgSecSub', personal ? 'Tu perfil, conexiones, respaldo y datos' : 'Tu negocio, conexiones, reportes y datos');
   setTxt('cfgSecTitle', personal ? 'Tu perfil' : 'Tu negocio');
   setTxt('cfgEmpresaH3', personal ? 'Perfil' : 'Empresa');
