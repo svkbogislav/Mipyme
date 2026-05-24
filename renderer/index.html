@@ -1760,6 +1760,18 @@
           <div class="table-wrap" style="margin-top:10px"><table id="anaTablaRefunds"></table></div>
         </div>
 
+        <!-- Pedidos test detectados: qué emails/nombres están matchando los patrones -->
+        <div class="card full" data-widget-key="operaciones-tests" style="margin-bottom:14px" id="cardPedidosTest">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:4px">
+            <div>
+              <h3 style="margin:0 0 4px">⚠️ Pedidos detectados como test</h3>
+              <div class="card-sub">Pedidos que coinciden con tus <strong>patrones de exclusión</strong> y por eso no entran al análisis ni a las KPIs.</div>
+            </div>
+            <button class="btn ghost sm" onclick="document.querySelector('.nav-item[data-view=config]')?.click(); setTimeout(()=>{var e=document.querySelector('[data-cs=\'tests\']'); if(e){e.open=true; e.scrollIntoView({block:'center'});}},200)" style="flex-shrink:0">Editar patrones →</button>
+          </div>
+          <div id="anaTestsContenido" style="margin-top:10px"></div>
+        </div>
+
         <div class="card full" data-widget-key="operaciones-patrones" style="margin-bottom:14px">
           <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px">
             <div>
@@ -14668,6 +14680,53 @@ function renderComparativaPlataformas(metaSnaps, googleSnaps, aggsByMonth) {
 /* =================================================================
    TAB: OPERACIONES
    ================================================================= */
+// Lista los pedidos detectados como "test" con su email/nombre y el patrón
+// que los hizo matchear, agrupados por email para que sea fácil decidir si
+// el patrón está bien o se le coló un cliente real.
+function _renderAnaTestsDetalle(todos) {
+  const cont = document.getElementById('anaTestsContenido');
+  if (!cont) return;
+  const pats = getTestPatterns();
+  const testOrders = (todos || []).filter(o => esPedidoTest(o) && !o.cancelled_at);
+  if (!pats.length) {
+    cont.innerHTML = `<div style="font-size:12px; color:var(--text-muted); padding:8px 0">No tienes <strong>patrones de exclusión</strong> configurados — todos los pedidos cuentan. Configúralos en <em>Configuración → Pedidos test</em> (ej. tu propio email).</div>`;
+    return;
+  }
+  if (!testOrders.length) {
+    cont.innerHTML = `<div style="font-size:12px; color:var(--success-text); padding:8px 0">✓ Tus patrones <code>${pats.map(p => escapeHtml(p)).join(', ')}</code> no matchean ningún pedido reciente.</div>`;
+    return;
+  }
+  // Agrupar por email (o nombre si no hay email)
+  const grupos = {};
+  testOrders.forEach(o => {
+    const email = (o.customer && o.customer.email) || o.email || '';
+    const nombre = o.customer || o.cliente || '';
+    const key = (email || nombre || '—').toLowerCase();
+    const haystack = (String(nombre) + ' ' + String(email)).toLowerCase();
+    const patternMatch = pats.find(p => p && haystack.includes(String(p).toLowerCase())) || '';
+    if (!grupos[key]) grupos[key] = { email, nombre, patron: patternMatch, pedidos: 0, monto: 0, ult: '' };
+    grupos[key].pedidos++;
+    grupos[key].monto += Number(o.total_price ?? o.total ?? 0);
+    const f = String(o.created_at || o.fecha || '').slice(0, 10);
+    if (f && f > grupos[key].ult) grupos[key].ult = f;
+  });
+  const filas = Object.values(grupos).sort((a, b) => b.pedidos - a.pedidos);
+  cont.innerHTML = `
+    <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px">Patrones activos: ${pats.map(p => `<code style="background:var(--surface-2); padding:1px 6px; border-radius:4px">${escapeHtml(p)}</code>`).join(' ')}</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Email / Cliente</th><th>Patrón que matcheó</th><th class="num">Pedidos</th><th class="num">Monto excluido</th><th>Último</th></tr></thead>
+      <tbody>${filas.map(g => `<tr>
+        <td>${g.email ? `<strong>${escapeHtml(g.email)}</strong>` : '<em style="color:var(--text-muted)">sin email</em>'}${g.nombre && g.nombre !== g.email ? `<div style="font-size:11px; color:var(--text-muted)">${escapeHtml(g.nombre)}</div>` : ''}</td>
+        <td>${g.patron ? `<code style="background:var(--warning-soft); color:var(--warning-text); padding:2px 6px; border-radius:4px">${escapeHtml(g.patron)}</code>` : '<span style="color:var(--text-muted)">—</span>'}</td>
+        <td class="num">${fmtNum.format(g.pedidos)}</td>
+        <td class="num num-neg">${clp(g.monto)}</td>
+        <td>${escapeHtml(g.ult || '—')}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    <div style="font-size:11px; color:var(--text-muted); margin-top:8px">Si ves un cliente real acá, elimina el patrón que lo matchea en <em>Configuración → Pedidos test</em>.</div>
+  `;
+}
+
 function renderAnaOperaciones(a) {
   const aggsAsc = (shopify.monthly_aggregates || []).slice().sort((x, y) => x.month.localeCompare(y.month)).slice(-12);
   // Refund rate
@@ -14687,6 +14746,9 @@ function renderAnaOperaciones(a) {
   document.getElementById('anaOCanceladosPct').textContent = todos.length > 0 ? `${((cancelados / todos.length) * 100).toFixed(0)}% del cache` : '';
   document.getElementById('anaOTests').textContent = tests;
   document.getElementById('anaOTestsLbl').innerHTML = tests > 0 ? `<span class="down">${((tests / todos.length) * 100).toFixed(0)}% del cache (excluidos)</span>` : '<span style="color:var(--success)">Sin tests</span>';
+
+  // Detalle por email/cliente de los pedidos marcados como test
+  _renderAnaTestsDetalle(todos);
 
   // Mejor día
   const mejorDia = a.dowAnalisis.slice().sort((x, y) => y.revenue - x.revenue)[0];
