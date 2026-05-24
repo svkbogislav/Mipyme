@@ -1394,7 +1394,7 @@
               <button class="btn ghost sm" id="ventasVistaPedido" style="border:0; border-radius:0" onclick="cambiarVistaVentas('pedido')">Por pedido</button>
               <button class="btn ghost sm" id="ventasVistaDia" style="border:0; border-radius:0; border-left:1px solid var(--border)" onclick="cambiarVistaVentas('dia')">Por día</button>
             </div>
-            <input id="ventasSearch" placeholder="Buscar por cliente, # de orden o producto..." style="max-width:280px" oninput="renderVentasTabla()" />
+            <input id="ventasSearch" placeholder="Buscar por cliente o descripción..." style="max-width:280px" oninput="renderVentasTabla()" />
           </div>
         </div>
         <div id="ventasFiltradosResumen" style="margin-bottom:10px; display:none"></div>
@@ -3727,6 +3727,42 @@
         <option>Webpay / MercadoPago</option>
         <option>Otro</option>
       </select>
+    </div>
+    <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:12px;">
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin:0; font-size:13px; color:var(--text)">
+        <input type="checkbox" id="vmRecurrente" style="width:auto; margin:0" onchange="toggleVmRecurrenteFields()" />
+        <strong>Repetir periódicamente</strong> <span style="font-weight:400; color:var(--text-muted)">— ideal para sueldos, arriendos cobrados, mensualidades</span>
+      </label>
+      <div id="vmRecurrenteFields" style="display:none; margin-top:10px">
+        <div class="row" style="margin-bottom:10px">
+          <div>
+            <label>Cada cuánto</label>
+            <select id="vmRecFrecuencia">
+              <option value="mensual">Mensual</option>
+              <option value="quincenal">Quincenal (cada 14 días)</option>
+              <option value="semanal">Semanal</option>
+              <option value="anual">Anual</option>
+            </select>
+          </div>
+          <div></div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Desde (mes)</label>
+            <input id="vmRecDesde" type="month" />
+          </div>
+          <div>
+            <label>Hasta (opcional)</label>
+            <input id="vmRecHasta" type="month" placeholder="Sin fin" />
+          </div>
+        </div>
+        <div style="font-size:11px; color:var(--text-muted); margin-top:8px">
+          La app generará un ingreso idéntico en cada período del rango.
+        </div>
+      </div>
+      <div id="vmRecurrenteInfo" style="display:none; margin-top:8px; font-size:12px; color:var(--text-muted)">
+        Este ingreso es parte de una serie recurrente. Para detenerla o cambiar el monto, edita la serie original.
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn danger" id="btnEliminarVM" style="margin-right:auto; display:none" onclick="eliminarVentaManual()">Eliminar</button>
@@ -6430,8 +6466,9 @@ function renderVentasTabla() {
     <tbody>
       ${ventas.slice(0, 300).map(v => {
         const filaStyle = v._filterReason ? 'opacity:0.7; background:#fffbf0' : (v.manual ? 'background:#f0f9ff' : '');
+        const esRecurrente = v.manual && v._recurring_id;
         const origen = v.manual
-          ? `<span class="badge" style="background:#dbeafe; color:#1d4ed8; border:1px solid #93c5fd" title="Venta registrada manualmente">✎ Manual</span>`
+          ? `<span class="badge" style="background:#dbeafe; color:#1d4ed8; border:1px solid #93c5fd" title="Registrado manualmente">✎ Manual</span>${esRecurrente ? ' <span class="badge" title="Parte de una serie recurrente" style="margin-left:4px; background:var(--primary-soft); color:var(--primary)">↻ recurrente</span>' : ''}`
           : `#${escapeHtml(String(v.num))}`;
         const acciones = v.manual
           ? `<button class="btn sm ghost" onclick="editarVentaManual('${v._id}')" style="margin-left:6px; padding:1px 6px; font-size:11px">Editar</button>`
@@ -6480,6 +6517,14 @@ function abrirModalVentaManual() {
   document.getElementById('vmMetodo').value = 'Efectivo';
   poblarSelectVmCuenta();
   document.getElementById('btnEliminarVM').style.display = 'none';
+  // Reset bloque recurrente y restaurar visibilidad (por si vino oculto de editar serie)
+  document.getElementById('vmRecurrente').parentElement.style.display = '';
+  document.getElementById('vmRecurrente').checked = false;
+  document.getElementById('vmRecFrecuencia').value = 'mensual';
+  document.getElementById('vmRecDesde').value = nuevoMesActualYM();
+  document.getElementById('vmRecHasta').value = '';
+  document.getElementById('vmRecurrenteInfo').style.display = 'none';
+  toggleVmRecurrenteFields();
   document.getElementById('modalVentaManual').classList.add('show');
   setTimeout(() => document.getElementById('vmMonto').focus(), 100);
 }
@@ -6496,7 +6541,30 @@ function editarVentaManual(id) {
   document.getElementById('vmMetodo').value = v.metodo || 'Efectivo';
   poblarSelectVmCuenta(v.account_id);
   document.getElementById('btnEliminarVM').style.display = '';
+  // Si es parte de una serie recurrente, no permitir convertirlo en otra serie
+  if (v.recurring_id) {
+    document.getElementById('vmRecurrente').checked = false;
+    document.getElementById('vmRecurrente').parentElement.style.display = 'none';
+    document.getElementById('vmRecurrenteInfo').style.display = '';
+  } else {
+    document.getElementById('vmRecurrente').parentElement.style.display = '';
+    document.getElementById('vmRecurrente').checked = false;
+    document.getElementById('vmRecurrenteInfo').style.display = 'none';
+  }
+  toggleVmRecurrenteFields();
   document.getElementById('modalVentaManual').classList.add('show');
+}
+
+function toggleVmRecurrenteFields() {
+  const checked = document.getElementById('vmRecurrente').checked;
+  document.getElementById('vmRecurrenteFields').style.display = checked ? '' : 'none';
+  if (checked) {
+    // Auto-completar "desde" con el mes de la fecha del ingreso
+    const f = document.getElementById('vmFecha').value;
+    if (f && !document.getElementById('vmRecDesde').value) {
+      document.getElementById('vmRecDesde').value = f.slice(0, 7);
+    }
+  }
 }
 
 function cerrarModalVentaManual() {
@@ -6521,10 +6589,27 @@ function guardarVentaManual() {
 
   if (!Array.isArray(state.ventasManuales)) state.ventasManuales = [];
 
+  // ¿Marcado como recurrente? Solo aplica a entradas nuevas (no editar serie existente).
+  const esRecurrente = !id && document.getElementById('vmRecurrente').checked;
+  let nuevosRec = 0;
+
   if (id) {
     const v = state.ventasManuales.find(x => x.id === id);
     if (!v) { toast('No encontré esta venta', 'error'); return; }
     Object.assign(v, { fecha, monto, descripcion, cliente, account_id, metodo });
+  } else if (esRecurrente) {
+    // Crea una serie en state.config.ingresosRecurrentes y la materializa.
+    const frecuencia = document.getElementById('vmRecFrecuencia').value;
+    const desde = document.getElementById('vmRecDesde').value || nuevoMesActualYM();
+    const hasta = document.getElementById('vmRecHasta').value || null;
+    if (!Array.isArray(state.config.ingresosRecurrentes)) state.config.ingresosRecurrentes = [];
+    const rec = {
+      id: uid(), descripcion, monto, cliente, account_id, metodo,
+      frecuencia, desde, hasta, dia: Number((fecha || '').slice(8, 10)) || 1,
+      created_at: new Date().toISOString()
+    };
+    state.config.ingresosRecurrentes.push(rec);
+    nuevosRec = generarIngresosRecurrentes(rec.id);
   } else {
     state.ventasManuales.push({
       id: uid(), fecha, monto, descripcion, cliente, account_id, metodo,
@@ -6533,7 +6618,8 @@ function guardarVentaManual() {
   }
   saveState();
   cerrarModalVentaManual();
-  toast(id ? 'Venta actualizada' : 'Venta registrada', 'success');
+  if (esRecurrente) toast(`✓ Serie creada · ${nuevosRec} ingreso${nuevosRec === 1 ? '' : 's'} generado${nuevosRec === 1 ? '' : 's'}`, 'success');
+  else toast(id ? 'Ingreso actualizado' : 'Ingreso registrado', 'success');
   // Refrescar todas las vistas que dependen de ventas
   renderVentas();
   if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
@@ -6543,11 +6629,31 @@ function guardarVentaManual() {
 function eliminarVentaManual() {
   const id = document.getElementById('vmId').value;
   if (!id) return;
-  if (!confirm('¿Eliminar esta venta? No se puede deshacer.')) return;
-  state.ventasManuales = (state.ventasManuales || []).filter(v => v.id !== id);
-  saveState();
-  cerrarModalVentaManual();
-  toast('Venta eliminada', 'success');
+  const v = (state.ventasManuales || []).find(x => x.id === id);
+  // Si pertenece a una serie recurrente, preguntar si elimina solo este o toda la serie
+  if (v && v.recurring_id) {
+    const opciones = '¿Qué quieres eliminar?\n\n• "Aceptar" → eliminar TODA la serie recurrente (todos los meses, futuros y pasados).\n• "Cancelar" → eliminar solo este ingreso puntual; la serie sigue activa.';
+    const todo = confirm(opciones);
+    if (todo) {
+      const recId = v.recurring_id;
+      state.ventasManuales = (state.ventasManuales || []).filter(x => x.recurring_id !== recId);
+      state.config.ingresosRecurrentes = (state.config.ingresosRecurrentes || []).filter(r => r.id !== recId);
+      saveState();
+      cerrarModalVentaManual();
+      toast('Serie de ingresos eliminada', 'success');
+    } else {
+      state.ventasManuales = (state.ventasManuales || []).filter(x => x.id !== id);
+      saveState();
+      cerrarModalVentaManual();
+      toast('Ingreso eliminado (la serie sigue)', 'success');
+    }
+  } else {
+    if (!confirm('¿Eliminar este ingreso? No se puede deshacer.')) return;
+    state.ventasManuales = (state.ventasManuales || []).filter(x => x.id !== id);
+    saveState();
+    cerrarModalVentaManual();
+    toast('Ingreso eliminado', 'success');
+  }
   renderVentas();
   if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
   if (document.getElementById('view-cashflow').classList.contains('active')) renderCashflow();
@@ -8650,6 +8756,9 @@ function aplicarPerfilUI() {
   // Configuración → sección "Tu negocio / Empresa"
   const setTxt = (id, t) => { const e = document.getElementById(id); if (e) e.textContent = t; };
   setTxt('gastosViewSub', personal ? 'Registro manual de tus gastos: arriendo, cuentas, suscripciones, compras' : 'Registro manual de costos y egresos del negocio');
+  setTxt('ventasCardTitulo', personal ? 'Ingresos' : 'Pedidos');
+  const vPed = document.getElementById('ventasVistaPedido');
+  if (vPed) vPed.textContent = personal ? 'Por ingreso' : 'Por pedido';
   setTxt('cfgSecSub', personal ? 'Tu perfil, conexiones, respaldo y datos' : 'Tu negocio, conexiones, reportes y datos');
   setTxt('cfgSecTitle', personal ? 'Tu perfil' : 'Tu negocio');
   setTxt('cfgEmpresaH3', personal ? 'Perfil' : 'Empresa');
@@ -9260,6 +9369,7 @@ function cambiarBusiness(id) {
   bootstrapDatos();
   generarGastosRecurrentes();
   generarCobrosRecurrentes();
+  generarIngresosRecurrentes();
   aplicarBusinessUI();
   // El orden del sidebar puede ser distinto por negocio
   aplicarOrdenNav();
@@ -10910,6 +11020,82 @@ function generarCobrosRecurrentes() {
 function eliminarGastosDeRecurrente(recId) {
   Gastos.eliminarGastosDeRecurrente(state, recId);
   saveState();
+}
+
+// Ingresos recurrentes (sueldos, arriendos cobrados, mensualidades).
+// Cada serie vive en state.config.ingresosRecurrentes y materializa
+// ventas manuales con recurring_id apuntando a la serie.
+//
+// Si se pasa soloRecId, solo procesa esa serie. Devuelve cuántos nuevos
+// ingresos creó (para feedback al usuario al crear la serie).
+function generarIngresosRecurrentes(soloRecId) {
+  const series = state.config.ingresosRecurrentes || [];
+  if (!Array.isArray(state.ventasManuales)) state.ventasManuales = [];
+  let creados = 0;
+  const hoy = new Date();
+  const hoyYM = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`;
+
+  const pad2 = n => String(n).padStart(2, '0');
+  const ymToDate = ym => new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 1, 1);
+  const diaClampedToMonth = (ym, dia) => {
+    const [y, m] = ym.split('-').map(Number);
+    const ultDia = new Date(y, m, 0).getDate();
+    return Math.min(Math.max(1, Number(dia || 1)), ultDia);
+  };
+  const sumMeses = (ym, n) => {
+    const d = ymToDate(ym); d.setMonth(d.getMonth() + n);
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+  };
+
+  series.forEach(rec => {
+    if (soloRecId && rec.id !== soloRecId) return;
+    const desde = rec.desde || hoyYM;
+    const hasta = rec.hasta || hoyYM;
+    const hastaEfectivo = hasta > hoyYM ? hoyYM : hasta;
+    const periodos = [];
+
+    if (rec.frecuencia === 'anual') {
+      // Una vez al año en el mes de "desde"
+      let ym = desde;
+      while (ym <= hastaEfectivo) { periodos.push(ym); ym = sumMeses(ym, 12); }
+    } else if (rec.frecuencia === 'semanal' || rec.frecuencia === 'quincenal') {
+      // Generar por fecha exacta (semana o quincena) entre desde-01 y hoy
+      const step = rec.frecuencia === 'semanal' ? 7 : 14;
+      let d = ymToDate(desde);
+      d.setDate(diaClampedToMonth(desde, rec.dia));
+      while (d <= hoy) {
+        const ym = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+        if (ym >= desde && ym <= hastaEfectivo) periodos.push(`${ym}-${pad2(d.getDate())}`);
+        d.setDate(d.getDate() + step);
+      }
+    } else {
+      // Mensual (default)
+      let ym = desde;
+      while (ym <= hastaEfectivo) { periodos.push(ym); ym = sumMeses(ym, 1); }
+    }
+
+    // Materializar: una venta manual por período si no existe ya
+    periodos.forEach(p => {
+      const fecha = p.length === 10 ? p : `${p}-${pad2(diaClampedToMonth(p, rec.dia))}`;
+      const ym = fecha.slice(0, 7);
+      const yaExiste = state.ventasManuales.some(v => v.recurring_id === rec.id && (v.fecha || '').slice(0, 7) === ym);
+      if (yaExiste) return;
+      state.ventasManuales.push({
+        id: uid(),
+        fecha,
+        monto: Number(rec.monto || 0),
+        descripcion: rec.descripcion || '',
+        cliente: rec.cliente || '',
+        account_id: rec.account_id || state.config.cuenta_default_id,
+        metodo: rec.metodo || 'Transferencia',
+        recurring_id: rec.id,
+        created_at: new Date().toISOString()
+      });
+      creados++;
+    });
+  });
+  if (creados > 0) saveState();
+  return creados;
 }
 
 /* =================================================================
@@ -15365,6 +15551,7 @@ function init() {
   asegurarCuentaDefault();
   generarGastosRecurrentes();
   generarCobrosRecurrentes();
+  generarIngresosRecurrentes();
   aplicarBusinessUI();
   // Reordenar nav del sidebar según preferencia guardada y activar drag.
   aplicarOrdenNav();

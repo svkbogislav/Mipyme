@@ -34,6 +34,7 @@
         : [],
       manual: true,
       _id: v.id,
+      _recurring_id: v.recurring_id || null,
       metodo: v.metodo,
       account_id: v.account_id
     };
