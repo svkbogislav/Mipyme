@@ -6589,16 +6589,36 @@ function guardarVentaManual() {
 
   if (!Array.isArray(state.ventasManuales)) state.ventasManuales = [];
 
-  // ¿Marcado como recurrente? Solo aplica a entradas nuevas (no editar serie existente).
-  const esRecurrente = !id && document.getElementById('vmRecurrente').checked;
+  const esRecurrente = document.getElementById('vmRecurrente').checked;
   let nuevosRec = 0;
 
+  // Si está editando un ingreso que ya es parte de una serie, no permitir
+  // convertirlo en otra (la UI ya esconde el toggle, pero por si acaso).
   if (id) {
     const v = state.ventasManuales.find(x => x.id === id);
     if (!v) { toast('No encontré esta venta', 'error'); return; }
+    if (esRecurrente && v.recurring_id) {
+      toast('Este ingreso ya es parte de una serie', 'error');
+      return;
+    }
     Object.assign(v, { fecha, monto, descripcion, cliente, account_id, metodo });
+    if (esRecurrente && !v.recurring_id) {
+      // CONVERTIR este ingreso existente en el "primer cargo" de una serie nueva.
+      const frecuencia = document.getElementById('vmRecFrecuencia').value;
+      const desde = document.getElementById('vmRecDesde').value || (fecha || '').slice(0, 7) || nuevoMesActualYM();
+      const hasta = document.getElementById('vmRecHasta').value || null;
+      if (!Array.isArray(state.config.ingresosRecurrentes)) state.config.ingresosRecurrentes = [];
+      const rec = {
+        id: uid(), descripcion, monto, cliente, account_id, metodo,
+        frecuencia, desde, hasta, dia: Number((fecha || '').slice(8, 10)) || 1,
+        created_at: new Date().toISOString()
+      };
+      state.config.ingresosRecurrentes.push(rec);
+      v.recurring_id = rec.id;
+      nuevosRec = generarIngresosRecurrentes(rec.id);
+    }
   } else if (esRecurrente) {
-    // Crea una serie en state.config.ingresosRecurrentes y la materializa.
+    // Ingreso nuevo + serie nueva
     const frecuencia = document.getElementById('vmRecFrecuencia').value;
     const desde = document.getElementById('vmRecDesde').value || nuevoMesActualYM();
     const hasta = document.getElementById('vmRecHasta').value || null;
@@ -6618,7 +6638,7 @@ function guardarVentaManual() {
   }
   saveState();
   cerrarModalVentaManual();
-  if (esRecurrente) toast(`✓ Serie creada · ${nuevosRec} ingreso${nuevosRec === 1 ? '' : 's'} generado${nuevosRec === 1 ? '' : 's'}`, 'success');
+  if (esRecurrente) toast(`✓ Serie creada · ${nuevosRec} ingreso${nuevosRec === 1 ? '' : 's'} ${id ? 'asociado' : 'generado'}${nuevosRec === 1 ? '' : 's'}`, 'success');
   else toast(id ? 'Ingreso actualizado' : 'Ingreso registrado', 'success');
   // Refrescar todas las vistas que dependen de ventas
   renderVentas();
@@ -6967,11 +6987,16 @@ function guardarGasto() {
     proveedorId = buscarOCrearProveedor(proveedor);
   }
 
-  // Caso 1: el usuario marcó "repetir periódicamente" (solo al crear gasto nuevo).
-  // La frecuencia viene del shortcut inline; el día/diaSemana se derivan de la
-  // fecha del gasto (sin pedir más campos — la versión completa está en
-  // Configuración → Gastos fijos mensuales).
-  if (esRecurrente && !id) {
+  // Caso 1: el usuario marcó "repetir periódicamente". Funciona tanto en gasto
+  // NUEVO (creamos la serie y la materializamos) como al EDITAR uno existente
+  // sin recurring_id (lo convertimos en el "primer cargo" de la serie nueva).
+  // Si el gasto ya pertenece a una serie, el toggle viene oculto desde editarGasto.
+  if (esRecurrente) {
+    const original = id ? state.gastos.find(g => g.id === id) : null;
+    if (original && original.recurring_id) {
+      toast('Este gasto ya es parte de una serie — no se puede recrear', 'error');
+      return;
+    }
     const frecuencia = document.getElementById('gastoRecFrecuencia').value || 'mensual';
     let desde = document.getElementById('gastoRecDesde').value;
     let hasta = document.getElementById('gastoRecHasta').value || null;
@@ -6995,11 +7020,23 @@ function guardarGasto() {
     };
     if (!state.config.recurrentes) state.config.recurrentes = [];
     state.config.recurrentes.push(rec);
+
+    if (id && original) {
+      // EDITANDO un gasto existente: actualízalo con los campos del form y
+      // asócialo a la nueva serie como su primer cargo. Esto evita generar
+      // un duplicado del mismo mes cuando luego corra generarGastosRecurrentes.
+      Object.assign(original, {
+        fecha, monto, categoria, proveedor, proveedor_id: proveedorId,
+        descripcion, metodo, account_id: accountId,
+        recurring_id: rec.id,
+        attachments: _gastoAttachmentPending ? [_gastoAttachmentPending] : (original.attachments || [])
+      });
+    }
     saveState();
     generarGastosRecurrentes();
     cerrarModal();
     const cargos = state.gastos.filter(g => g.recurring_id === rec.id).length;
-    toast(`Gasto recurrente creado · se generaron ${cargos} ${cargos === 1 ? 'cargo' : 'cargos'}`, 'success');
+    toast(`Serie recurrente creada · ${cargos} ${cargos === 1 ? 'cargo' : 'cargos'} ${id ? 'asociado' : 'generado'}${cargos === 1 ? '' : 's'}`, 'success');
     renderGastos();
     if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
     if (document.getElementById('view-cashflow').classList.contains('active')) renderCashflow();
