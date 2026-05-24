@@ -96,7 +96,92 @@ async function fetchSpend(args) {
   }
 }
 
+// Lista de campañas con su daily_budget actual + spend de los últimos 30 días
+// por campaña. Útil para recomendar presupuestos por campaña.
+//
+// Meta API:
+//   - Daily/lifetime budgets vienen en /campaigns como CENTAVOS (string).
+//     Si están a nivel de ad set (CBO desactivado), el campaign.daily_budget
+//     es null → en ese caso el budget vive en cada adset, requiere otra call.
+//     Por ahora reportamos lo que devuelva el campaign-level.
+//   - Currency del account: necesario para interpretar los centavos.
+async function fetchCampaigns(args) {
+  const creds = args && args.creds ? args.creds : args;
+  try {
+    if (!creds || !creds.adAccountId || !creds.accessToken) {
+      return { ok: false, error: 'Faltan credenciales' };
+    }
+    const accId = normalizarAccId(creds.adAccountId);
+    const apiVersion = creds.apiVersion || 'v19.0';
+
+    // 1) Currency del account
+    let currency = 'USD';
+    try {
+      const acct = await metaGraphRequest(
+        `/${apiVersion}/${accId}?fields=currency&access_token=${encodeURIComponent(creds.accessToken)}`
+      );
+      if (acct && acct.currency) currency = acct.currency;
+    } catch (_) {}
+
+    // 2) Campañas con sus presupuestos
+    const fields = 'id,name,status,daily_budget,lifetime_budget,objective,start_time,stop_time';
+    const campsPath = `/${apiVersion}/${accId}/campaigns` +
+      `?fields=${fields}` +
+      `&limit=200` +
+      `&access_token=${encodeURIComponent(creds.accessToken)}`;
+    const camps = await metaGraphRequest(campsPath);
+    const campaignsRaw = (camps && camps.data) || [];
+
+    // 3) Spend últimos 30 días por campaña (un solo call con level=campaign)
+    const spendByCampaign = {};
+    try {
+      const hoy = new Date();
+      const desde = new Date(hoy); desde.setDate(hoy.getDate() - 29);
+      const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const insPath = `/${apiVersion}/${accId}/insights` +
+        `?level=campaign` +
+        `&fields=campaign_id,spend,impressions,clicks` +
+        `&time_range=${encodeURIComponent(JSON.stringify({ since: fmt(desde), until: fmt(hoy) }))}` +
+        `&limit=500` +
+        `&access_token=${encodeURIComponent(creds.accessToken)}`;
+      const ins = await metaGraphRequest(insPath);
+      (ins && ins.data || []).forEach(r => {
+        spendByCampaign[r.campaign_id] = {
+          spend30d: Number(r.spend || 0),
+          impressions30d: Number(r.impressions || 0),
+          clicks30d: Number(r.clicks || 0),
+        };
+      });
+    } catch (_) { /* best-effort */ }
+
+    const campaigns = campaignsRaw.map(c => {
+      // daily_budget / lifetime_budget vienen como CENTAVOS string. Las
+      // monedas CLP/JPY no usan centavos así que en Meta vienen igual como
+      // string-de-centavos (dividimos por 100 siempre).
+      const daily = c.daily_budget != null ? Number(c.daily_budget) / 100 : 0;
+      const lifetime = c.lifetime_budget != null ? Number(c.lifetime_budget) / 100 : 0;
+      const stats = spendByCampaign[c.id] || { spend30d: 0, impressions30d: 0, clicks30d: 0 };
+      return {
+        id: c.id,
+        name: c.name,
+        status: c.status, // ACTIVE | PAUSED | ARCHIVED | DELETED
+        objective: c.objective || '',
+        dailyBudget: daily,
+        lifetimeBudget: lifetime,
+        currency,
+        ...stats,
+        spendAvgDaily30d: stats.spend30d / 30,
+      };
+    });
+
+    return { ok: true, campaigns, currency, fetchedAt: new Date().toISOString() };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
 module.exports = {
   test,
   fetchSpend,
+  fetchCampaigns,
 };

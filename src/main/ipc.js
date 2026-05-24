@@ -31,12 +31,14 @@ function register({ getMainWindow }) {
   ipcMain.handle('shopify:oauth-port',  async ()           => shopifyOAuth.PORT);
 
   // === Meta Ads ===
-  ipcMain.handle('meta:test',       async (_e, creds) => metaApi.test(creds));
-  ipcMain.handle('meta:fetchSpend', async (_e, args)  => metaApi.fetchSpend(args));
+  ipcMain.handle('meta:test',           async (_e, creds) => metaApi.test(creds));
+  ipcMain.handle('meta:fetchSpend',     async (_e, args)  => metaApi.fetchSpend(args));
+  ipcMain.handle('meta:fetchCampaigns', async (_e, args)  => metaApi.fetchCampaigns(args));
 
   // === Google Ads ===
-  ipcMain.handle('google:test',       async (_e, creds) => googleApi.test(creds));
-  ipcMain.handle('google:fetchSpend', async (_e, args)  => googleApi.fetchSpend(args));
+  ipcMain.handle('google:test',           async (_e, creds) => googleApi.test(creds));
+  ipcMain.handle('google:fetchSpend',     async (_e, args)  => googleApi.fetchSpend(args));
+  ipcMain.handle('google:fetchCampaigns', async (_e, args)  => googleApi.fetchCampaigns(args));
 
   // === SII / Facturación electrónica (LibreDTE) ===
   ipcMain.handle('sii:test',           async (_e, creds) => siiApi.test(creds));

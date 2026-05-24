@@ -14251,6 +14251,41 @@ function _budgetEtiqueta(mult) {
   return                  { texto: 'Escalar agresivo', color: 'var(--success-text)', bg: 'var(--success-soft)' };
 }
 
+// Disponible mensual para ads = ingresos promedio últimos 3m
+//   − gastos non-ad promedio últimos 3m (excluyendo ad spend)
+//   − colchón (10% del ingreso, como reserva)
+// Esto da el "techo natural" de cuánto se puede destinar a ads sin ahogar la caja.
+function _disponibleParaAds() {
+  try {
+    const ahora = new Date();
+    const meses3 = [];
+    for (let i = 0; i < 3; i++) {
+      const d = new Date(ahora.getFullYear(), ahora.getMonth() - i, 1);
+      meses3.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+    const ingresosPorMes = (typeof Ventas !== 'undefined' && Ventas.ventasPorMes)
+      ? Ventas.ventasPorMes(state, shopify, getTestPatterns())
+      : {};
+    let totalIng = 0, totalGas = 0;
+    meses3.forEach(ym => {
+      totalIng += Number(ingresosPorMes[ym] || 0);
+      (state.gastos || []).forEach(g => {
+        if ((g.fecha || '').slice(0, 7) !== ym) return;
+        // Excluir ad spend (categoría Marketing) y comisiones/IVA estimados
+        if (g.auto_estimado) return;
+        const cat = String(g.categoria || '').toLowerCase();
+        if (cat.includes('marketing') || cat.includes('publicidad') || cat.includes('ad ')) return;
+        totalGas += Number(g.monto || 0);
+      });
+    });
+    const ingProm = totalIng / 3;
+    const gasProm = totalGas / 3;
+    const colchon = ingProm * 0.10;
+    const dispMensual = Math.max(0, ingProm - gasProm - colchon);
+    return { ingProm, gasProm, colchon, dispMensual, dispDiario: dispMensual / 30 };
+  } catch (_) { return { ingProm: 0, gasProm: 0, colchon: 0, dispMensual: 0, dispDiario: 0 }; }
+}
+
 function renderPresupuestoRecomendado() {
   const cont = document.getElementById('anaBudgetRecs');
   if (!cont) return;
@@ -14329,6 +14364,28 @@ function renderPresupuestoRecomendado() {
     ? `Tu ROAS (${roas3.toFixed(2)}x) está en línea con el objetivo de ${target}x. Mantén el ritmo, no escales sin probar primero.`
     : `Tu ROAS (${roas3.toFixed(2)}x) supera el objetivo de ${target}x. Hay margen para escalar el spend ${Math.round((mult - 1) * 100)}% (ojo: al subir spend el ROAS suele bajar 10-30%).`;
 
+  // Disponible según ingresos/gastos reales y techo recomendado
+  const disp = _disponibleParaAds();
+  // Cap el recomendadoTotal al disponible (no recomendamos gastar más de lo que sostiene la caja)
+  let cappedTotal = recomendadoTotal;
+  let capWarning = '';
+  if (recomendadoTotal > disp.dispMensual && disp.dispMensual > 0) {
+    cappedTotal = disp.dispMensual;
+    capWarning = `Aunque el ROAS daría espacio para más, lo bajé al techo de tu caja (${clp(disp.dispMensual)}/mes). Para gastar más, necesitas más margen.`;
+    // Reproporcional Meta/Google con el cap
+    const scaleDown = cappedTotal / Math.max(1, recomendadoTotal);
+    var metaRecCap = metaRec * scaleDown;
+    var googleRecCap = googleRec * scaleDown;
+  } else {
+    var metaRecCap = metaRec;
+    var googleRecCap = googleRec;
+  }
+  const recDailyTotal = cappedTotal / 30;
+  const metaRecDaily = metaRecCap / 30;
+  const googleRecDaily = googleRecCap / 30;
+  const deltaMetaCap = metaRecCap - metaSpend3;
+  const deltaGoogleCap = googleRecCap - googleSpend3;
+
   cont.innerHTML = `
     <!-- Headline + KPIs -->
     <div style="padding:12px 14px; background:${etiq.bg}; border:1px solid ${etiq.color}; border-radius:9px; color:${etiq.color}; font-size:13px; line-height:1.5; margin-bottom:12px">
@@ -14337,31 +14394,47 @@ function renderPresupuestoRecomendado() {
         <span style="font-size:11px; color:${trendColor}">Tendencia: ${trendIco} ${trendTxt}</span>
       </div>
       ${headlineMsg}
+      ${capWarning ? `<div style="margin-top:8px; padding-top:8px; border-top:1px solid ${etiq.color}; font-size:12px">⚠️ ${capWarning}</div>` : ''}
     </div>
 
-    <!-- Tabla por plataforma -->
+    <!-- Techo del bolsillo: cuánto sostiene tu negocio sin ahogar la caja -->
+    <div style="padding:10px 12px; background:var(--surface-2); border:1px solid var(--border); border-radius:8px; margin-bottom:12px; font-size:12px">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap">
+        <div>
+          <strong>Techo natural según tu caja:</strong>
+          <span style="color:var(--text-muted)"> ingresos ${clp(disp.ingProm)}/mes − gastos no-ads ${clp(disp.gasProm)}/mes − colchón 10% = </span>
+          <strong style="color:var(--success-text)">${clp(disp.dispMensual)}/mes</strong>
+          <span style="color:var(--text-muted)"> (${clp(disp.dispDiario)}/día)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabla por plataforma — mensual + diario -->
     <div class="table-wrap"><table>
-      <thead><tr><th>Plataforma</th><th class="num">Spend actual /mes</th><th class="num">Recomendado /mes</th><th class="num">Δ sugerido</th><th>Acción</th></tr></thead>
+      <thead><tr><th>Plataforma</th><th class="num">Spend actual /mes</th><th class="num">Recomendado /mes</th><th class="num">/día</th><th class="num">Δ sugerido</th><th>Acción</th></tr></thead>
       <tbody>
         <tr>
           <td><strong>Meta Ads</strong><div style="font-size:11px; color:var(--text-muted)">CPC ${metaCpc > 0 ? clp(metaCpc) : '—'}</div></td>
-          <td class="num">${clp(metaSpend3)}</td>
-          <td class="num"><strong>${clp(metaRec)}</strong></td>
-          <td class="num" style="color:${deltaMeta >= 0 ? 'var(--success-text)' : 'var(--danger-text)'}">${fmtDelta(deltaMeta)}</td>
+          <td class="num">${clp(metaSpend3)}<div style="font-size:11px; color:var(--text-muted)">${clp(metaSpend3 / 30)}/día</div></td>
+          <td class="num"><strong>${clp(metaRecCap)}</strong></td>
+          <td class="num"><strong>${clp(metaRecDaily)}</strong></td>
+          <td class="num" style="color:${deltaMetaCap >= 0 ? 'var(--success-text)' : 'var(--danger-text)'}">${fmtDelta(deltaMetaCap)}</td>
           <td><span style="font-size:11px; padding:2px 8px; border-radius:99px; background:${etiq.bg}; color:${etiq.color}; border:1px solid ${etiq.color}">${etiq.texto}</span></td>
         </tr>
         <tr>
           <td><strong>Google Ads</strong><div style="font-size:11px; color:var(--text-muted)">CPC ${googleCpc > 0 ? clp(googleCpc) : '—'}</div></td>
-          <td class="num">${clp(googleSpend3)}</td>
-          <td class="num"><strong>${clp(googleRec)}</strong></td>
-          <td class="num" style="color:${deltaGoogle >= 0 ? 'var(--success-text)' : 'var(--danger-text)'}">${fmtDelta(deltaGoogle)}</td>
+          <td class="num">${clp(googleSpend3)}<div style="font-size:11px; color:var(--text-muted)">${clp(googleSpend3 / 30)}/día</div></td>
+          <td class="num"><strong>${clp(googleRecCap)}</strong></td>
+          <td class="num"><strong>${clp(googleRecDaily)}</strong></td>
+          <td class="num" style="color:${deltaGoogleCap >= 0 ? 'var(--success-text)' : 'var(--danger-text)'}">${fmtDelta(deltaGoogleCap)}</td>
           <td><span style="font-size:11px; padding:2px 8px; border-radius:99px; background:${etiq.bg}; color:${etiq.color}; border:1px solid ${etiq.color}">${etiq.texto}</span></td>
         </tr>
         <tr style="font-weight:700; background:var(--surface-2)">
-          <td>Total /mes</td>
-          <td class="num">${clp(spend3Total)}</td>
-          <td class="num">${clp(recomendadoTotal)}</td>
-          <td class="num" style="color:${(deltaMeta + deltaGoogle) >= 0 ? 'var(--success-text)' : 'var(--danger-text)'}">${fmtDelta(deltaMeta + deltaGoogle)}</td>
+          <td>Total</td>
+          <td class="num">${clp(spend3Total)}<div style="font-size:11px; color:var(--text-muted)">${clp(spend3Total / 30)}/día</div></td>
+          <td class="num">${clp(cappedTotal)}</td>
+          <td class="num">${clp(recDailyTotal)}</td>
+          <td class="num" style="color:${(deltaMetaCap + deltaGoogleCap) >= 0 ? 'var(--success-text)' : 'var(--danger-text)'}">${fmtDelta(deltaMetaCap + deltaGoogleCap)}</td>
           <td></td>
         </tr>
       </tbody>
@@ -14369,11 +14442,90 @@ function renderPresupuestoRecomendado() {
 
     ${realocacionMsg ? `<div style="margin-top:10px; padding:10px 12px; background:var(--primary-soft); color:var(--primary-text); border-radius:8px; font-size:12px; line-height:1.5">↔️ ${realocacionMsg}</div>` : ''}
 
+    ${_renderCampaignBudgetTable(target, mult)}
+
     <div style="margin-top:10px; font-size:11px; color:var(--text-muted); line-height:1.5">
       <strong>Cómo se calcula:</strong> tomo el spend promedio de los últimos 3 meses y comparo el ROAS con tu objetivo.
       Si lo superas, sugiero escalar (cap 1.8×); si no llega, bajar o pausar. La distribución entre Meta y Google se ajusta
       por CPC eficiencia. <strong>Importante:</strong> al duplicar spend, el ROAS típicamente cae 10-30% por saturación — siempre
       sube en tramos del 20-30% y mide 2 semanas antes del próximo aumento.
+    </div>
+  `;
+}
+
+// Tabla por campaña — daily budget actual + recomendación específica.
+// Heurística por campaña (sin atribución, usando uso del budget como proxy):
+//   - Campaña con spend30d cerca de 0 con daily budget > 0 → "Sin tráfico, revisar segmentación"
+//   - Campaña que NO llega al 50% de su daily budget en 30d → "Budget mayor al que entrega; bajar"
+//   - Campaña que llega al 90-100% consistentemente → "Saturada; subir budget para escalar"
+//   - Campaña PAUSED → "Pausada"
+function _renderCampaignBudgetTable(target, multiPlatform) {
+  const metaCfg = (state.config && state.config.meta_ads) || {};
+  const googleCfg = (state.config && state.config.google_ads) || {};
+  const metaCamps = (metaCfg.campaigns || []).map(c => ({ ...c, plataforma: 'Meta' }));
+  const googleCamps = (googleCfg.campaigns || []).map(c => ({ ...c, plataforma: 'Google' }));
+  const todas = metaCamps.concat(googleCamps);
+  if (!todas.length) {
+    return `<div style="margin-top:14px; padding:10px 12px; background:var(--surface-2); border:1px solid var(--border); border-radius:8px; font-size:12px; color:var(--text-muted)">
+      ⓘ Para ver recomendaciones por campaña con su <strong>presupuesto diario actual</strong>, vuelve a darle <strong>"Sincronizar ad spend"</strong> en Configuración → Conexiones publicitarias. Ahora la app trae también las campañas activas.
+    </div>`;
+  }
+
+  // Recomendación por campaña
+  const recPorCamp = (c) => {
+    if (c.status && /paused/i.test(c.status)) return { txt: 'Pausada', mult: 0, color: 'var(--text-muted)', bg: 'var(--surface-2)', recDaily: 0 };
+    const usoPct = c.dailyBudget > 0 ? (c.spendAvgDaily30d / c.dailyBudget) : 0;
+    let recMult = multiPlatform; // base: la recomendación global
+    let etiqueta = '';
+    if (c.dailyBudget > 0 && c.spend30d < c.dailyBudget * 2) {
+      // Spend total 30d < 2× daily → la campaña claramente NO entrega
+      recMult = Math.min(recMult, 0.5);
+      etiqueta = 'Sin tráfico — revisar segmentación o creatividad';
+    } else if (usoPct < 0.5 && c.dailyBudget > 0) {
+      // Está consumiendo <50% de su daily → budget está sobrado
+      recMult = Math.min(recMult, 0.7);
+      etiqueta = 'Bajar budget — no llega ni a la mitad';
+    } else if (usoPct >= 0.9 && multiPlatform >= 1.0) {
+      // Saturada y la plataforma puede escalar
+      recMult = Math.max(recMult, 1.3);
+      etiqueta = 'Saturada — sube para escalar';
+    } else {
+      etiqueta = recMult >= 1.3 ? 'Escalar' : (recMult < 1 ? 'Bajar' : 'Mantener');
+    }
+    const recDaily = c.dailyBudget * recMult;
+    const ent = _budgetEtiqueta(recMult);
+    return { txt: etiqueta, mult: recMult, color: ent.color, bg: ent.bg, recDaily, usoPct };
+  };
+
+  const filas = todas.map(c => {
+    const rec = recPorCamp(c);
+    const delta = rec.recDaily - (c.dailyBudget || 0);
+    const fmtDelta = d => (d >= 0 ? '+' : '') + clp(Math.round(d));
+    const ratioTxt = (c.dailyBudget > 0 && rec.usoPct != null)
+      ? `${(rec.usoPct * 100).toFixed(0)}% usado`
+      : (c.dailyBudget === 0 ? 'sin daily budget' : '—');
+    const statusBadge = c.status && /paused/i.test(c.status)
+      ? '<span class="badge" style="background:var(--surface-2); color:var(--text-muted)">Pausada</span>'
+      : '<span class="badge" style="background:var(--success-soft); color:var(--success-text)">Activa</span>';
+    return `<tr>
+      <td><strong>${escapeHtml(c.name || c.id)}</strong><div style="font-size:11px; color:var(--text-muted)">${escapeHtml(c.plataforma)}${c.objective ? ' · ' + escapeHtml(c.objective.replace(/_/g, ' ').toLowerCase()) : ''}</div></td>
+      <td>${statusBadge}</td>
+      <td class="num">${c.dailyBudget > 0 ? clp(c.dailyBudget) : '—'}</td>
+      <td class="num">${clp(c.spendAvgDaily30d || 0)}<div style="font-size:11px; color:var(--text-muted)">${ratioTxt}</div></td>
+      <td class="num"><strong>${clp(rec.recDaily)}</strong></td>
+      <td class="num" style="color:${delta >= 0 ? 'var(--success-text)' : 'var(--danger-text)'}">${c.dailyBudget > 0 ? fmtDelta(delta) : '—'}</td>
+      <td><span style="font-size:11px; padding:2px 8px; border-radius:99px; background:${rec.bg}; color:${rec.color}; border:1px solid ${rec.color}; white-space:nowrap">${rec.txt}</span></td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div style="margin-top:16px">
+      <h4 style="margin:0 0 4px; font-size:13px">📋 Por campaña</h4>
+      <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px">Sugerencias por campaña combinando ROAS de la plataforma y uso real del budget diario.</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Campaña</th><th>Estado</th><th class="num">Daily budget</th><th class="num">Spend prom. /día (30d)</th><th class="num">Daily recomendado</th><th class="num">Δ</th><th>Acción</th></tr></thead>
+        <tbody>${filas}</tbody>
+      </table></div>
     </div>
   `;
 }
@@ -15015,12 +15167,19 @@ async function sincronizarAdSpendMeta() {
   if (!r.ok) { toast('Error: ' + (r.error || ''), 'error'); return; }
   cfg.snapshots = r.monthly;
   cfg.lastSync = r.fetchedAt;
+  // Best-effort: traer también campañas con su daily budget (no rompe si falla)
+  try {
+    if (window.electronAPI.metaAdsFetchCampaigns) {
+      const rc = await window.electronAPI.metaAdsFetchCampaigns(cfg);
+      if (rc && rc.ok) { cfg.campaigns = rc.campaigns; cfg.currency = rc.currency; }
+    }
+  } catch (_) {}
   state.config.meta_ads = cfg;
   saveState();
   refrescarMetaAdsUI();
   const totalSpend = r.monthly.reduce((s, m) => s + Number(m.spend || 0), 0);
   const ultMes = r.monthly[r.monthly.length - 1];
-  toast(`✓ Ad spend Meta sincronizado · ${r.monthly.length} meses · total ${clp(totalSpend)} · último mes ${clp(ultMes ? ultMes.spend : 0)}`, 'success');
+  toast(`✓ Ad spend Meta sincronizado · ${r.monthly.length} meses · ${(cfg.campaigns || []).length} campañas · total ${clp(totalSpend)}`, 'success');
 }
 
 function guardarConexionGoogleAds() {
@@ -15101,6 +15260,13 @@ async function sincronizarAdSpendGoogle() {
   cfg.lastSync = r.fetchedAt;
   delete cfg.lastError;
   delete cfg.lastErrorAt;
+  // Best-effort: traer también campañas con su daily budget (no rompe si falla)
+  try {
+    if (window.electronAPI.googleAdsFetchCampaigns) {
+      const rc = await window.electronAPI.googleAdsFetchCampaigns(cfg);
+      if (rc && rc.ok) cfg.campaigns = rc.campaigns;
+    }
+  } catch (_) {}
   state.config.google_ads = cfg;
   saveState();
   refrescarGoogleAdsUI();

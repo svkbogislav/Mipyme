@@ -60,13 +60,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('app:updateProgress', sub);
   },
 
-  // Meta Ads — test conexión + fetch ad spend mensual
+  // Meta Ads — test conexión + fetch ad spend mensual + campañas con daily budget
   metaAdsTest: (creds) => ipcRenderer.invoke('meta:test', creds),
   metaAdsFetchSpend: (creds, meses) => ipcRenderer.invoke('meta:fetchSpend', { creds, meses }),
+  metaAdsFetchCampaigns: (creds) => ipcRenderer.invoke('meta:fetchCampaigns', { creds }),
 
-  // Google Ads — test conexión + fetch ad spend mensual (12m, GAQL)
+  // Google Ads — test conexión + fetch ad spend mensual + campañas con daily budget
   googleAdsTest: (creds) => ipcRenderer.invoke('google:test', creds),
   googleAdsFetchSpend: (creds) => ipcRenderer.invoke('google:fetchSpend', { creds }),
+  googleAdsFetchCampaigns: (creds) => ipcRenderer.invoke('google:fetchCampaigns', { creds }),
 
   // SII / Facturación electrónica (LibreDTE). creds = { hash, rutEmisor,
   // ambiente: 'certificacion'|'produccion', host? }. El hash NUNCA se

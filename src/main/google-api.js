@@ -219,7 +219,62 @@ async function fetchSpend(args) {
   }
 }
 
+// Lista de campañas con su daily budget actual + spend últimos 30d por campaña.
+// Reusa el helper query(). Devuelve {id, name, status, dailyBudget, spend30d, ...}.
+async function fetchCampaigns(args) {
+  const creds = args && args.creds ? args.creds : args;
+  try {
+    if (!creds || !creds.customerId || !creds.devToken || !creds.refreshToken || !creds.clientId || !creds.clientSecret) {
+      return { ok: false, error: 'Faltan credenciales' };
+    }
+    // Spend últimos 30d por campaña + budget (campaign_budget.amount_micros).
+    const hoy = new Date();
+    const desde = new Date(hoy); desde.setDate(hoy.getDate() - 29);
+    const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const gaql = `
+      SELECT
+        campaign.id,
+        campaign.name,
+        campaign.status,
+        campaign_budget.amount_micros,
+        campaign_budget.delivery_method,
+        metrics.cost_micros,
+        metrics.impressions,
+        metrics.clicks,
+        metrics.conversions
+      FROM campaign
+      WHERE segments.date BETWEEN '${fmt(desde)}' AND '${fmt(hoy)}'
+        AND campaign.status IN ('ENABLED', 'PAUSED')
+    `;
+    const result = await query(creds, gaql);
+    // Agregar por campaña (la query puede devolver una fila por día/segmento).
+    const map = {};
+    (result.results || []).forEach(r => {
+      const cid = r.campaign && r.campaign.id;
+      if (!cid) return;
+      if (!map[cid]) {
+        map[cid] = {
+          id: cid,
+          name: (r.campaign && r.campaign.name) || '',
+          status: (r.campaign && r.campaign.status) || '',
+          dailyBudget: Number(((r.campaignBudget && r.campaignBudget.amountMicros) || 0)) / 1000000,
+          spend30d: 0, impressions30d: 0, clicks30d: 0, conversions30d: 0,
+        };
+      }
+      map[cid].spend30d += Number(((r.metrics && r.metrics.costMicros) || 0)) / 1000000;
+      map[cid].impressions30d += Number((r.metrics && r.metrics.impressions) || 0);
+      map[cid].clicks30d += Number((r.metrics && r.metrics.clicks) || 0);
+      map[cid].conversions30d += Number((r.metrics && r.metrics.conversions) || 0);
+    });
+    const campaigns = Object.values(map).map(c => ({ ...c, spendAvgDaily30d: c.spend30d / 30 }));
+    return { ok: true, campaigns, fetchedAt: new Date().toISOString() };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
 module.exports = {
   test,
   fetchSpend,
+  fetchCampaigns,
 };
