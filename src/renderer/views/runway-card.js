@@ -84,13 +84,18 @@
     flujoEl.style.color = flujoNeto > 0 ? '#15803d' : (flujoNeto < 0 ? '#b91c1c' : 'var(--text-muted)');
     document.getElementById('runwayFlujoSub').textContent = `${clp(r.ventasPeriodo)} − ${clp(r.gastosPeriodo)}`;
 
+    const personalUI = typeof window !== 'undefined' && typeof window.esPerfilPersonal === 'function' && window.esPerfilPersonal();
     document.getElementById('runwayCxP').textContent = clp(r.deudaPendiente);
     document.getElementById('runwayCxP').style.color = r.deudaPendiente > 0 ? '#b91c1c' : 'var(--text-muted)';
-    document.getElementById('runwayCxPSub').textContent = r.deudaPendiente > 0 ? 'a proveedores' : 'sin deudas';
+    document.getElementById('runwayCxPSub').textContent = r.deudaPendiente > 0
+      ? (personalUI ? 'a quién le debes' : 'a proveedores')
+      : 'sin deudas';
 
     document.getElementById('runwayCxC').textContent = clp(r.cobrosPendientes || 0);
     document.getElementById('runwayCxC').style.color = (r.cobrosPendientes || 0) > 0 ? '#15803d' : 'var(--text-muted)';
-    document.getElementById('runwayCxCSub').textContent = (r.cobrosPendientes || 0) > 0 ? 'de clientes' : 'sin facturas pendientes';
+    document.getElementById('runwayCxCSub').textContent = (r.cobrosPendientes || 0) > 0
+      ? (personalUI ? 'quién te debe' : 'de clientes')
+      : 'sin facturas pendientes';
 
     // ============ POSICIÓN NETA (caja − CxP + CxC) ============
     const posNeta = r.cajaLiquida - r.deudaPendiente + (r.cobrosPendientes || 0);

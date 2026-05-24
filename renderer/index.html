@@ -1203,12 +1203,12 @@
             <div class="runway-metric-sub" id="runwayFlujoSub">ingresos − gastos</div>
           </div>
           <div class="runway-metric">
-            <div class="runway-metric-label">Por pagar</div>
+            <div class="runway-metric-label" id="runwayCxPLbl">Por pagar</div>
             <div class="runway-metric-value" id="runwayCxP">$0</div>
             <div class="runway-metric-sub" id="runwayCxPSub">lo que debes</div>
           </div>
           <div class="runway-metric">
-            <div class="runway-metric-label">Por cobrar</div>
+            <div class="runway-metric-label" id="runwayCxCLbl">Por cobrar</div>
             <div class="runway-metric-value" id="runwayCxC">$0</div>
             <div class="runway-metric-sub" id="runwayCxCSub">lo que te deben</div>
           </div>
@@ -1230,7 +1230,7 @@
           <div class="kpi-icon" style="background:var(--success-soft); color:var(--success-text)">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
           </div>
-          <div class="kpi-label">Ingresos</div>
+          <div class="kpi-label" id="kpiIngresosLbl">Ingresos</div>
           <div class="kpi-value" id="kpiIngresos">$0</div>
           <div class="kpi-delta" id="kpiIngresosDelta"></div>
         </div>
@@ -1238,7 +1238,7 @@
           <div class="kpi-icon" style="background:var(--danger-soft); color:var(--danger)">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>
           </div>
-          <div class="kpi-label">Costos / Gastos</div>
+          <div class="kpi-label" id="kpiCostosLbl">Costos / Gastos</div>
           <div class="kpi-value" id="kpiCostos">$0</div>
           <div class="kpi-delta" id="kpiCostosDelta"></div>
         </div>
@@ -1246,7 +1246,7 @@
           <div class="kpi-icon" style="background:var(--primary-soft); color:var(--primary)">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
           </div>
-          <div class="kpi-label">Resultado neto</div>
+          <div class="kpi-label" id="kpiNetoLbl">Resultado neto</div>
           <div class="kpi-value" id="kpiNeto">$0</div>
           <div class="kpi-delta" id="kpiMargen"></div>
         </div>
@@ -1254,7 +1254,7 @@
           <div class="kpi-icon" style="background:var(--warning-soft); color:var(--warning)">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
           </div>
-          <div class="kpi-label">N° de ventas</div>
+          <div class="kpi-label" id="kpiPedidosLbl">N° de ventas</div>
           <div class="kpi-value" id="kpiPedidos">0</div>
           <div class="kpi-delta" id="kpiTicket"></div>
         </div>
@@ -5033,7 +5033,7 @@ function renderDashboard() {
   document.getElementById('kpiPedidos').textContent = fmtNum.format(numPedidos);
   document.getElementById('kpiMargen').innerHTML = ingresos > 0
     ? `<span class="${neto >= 0 ? 'up' : 'down'}">Margen ${fmtPct.format(margen)}</span>` : '';
-  document.getElementById('kpiTicket').textContent = numPedidos ? `Ticket prom: ${clp(ticket)}` : '';
+  document.getElementById('kpiTicket').textContent = numPedidos ? `${esPerfilPersonal() ? 'Promedio' : 'Ticket prom'}: ${clp(ticket)}` : '';
 
   // Subtítulo
   const lblPeriodo = obtenerPeriodos().find(p => p.value === periodo)?.label || '';
@@ -8815,6 +8815,12 @@ function aplicarPerfilUI() {
   setTxt('vTotalLbl',   personal ? 'Total ingresos'      : 'Total ventas');
   setTxt('vPedidosLbl', personal ? 'N° de ingresos'      : 'N° de pedidos');
   setTxt('vTicketLbl',  personal ? 'Promedio por ingreso' : 'Ticket promedio');
+  // Dashboard — runway metrics y KPI grid
+  setTxt('runwayCxPLbl', personal ? 'Mis deudas' : 'Por pagar');
+  setTxt('runwayCxCLbl', personal ? 'Me deben'   : 'Por cobrar');
+  setTxt('kpiCostosLbl', personal ? 'Gastos'           : 'Costos / Gastos');
+  setTxt('kpiNetoLbl',   personal ? 'Ahorro / Sobrante' : 'Resultado neto');
+  setTxt('kpiPedidosLbl', personal ? 'N° de ingresos'   : 'N° de ventas');
   setTxt('cfgSecSub', personal ? 'Tu perfil, conexiones, respaldo y datos' : 'Tu negocio, conexiones, reportes y datos');
   setTxt('cfgSecTitle', personal ? 'Tu perfil' : 'Tu negocio');
   setTxt('cfgEmpresaH3', personal ? 'Perfil' : 'Empresa');
