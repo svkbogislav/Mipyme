@@ -57,6 +57,21 @@
   // Expone para que el resto del renderer lo pueda usar (KPIs, dashboard)
   if (typeof window !== 'undefined') window.cicloPresupuesto = cicloPresupuesto;
 
+  // Guarda los inputs del plan personal (sobres) y re-renderiza.
+  function _guardarPlanPersonal() {
+    if (!state.config.personalPlan) state.config.personalPlan = {};
+    const get = id => {
+      const e = document.getElementById(id);
+      return (e && window.Forms && Forms.parsearCLP) ? Forms.parsearCLP(e.value) : Number((e && e.value) || 0);
+    };
+    state.config.personalPlan.inversiones = get('ppInversiones');
+    state.config.personalPlan.mesadaSemanal = get('ppMesadaSemanal');
+    state.config.personalPlan.cajaChica = get('ppCajaChica');
+    saveState();
+    renderPresupuesto();
+  }
+  if (typeof window !== 'undefined') window._guardarPlanPersonal = _guardarPlanPersonal;
+
   // Modelo MIXTO:
   //   Ingreso − Costos fijos (auto, de Gastos Periódicos) − Variable (% por
   //   categoría) = Utilidad proyectada.
@@ -78,8 +93,11 @@
     const recs = (state.config.recurrentes || []).filter(r => !r.hasta || String(r.hasta).slice(0, 7) >= hoyYM);
     const fijoMensual = recs.reduce((s, r) => s + mmr(r), 0);
 
-    // ── Tope variable del mes (modo "lo máximo posible") ──
-    const puedeGastar = Math.max(0, base - fijoMensual);
+    // ── Tope variable del mes ──
+    // Empresa: ingreso − fijos.
+    // Personal: lo libre tras los "sobres" (ahorro, mesada, caja chica).
+    // Se actualiza al final del bloque personal si aplica.
+    let puedeGastar = Math.max(0, base - fijoMensual);
 
     // ── Ciclo del presupuesto (mes calendario o payday-to-payday) ──
     const ciclo = cicloPresupuesto();
@@ -100,6 +118,71 @@
     const diasMes = ciclo.diasTotal;
     const diaHoy = ciclo.diaActual;
     const diasRest = ciclo.diasRestantes;
+
+    // ── PLAN PERSONAL (sobres) — solo en modo personal ──
+    const personalUI = (typeof esPerfilPersonal === 'function') && esPerfilPersonal();
+    const planCard = document.getElementById('presPlanPersonalCard');
+    let planInv = 0, planMesadaSem = 0, planMesadaTotal = 0, planCaja = 0, planLibre = 0;
+    if (planCard) {
+      if (!personalUI) {
+        planCard.style.display = 'none';
+      } else {
+        planCard.style.display = '';
+        if (!state.config.personalPlan) state.config.personalPlan = {};
+        const pp = state.config.personalPlan;
+        planInv = Number(pp.inversiones || 0);
+        planMesadaSem = Number(pp.mesadaSemanal || 0);
+        planCaja = Number(pp.cajaChica || 0);
+        // Set values en inputs (sin pisar si el usuario está escribiendo)
+        const setInp = (id, val) => {
+          const e = document.getElementById(id);
+          if (e && document.activeElement !== e) {
+            if (window.Forms && Forms.setearMontoCLP) Forms.setearMontoCLP(e, val);
+            else e.value = val;
+          }
+        };
+        setInp('ppInversiones', planInv);
+        setInp('ppMesadaSemanal', planMesadaSem);
+        setInp('ppCajaChica', planCaja);
+        // Mesada total = mesada semanal × semanas del ciclo
+        const semanasCiclo = ciclo.diasTotal / 7;
+        planMesadaTotal = planMesadaSem * semanasCiclo;
+        const hintEl = document.getElementById('ppMesadaHint');
+        if (hintEl) hintEl.textContent = `≈ ${clp(planMesadaTotal)} en ${semanasCiclo.toFixed(1)} semanas (${ciclo.modo === 'pago' ? 'ciclo de pago' : 'mes calendario'}).`;
+        // Libre para variable = base − fijos − ahorro − mesadaTotal − cajaChica
+        planLibre = Math.max(0, base - fijoMensual - planInv - planMesadaTotal - planCaja);
+        // Resumen visual
+        const resEl = document.getElementById('ppResumen');
+        if (resEl) {
+          const fila = (lbl, val, color, hint) => `<tr>
+            <td style="padding:6px 8px">${lbl}${hint ? `<div style="font-size:11px; color:var(--text-muted)">${hint}</div>` : ''}</td>
+            <td style="padding:6px 8px; text-align:right; font-weight:600; color:${color}">${clp(val)}</td>
+          </tr>`;
+          const sumAsignado = fijoMensual + planInv + planMesadaTotal + planCaja;
+          const sobreAsig = base - sumAsignado;
+          resEl.innerHTML = `<table style="width:100%; font-size:13px; border-collapse:collapse">
+            <tbody>
+              ${fila('💰 Ingreso del ' + (ciclo.modo === 'pago' ? 'ciclo' : 'mes'), base, 'var(--success-text)')}
+              ${fila('🏠 Gastos fijos', -fijoMensual, 'var(--danger-text)', 'Sale automático de tus Gastos Periódicos.')}
+              ${fila('🐷 Ahorro / Inversiones', -planInv, 'var(--danger-text)')}
+              ${fila('💵 Mesada semanal × ' + semanasCiclo.toFixed(1), -planMesadaTotal, 'var(--danger-text)')}
+              ${fila('💼 Caja chica', -planCaja, 'var(--danger-text)')}
+              <tr style="border-top:2px solid var(--border); font-weight:700; background:var(--surface-2)">
+                <td style="padding:8px">✨ Libre para variable</td>
+                <td style="padding:8px; text-align:right; color:${planLibre > 0 ? 'var(--success-text)' : 'var(--danger-text)'}">${clp(planLibre)}</td>
+              </tr>
+              ${Math.abs(sobreAsig - planLibre) > 1 ? `<tr><td colspan="2" style="padding:6px 8px; font-size:11px; color:var(--text-muted)">Sin asignar: ${clp(sobreAsig)} — la diferencia es tu colchón.</td></tr>` : ''}
+            </tbody>
+          </table>`;
+        }
+      }
+    }
+    // En personal el "puedeGastar" es lo libre tras los sobres (no solo
+    // ingreso − fijos). Si todavía no asignaste sobres, queda igual.
+    if (personalUI) {
+      const sobresAsignados = planInv + planMesadaTotal + planCaja;
+      if (sobresAsignados > 0) puedeGastar = Math.max(0, base - fijoMensual - sobresAsignados);
+    }
 
     // ── HERO ──
     const heroEl = document.getElementById('presPuedesGastar');

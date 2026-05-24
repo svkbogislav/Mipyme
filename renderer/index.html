@@ -2205,6 +2205,34 @@
         <div id="presPuedesGastarSub" style="font-size:13px; color:var(--text-muted); margin-top:8px"></div>
       </div>
 
+      <!-- PLAN PERSONAL: sobres (solo modo personal) -->
+      <div class="card" id="presPlanPersonalCard" style="margin-bottom:14px; display:none" data-personal-only>
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:4px">
+          <div>
+            <h3 style="margin:0 0 4px">📦 Mi plan del mes (por sobres)</h3>
+            <div class="card-sub">Distribuye tu ingreso en sobres antes de gastar: ahorro, mesada semanal, caja chica. Lo que sobra es <strong>libre para variable</strong>.</div>
+          </div>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <div>
+            <label>Ahorro / Inversiones <span style="font-weight:400; color:var(--text-muted)">(mensual)</span></label>
+            <input id="ppInversiones" type="text" inputmode="numeric" data-clp="true" placeholder="0" onchange="_guardarPlanPersonal()" />
+            <div style="font-size:11px; color:var(--text-muted); margin-top:3px">Págate a ti primero — esta plata se reserva apenas entra el sueldo.</div>
+          </div>
+          <div>
+            <label>Mesada semanal</label>
+            <input id="ppMesadaSemanal" type="text" inputmode="numeric" data-clp="true" placeholder="0" onchange="_guardarPlanPersonal()" />
+            <div style="font-size:11px; color:var(--text-muted); margin-top:3px" id="ppMesadaHint">El total del mes se calcula automáticamente.</div>
+          </div>
+          <div>
+            <label>Caja chica <span style="font-weight:400; color:var(--text-muted)">(efectivo del mes)</span></label>
+            <input id="ppCajaChica" type="text" inputmode="numeric" data-clp="true" placeholder="0" onchange="_guardarPlanPersonal()" />
+            <div style="font-size:11px; color:var(--text-muted); margin-top:3px">Efectivo para gastos chicos del día a día.</div>
+          </div>
+        </div>
+        <div id="ppResumen" style="margin-top:14px"></div>
+      </div>
+
       <!-- TRACKER: cómo vas este mes -->
       <div class="card" id="presTrackCard" style="margin-bottom:14px">
         <h3 style="margin:0 0 4px">¿Cómo vas este mes?</h3>
