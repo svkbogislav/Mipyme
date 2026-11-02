@@ -85,8 +85,9 @@ function detalleMP(r) {
 function mensajeError(r) {
   const s = r && r.status;
   const msg = r && r.json && r.json.message;
-  if (s === 401) return 'Mercado Pago no reconoce ese access token. Revisa que sea el Access Token de producción (APP_USR-…) de tu aplicación.';
-  if (s === 403) return 'El token es válido pero no tiene permiso para los informes. En tu aplicación de Mercado Pago revisa los permisos (reports) o crea el token de nuevo.';
+  // MP responde 403 ("At least one policy returned UNAUTHORIZED") tanto para
+  // un token inválido como para uno sin permisos: el mensaje cubre ambos.
+  if (s === 401 || s === 403) return 'Mercado Pago no aceptó ese access token. Revisa que sea el Access Token de producción (APP_USR-…) completo y vigente de tu aplicación; si lo es, genera uno nuevo en Credenciales de producción.';
   if (s === 404) return 'Mercado Pago no encontró ese recurso.';
   if (s === 400 || s === 422) return 'Mercado Pago rechazó la consulta' + (msg ? `: ${msg}` : '') + '.';
   if (s === 429) return 'Mercado Pago limitó las consultas por un momento. Intenta de nuevo en unos minutos.';
