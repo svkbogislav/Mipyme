@@ -51,10 +51,22 @@ function getJSON(path, secretKey, { timeout = 20000 } = {}) {
   });
 }
 
+// Detalle técnico corto de lo que respondió Fintoc (no es sensible; sirve
+// para diagnosticar sin adivinar). Ej: "401 · authentication_error · Invalid API key".
+function detalleFintoc(status, json, raw) {
+  const e = json && json.error;
+  const partes = [String(status || '')];
+  if (e && e.type) partes.push(String(e.type));
+  if (e && e.message) partes.push(String(e.message).slice(0, 160));
+  if (!e && raw) partes.push(String(raw).replace(/\s+/g, ' ').slice(0, 120));
+  return partes.filter(Boolean).join(' · ');
+}
+
 // Traduce errores HTTP a mensajes que el usuario entienda (sin jerga).
 function mensajeError(status, json) {
   const detalle = json && json.error && (json.error.message || json.error.type);
-  if (status === 401 || status === 403) return 'La secret key no es válida o no tiene permisos.';
+  if (status === 401) return 'Fintoc no reconoce esa secret key. Revisa que sea la secret key (no la public key) y del mismo modo (live/test) que el Link.';
+  if (status === 403) return 'La llave es válida pero no tiene permiso para esta consulta. Pídele a Fintoc habilitar "Movimientos" para tu cuenta.';
   if (status === 404) return 'No encontré ese Link: el link_token no es válido o ya no existe.';
   if (status === 422) return 'Fintoc rechazó la consulta' + (detalle ? `: ${detalle}` : '') + '.';
   if (status === 429) return 'Fintoc limitó las consultas por un momento. Intenta de nuevo en unos minutos.';
@@ -62,11 +74,20 @@ function mensajeError(status, json) {
   return 'No pude conectar con Fintoc' + (detalle ? `: ${detalle}` : '') + '.';
 }
 
+// Limpia lo que la gente suele pegar junto con la llave: comillas, espacios,
+// saltos de línea, "Authorization:" o "Bearer".
+function limpiarKey(s) {
+  let k = String(s || '').trim();
+  k = k.replace(/^authorization\s*:\s*/i, '').replace(/^bearer\s+/i, '').trim();
+  k = k.replace(/^["'`]+|["'`]+$/g, '').trim();
+  return k.replace(/\s+/g, '');
+}
+
 // No imponemos un prefijo: el formato de las llaves lo decide Fintoc y la
 // API responde 401 si no sirve. Solo atajamos el error clásico de pegar la
 // public key (pk_…) en vez de la secret key.
 function validarSK(sk) {
-  const s = String(sk || '').trim();
+  const s = limpiarKey(sk);
   if (!s) return 'Falta la secret key.';
   if (/^pk_/i.test(s)) return 'Esa es la public key (pk_…). Necesitas la secret key, que está en el Dashboard de Fintoc → API Keys.';
   if (s.length < 12) return 'La secret key parece incompleta.';
@@ -76,24 +97,43 @@ function esModoTest(sk) {
   return /test|sandbox/i.test(String(sk || ''));
 }
 
-// Prueba la secret key listando los Links de la cuenta Fintoc.
+// Prueba la secret key listando los Links de la cuenta Fintoc. Si eso falla
+// y viene un link_token, prueba además leer las cuentas de ese Link: es lo
+// que la app realmente usa, y distingue "llave mala" de "sin permiso para
+// listar links".
 async function test(creds) {
-  const sk = creds && creds.sk;
+  const sk = limpiarKey(creds && creds.sk);
+  const linkToken = limpiarKey(creds && creds.linkToken);
   const v = validarSK(sk); if (v) return { ok: false, error: v };
   try {
     const r = await getJSON('/v1/links', sk);
-    if (r.status < 200 || r.status >= 300) return { ok: false, error: mensajeError(r.status, r.json) };
-    const links = Array.isArray(r.json) ? r.json : [];
-    return {
-      ok: true,
-      modo: esModoTest(sk) ? 'test' : 'live',
-      links: links.map(l => ({
-        id: l.id,
-        institution: l.institution && l.institution.name,
-        status: l.status,
-        holder_type: l.holder_type,
-      })),
-    };
+    if (r.status >= 200 && r.status < 300) {
+      const links = Array.isArray(r.json) ? r.json : [];
+      return {
+        ok: true,
+        modo: esModoTest(sk) ? 'test' : 'live',
+        links: links.map(l => ({
+          id: l.id,
+          institution: l.institution && l.institution.name,
+          status: l.status,
+          holder_type: l.holder_type,
+        })),
+      };
+    }
+    const base = { ok: false, error: mensajeError(r.status, r.json), status: r.status, detalle: detalleFintoc(r.status, r.json, r.raw) };
+    if (linkToken) {
+      const a = await getJSON(`/v1/accounts?link_token=${encodeURIComponent(linkToken)}`, sk);
+      if (a.status >= 200 && a.status < 300) {
+        return {
+          ok: true,
+          modo: esModoTest(sk) ? 'test' : 'live',
+          links: [],
+          aviso: `La llave sirve para leer tu Link (${Array.isArray(a.json) ? a.json.length : 0} cuenta(s)), aunque no puede listar links (${base.detalle}). Puedes agregar el banco igual.`,
+        };
+      }
+      base.detalleLink = detalleFintoc(a.status, a.json, a.raw);
+    }
+    return base;
   } catch (e) {
     return { ok: false, error: 'No pude conectar con Fintoc: ' + (e.message || 'error de red') };
   }
@@ -101,12 +141,12 @@ async function test(creds) {
 
 // Cuentas de un Link (necesita link_token).
 async function accounts(args) {
-  const sk = args && args.sk, linkToken = String((args && args.linkToken) || '').trim();
+  const sk = limpiarKey(args && args.sk), linkToken = limpiarKey(args && args.linkToken);
   const v = validarSK(sk); if (v) return { ok: false, error: v };
   if (!linkToken) return { ok: false, error: 'Falta el link_token.' };
   try {
     const r = await getJSON(`/v1/accounts?link_token=${encodeURIComponent(linkToken)}`, sk);
-    if (r.status < 200 || r.status >= 300) return { ok: false, error: mensajeError(r.status, r.json) };
+    if (r.status < 200 || r.status >= 300) return { ok: false, error: mensajeError(r.status, r.json), status: r.status, detalle: detalleFintoc(r.status, r.json, r.raw) };
     const list = Array.isArray(r.json) ? r.json : [];
     return {
       ok: true,
@@ -136,8 +176,8 @@ function haySiguiente(headers) {
 // Movimientos de una cuenta desde `since` (YYYY-MM-DD). Pagina hasta agotar
 // (cap de 40 páginas × 300 = 12.000 movimientos, más que suficiente).
 async function movements(args) {
-  const sk = args && args.sk;
-  const linkToken = String((args && args.linkToken) || '').trim();
+  const sk = limpiarKey(args && args.sk);
+  const linkToken = limpiarKey(args && args.linkToken);
   const accountId = String((args && args.accountId) || '').trim();
   const since = String((args && args.since) || '').slice(0, 10);
   const until = String((args && args.until) || '').slice(0, 10);
@@ -155,7 +195,7 @@ async function movements(args) {
         until ? `until=${encodeURIComponent(until)}` : '',
       ].filter(Boolean).join('&');
       const r = await getJSON(`/v1/accounts/${encodeURIComponent(accountId)}/movements?${qs}`, sk);
-      if (r.status < 200 || r.status >= 300) return { ok: false, error: mensajeError(r.status, r.json), movements: out };
+      if (r.status < 200 || r.status >= 300) return { ok: false, error: mensajeError(r.status, r.json), status: r.status, detalle: detalleFintoc(r.status, r.json, r.raw), movements: out };
       const list = Array.isArray(r.json) ? r.json : [];
       for (const m of list) {
         if (m.status && m.status !== 'confirmed') continue;

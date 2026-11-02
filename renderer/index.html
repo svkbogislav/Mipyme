@@ -10375,10 +10375,10 @@ function _fintocVistos() {
 function _fintocDisponible() {
   return !!(window.electronAPI && window.electronAPI.fintocMovements);
 }
-function _fintocEstado(msg, tipo) {
+function _fintocEstado(msg, tipo, detalle) {
   const el = document.getElementById('fintocEstado');
   if (!el) return;
-  el.textContent = msg || '';
+  el.innerHTML = escapeHtml(msg || '') + (detalle ? `<div style="font-size:11px; color:var(--text-muted); margin-top:3px">Respuesta de Fintoc: <code>${escapeHtml(detalle)}</code></div>` : '');
   el.style.color = tipo === 'ok' ? 'var(--success-text)' : (tipo === 'err' ? 'var(--danger-text)' : 'var(--text-muted)');
 }
 function guardarFintocSk() {
@@ -10394,11 +10394,20 @@ async function probarFintoc() {
   const sk = (document.getElementById('fintocSk').value || '').trim() || cfg.sk;
   if (!sk) { _fintocEstado('Pega tu secret key primero.', 'err'); return; }
   _fintocEstado('Probando…');
-  const r = await window.electronAPI.fintocTest({ sk });
-  if (!r || !r.ok) { _fintocEstado(r && r.error ? r.error : 'No pude conectar.', 'err'); return; }
+  // Si ya pegaste un link_token abajo, lo usamos como segunda prueba: leer
+  // cuentas de ese Link es lo que la app necesita de verdad.
+  const linkToken = (document.getElementById('fintocLinkToken').value || '').trim();
+  const r = await window.electronAPI.fintocTest({ sk, linkToken });
+  if (!r || !r.ok) {
+    const det = r ? [r.detalle, r.detalleLink ? `link: ${r.detalleLink}` : ''].filter(Boolean).join(' | ') : '';
+    _fintocEstado(r && r.error ? r.error : 'No pude conectar.', 'err', det);
+    return;
+  }
   cfg.sk = sk; saveState();
   const n = (r.links || []).length;
-  _fintocEstado(`✓ Conectado en modo ${r.modo === 'test' ? 'prueba (sandbox)' : 'producción'} · ${n} link${n === 1 ? '' : 's'} en tu cuenta Fintoc.`, 'ok');
+  _fintocEstado(r.aviso
+    ? `✓ ${r.aviso}`
+    : `✓ Conectado en modo ${r.modo === 'test' ? 'prueba (sandbox)' : 'producción'} · ${n} link${n === 1 ? '' : 's'} en tu cuenta Fintoc.`, 'ok');
 }
 // Sugerencia de cuenta de la app para una cuenta Fintoc: por nombre, si no, la default.
 function _fintocSugerirAppCuenta(label, acc) {
@@ -10420,7 +10429,11 @@ async function agregarLinkFintoc() {
   if (cfg.links.some(l => l.token === token)) { toast('Ese banco ya está agregado', 'error'); return; }
   toast('Leyendo cuentas del banco…', '');
   const r = await window.electronAPI.fintocAccounts({ sk, linkToken: token });
-  if (!r || !r.ok) { toast(r && r.error ? r.error : 'No pude leer las cuentas', 'error'); return; }
+  if (!r || !r.ok) {
+    toast(r && r.error ? r.error : 'No pude leer las cuentas', 'error');
+    _fintocEstado(r && r.error ? r.error : 'No pude leer las cuentas', 'err', r && r.detalle);
+    return;
+  }
   const link = {
     id: uid(), token, label, created_at: new Date().toISOString(),
     cuentas: (r.accounts || []).map(a => ({
