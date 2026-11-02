@@ -62,11 +62,18 @@ function mensajeError(status, json) {
   return 'No pude conectar con Fintoc' + (detalle ? `: ${detalle}` : '') + '.';
 }
 
+// No imponemos un prefijo: el formato de las llaves lo decide Fintoc y la
+// API responde 401 si no sirve. Solo atajamos el error clásico de pegar la
+// public key (pk_…) en vez de la secret key.
 function validarSK(sk) {
   const s = String(sk || '').trim();
   if (!s) return 'Falta la secret key.';
-  if (!/^sk_(test|live)_/.test(s)) return 'La secret key debe empezar con sk_test_ o sk_live_.';
+  if (/^pk_/i.test(s)) return 'Esa es la public key (pk_…). Necesitas la secret key, que está en el Dashboard de Fintoc → API Keys.';
+  if (s.length < 12) return 'La secret key parece incompleta.';
   return null;
+}
+function esModoTest(sk) {
+  return /test|sandbox/i.test(String(sk || ''));
 }
 
 // Prueba la secret key listando los Links de la cuenta Fintoc.
@@ -79,7 +86,7 @@ async function test(creds) {
     const links = Array.isArray(r.json) ? r.json : [];
     return {
       ok: true,
-      modo: /^sk_test_/.test(sk) ? 'test' : 'live',
+      modo: esModoTest(sk) ? 'test' : 'live',
       links: links.map(l => ({
         id: l.id,
         institution: l.institution && l.institution.name,
