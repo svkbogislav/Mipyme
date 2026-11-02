@@ -95,7 +95,7 @@
     document.getElementById('runwayCxC').style.color = (r.cobrosPendientes || 0) > 0 ? '#15803d' : 'var(--text-muted)';
     document.getElementById('runwayCxCSub').textContent = (r.cobrosPendientes || 0) > 0
       ? (personalUI ? 'quién te debe' : 'de clientes')
-      : 'sin facturas pendientes';
+      : (personalUI ? 'nadie te debe' : 'sin facturas pendientes');
 
     // ============ POSICIÓN NETA (caja − CxP + CxC) ============
     const posNeta = r.cajaLiquida - r.deudaPendiente + (r.cobrosPendientes || 0);
