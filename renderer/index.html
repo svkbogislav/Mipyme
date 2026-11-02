@@ -1835,6 +1835,18 @@
         </div>
       </div>
 
+      <!-- Bancos conectados (Fintoc): sincronizar movimientos sin subir archivo -->
+      <div class="card" id="subirFintocCard" style="margin-bottom:14px; display:none">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap">
+          <div>
+            <h3 style="margin:0 0 4px">🔗 Bancos conectados</h3>
+            <div class="card-sub">Trae los movimientos nuevos de cada cuenta y revísalos igual que una cartola antes de aplicar.</div>
+          </div>
+          <button class="btn ghost sm" onclick="document.querySelector('.nav-item[data-view=config]')?.click(); setTimeout(()=>{var e=document.getElementById('cfgFintocSection'); if(e){e.open=true; e.scrollIntoView({block:'center'});}},200)">Administrar →</button>
+        </div>
+        <div id="subirFintocLista" style="margin-top:10px"></div>
+      </div>
+
       <div class="grid-2-eq" style="margin-bottom:14px">
         <div class="card">
           <h3>🏦 Cartola del banco</h3>
@@ -2931,6 +2943,59 @@
         </div>
       </div>
 
+        </div>
+      </details>
+
+      <!-- Bancos conectados vía Fintoc: visible en empresa y personal -->
+      <details class="config-section" id="cfgFintocSection">
+        <summary>
+          <svg class="cs-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          <span class="cs-title">Bancos conectados</span>
+          <span class="cs-hint">Lee tus movimientos solos vía Fintoc (BICE, Santander, Banco de Chile y más)</span>
+        </summary>
+        <div class="cs-body">
+      <div class="card" style="margin-bottom:14px">
+        <h3>Conexión Fintoc</h3>
+        <div class="card-sub">Tus claves del banco se las das a Fintoc, nunca a esta app. La app solo recibe los movimientos. La secret key y los tokens se guardan <strong>solo en este equipo</strong>.</div>
+
+        <div class="row" style="margin-top:12px; align-items:flex-end">
+          <div style="flex:2">
+            <label>Secret key de Fintoc</label>
+            <input id="fintocSk" type="password" placeholder="sk_live_… (o sk_test_… para probar)" autocomplete="off" />
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px">Dashboard de Fintoc → API Keys. Usa <code>sk_test_</code> primero para probar sin costo.</div>
+          </div>
+          <div style="display:flex; gap:8px; flex-shrink:0">
+            <button class="btn" onclick="guardarFintocSk()">Guardar</button>
+            <button class="btn" onclick="probarFintoc()">Probar conexión</button>
+          </div>
+        </div>
+        <div id="fintocEstado" style="font-size:12px; color:var(--text-muted); margin-top:8px"></div>
+
+        <div style="margin-top:16px; padding:12px 14px; background:var(--surface-2); border:1px solid var(--border); border-radius:9px">
+          <div style="font-weight:600; font-size:13px; margin-bottom:6px">Conectar un banco (una vez por banco)</div>
+          <ol style="margin:0 0 10px; padding-left:18px; font-size:12px; color:var(--text-muted); line-height:1.6">
+            <li>En el <strong>Dashboard de Fintoc</strong> → Links → <strong>Crear Link</strong> → Chile · Banking · Individual.</li>
+            <li>Elige el banco, ingresa tus claves y termina. Fintoc te muestra el <strong>link_token</strong> <u>una sola vez</u>: cópialo.</li>
+            <li>Pégalo acá con un nombre y dale "Agregar banco". La app lista las cuentas y tú eliges a cuál cuenta de la app corresponde cada una.</li>
+          </ol>
+          <div class="row" style="align-items:flex-end">
+            <div style="flex:1">
+              <label>Nombre (cómo lo quieres ver)</label>
+              <input id="fintocLinkLabel" placeholder="Ej: BICE, Santander, Banco de Chile" autocomplete="off" />
+            </div>
+            <div style="flex:2">
+              <label>link_token</label>
+              <input id="fintocLinkToken" type="password" placeholder="link_…" autocomplete="off" />
+            </div>
+            <div style="flex-shrink:0">
+              <button class="btn primary" onclick="agregarLinkFintoc()">Agregar banco</button>
+            </div>
+          </div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:6px">Para probar en sandbox: crea el Link en modo test con RUT <code>41614850-3</code> y clave <code>jonsnow</code> (credenciales de prueba de Fintoc, sirven en cualquier banco).</div>
+        </div>
+
+        <div id="fintocLinksBox" style="margin-top:14px"></div>
+      </div>
         </div>
       </details>
 
@@ -4563,6 +4628,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     if (view === 'cashflow') renderCashflow();
     if (view === 'facturacion') renderFacturacion();
     if (view === 'presupuesto') renderPresupuesto();
+    if (view === 'subir' || view === 'config') { try { renderFintocBancos(); } catch (e) { console.error(e); } }
     if (view === 'metas') renderMetas();
     if (view === 'patrimonio') renderPatrimonio();
     if (view === 'productos') renderProductos();
@@ -10259,6 +10325,222 @@ function cerrarModalConciliacion() {
   _conciliacionStaging = null;
 }
 
+// Carga un resultado parseado ({ movimientos, filas?, columnas?, error? })
+// en el staging del modal y pasa al paso 2. Lo usan la cartola (archivo) y
+// los bancos conectados (Fintoc): mismo cruce, misma revisión, mismo lote.
+function _cargarMovimientosEnConciliacion(r, errEl, extra) {
+  errEl = errEl || document.getElementById('concParseError');
+  if (r.error) {
+    if (errEl) { errEl.textContent = r.error; errEl.style.display = ''; }
+    return false;
+  }
+  if (errEl) errEl.style.display = 'none';
+  const matches = Conciliacion.matchearMovimientos(r.movimientos, state);
+  const items = matches.map(m => ({
+    mov: m.mov,
+    candidatos: m.candidatos,
+    decision: m.candidatos.length > 0
+      ? { tipo: 'match', candidato: m.candidatos[0] }
+      : { tipo: 'crear', categoria: _sugerirCatConc(m.mov) }
+  }));
+  _conciliacionStaging = {
+    account_id: document.getElementById('concAccount').value,
+    items,
+    _filas: r.filas || null,
+    _cols: r.columnas || null,
+    ...(extra || {})
+  };
+  _renderMapeoColumnas();
+  _renderConciliacionPaso2();
+  return true;
+}
+
+/* =================================================================
+   BANCOS CONECTADOS (Fintoc)
+   state.config.fintoc = { sk, links: [ { id, token, label, cuentas: [
+     { accId, nombre, numero, tipo, moneda, saldo, appCuentaId, lastSync } ] } ] }
+   state.fintocVistos = { [movId]: 1 }  → dedupe entre sincronizaciones.
+   Los movimientos nuevos entran al MISMO modal de cartola (cruce + revisión
+   + lote retirable). Nada se aplica sin que lo confirmes.
+   ================================================================= */
+function _fintocCfg() {
+  if (!state.config.fintoc) state.config.fintoc = { sk: '', links: [] };
+  if (!Array.isArray(state.config.fintoc.links)) state.config.fintoc.links = [];
+  return state.config.fintoc;
+}
+function _fintocVistos() {
+  if (!state.fintocVistos || typeof state.fintocVistos !== 'object') state.fintocVistos = {};
+  return state.fintocVistos;
+}
+function _fintocDisponible() {
+  return !!(window.electronAPI && window.electronAPI.fintocMovements);
+}
+function _fintocEstado(msg, tipo) {
+  const el = document.getElementById('fintocEstado');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.color = tipo === 'ok' ? 'var(--success-text)' : (tipo === 'err' ? 'var(--danger-text)' : 'var(--text-muted)');
+}
+function guardarFintocSk() {
+  const cfg = _fintocCfg();
+  const v = (document.getElementById('fintocSk').value || '').trim();
+  cfg.sk = v;
+  saveState();
+  _fintocEstado(v ? 'Secret key guardada en este equipo.' : 'Secret key borrada.', 'ok');
+}
+async function probarFintoc() {
+  if (!_fintocDisponible()) { _fintocEstado('Solo funciona en la app de escritorio.', 'err'); return; }
+  const cfg = _fintocCfg();
+  const sk = (document.getElementById('fintocSk').value || '').trim() || cfg.sk;
+  if (!sk) { _fintocEstado('Pega tu secret key primero.', 'err'); return; }
+  _fintocEstado('Probando…');
+  const r = await window.electronAPI.fintocTest({ sk });
+  if (!r || !r.ok) { _fintocEstado(r && r.error ? r.error : 'No pude conectar.', 'err'); return; }
+  cfg.sk = sk; saveState();
+  const n = (r.links || []).length;
+  _fintocEstado(`✓ Conectado en modo ${r.modo === 'test' ? 'prueba (sandbox)' : 'producción'} · ${n} link${n === 1 ? '' : 's'} en tu cuenta Fintoc.`, 'ok');
+}
+// Sugerencia de cuenta de la app para una cuenta Fintoc: por nombre, si no, la default.
+function _fintocSugerirAppCuenta(label, acc) {
+  const cuentas = state.config.cuentas || [];
+  const hay = (label + ' ' + (acc.name || '') + ' ' + (acc.official_name || '')).toLowerCase();
+  const porNombre = cuentas.find(c => c.nombre && hay.includes(String(c.nombre).toLowerCase().split(' ')[0]) && String(c.nombre).length > 3);
+  if (porNombre) return porNombre.id;
+  const banco = cuentas.find(c => c.tipo === 'banco');
+  return (banco && banco.id) || state.config.cuenta_default_id || (cuentas[0] && cuentas[0].id) || '';
+}
+async function agregarLinkFintoc() {
+  if (!_fintocDisponible()) { toast('Solo funciona en la app de escritorio', 'error'); return; }
+  const cfg = _fintocCfg();
+  const sk = cfg.sk || (document.getElementById('fintocSk').value || '').trim();
+  const token = (document.getElementById('fintocLinkToken').value || '').trim();
+  const label = (document.getElementById('fintocLinkLabel').value || '').trim() || 'Banco';
+  if (!sk) { toast('Guarda tu secret key primero', 'error'); return; }
+  if (!token) { toast('Pega el link_token', 'error'); return; }
+  if (cfg.links.some(l => l.token === token)) { toast('Ese banco ya está agregado', 'error'); return; }
+  toast('Leyendo cuentas del banco…', '');
+  const r = await window.electronAPI.fintocAccounts({ sk, linkToken: token });
+  if (!r || !r.ok) { toast(r && r.error ? r.error : 'No pude leer las cuentas', 'error'); return; }
+  const link = {
+    id: uid(), token, label, created_at: new Date().toISOString(),
+    cuentas: (r.accounts || []).map(a => ({
+      accId: a.id, nombre: a.name, oficial: a.official_name, numero: a.number, tipo: a.type,
+      moneda: a.currency, saldo: a.balance, appCuentaId: _fintocSugerirAppCuenta(label, a), lastSync: null
+    }))
+  };
+  cfg.links.push(link);
+  saveState();
+  document.getElementById('fintocLinkToken').value = '';
+  document.getElementById('fintocLinkLabel').value = '';
+  renderFintocBancos();
+  toast(`✓ ${label}: ${link.cuentas.length} cuenta${link.cuentas.length === 1 ? '' : 's'} detectada${link.cuentas.length === 1 ? '' : 's'}. Revisa a qué cuenta de la app corresponde cada una.`, 'success');
+}
+function quitarLinkFintoc(linkId) {
+  const cfg = _fintocCfg();
+  const l = cfg.links.find(x => x.id === linkId);
+  if (!l) return;
+  if (!confirm(`¿Quitar "${l.label}"? Los movimientos ya importados se mantienen; solo dejas de sincronizar este banco.`)) return;
+  cfg.links = cfg.links.filter(x => x.id !== linkId);
+  saveState();
+  renderFintocBancos();
+}
+function _fintocMapCuenta(linkId, accId, appCuentaId) {
+  const cfg = _fintocCfg();
+  const l = cfg.links.find(x => x.id === linkId); if (!l) return;
+  const c = l.cuentas.find(x => x.accId === accId); if (!c) return;
+  c.appCuentaId = appCuentaId;
+  saveState();
+}
+function _fintocTipoLabel(t) {
+  return ({ checking_account: 'Cuenta corriente', sight_account: 'Cuenta vista', savings_account: 'Ahorro', credit_card: 'Tarjeta de crédito', credit_line: 'Línea de crédito' })[t] || (t || 'Cuenta');
+}
+// Pinta la lista de bancos/cuentas en Config y en Subir (misma función).
+function renderFintocBancos() {
+  const cfg = _fintocCfg();
+  const skInp = document.getElementById('fintocSk');
+  if (skInp && document.activeElement !== skInp) skInp.value = cfg.sk || '';
+  const cuentasApp = state.config.cuentas || [];
+  const opciones = (sel) => cuentasApp.map(c => `<option value="${escapeHtml(c.id)}" ${c.id === sel ? 'selected' : ''}>${escapeHtml(c.nombre)}</option>`).join('');
+  const fmtSync = (iso) => iso ? new Date(iso).toLocaleString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'nunca';
+
+  const filas = cfg.links.map(l => `
+    <div style="border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:8px">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap">
+        <strong>🏦 ${escapeHtml(l.label)}</strong>
+        <button class="btn sm ghost" style="color:var(--danger)" onclick="quitarLinkFintoc('${escapeHtml(l.id)}')">Quitar</button>
+      </div>
+      ${l.cuentas.length ? `<table style="width:100%; margin-top:8px; font-size:12px">
+        <thead><tr><th>Cuenta en el banco</th><th class="num">Saldo</th><th>Corresponde a</th><th>Última sync</th><th></th></tr></thead>
+        <tbody>${l.cuentas.map(c => `<tr>
+          <td><strong>${escapeHtml(c.nombre)}</strong><div style="color:var(--text-muted)">${escapeHtml(_fintocTipoLabel(c.tipo))}${c.numero ? ` · ${escapeHtml(String(c.numero).slice(-4).padStart(8, '•'))}` : ''}</div></td>
+          <td class="num">${c.moneda === 'CLP' ? clp(c.saldo) : `${escapeHtml(c.moneda)} ${Number(c.saldo || 0).toLocaleString('es-CL')}`}</td>
+          <td><select style="font-size:12px; padding:3px 6px" onchange="_fintocMapCuenta('${escapeHtml(l.id)}','${escapeHtml(c.accId)}', this.value)">${opciones(c.appCuentaId)}</select></td>
+          <td style="color:var(--text-muted)">${escapeHtml(fmtSync(c.lastSync))}</td>
+          <td style="text-align:right"><button class="btn sm primary" onclick="sincronizarFintocCuenta('${escapeHtml(l.id)}','${escapeHtml(c.accId)}')">Sincronizar</button></td>
+        </tr>`).join('')}</tbody>
+      </table>` : '<div style="font-size:12px; color:var(--text-muted); margin-top:6px">Sin cuentas visibles en este Link.</div>'}
+    </div>`).join('');
+
+  const vacio = `<div style="font-size:12px; color:var(--text-muted)">Aún no tienes bancos conectados.</div>`;
+  const box = document.getElementById('fintocLinksBox');
+  if (box) box.innerHTML = cfg.links.length ? filas : vacio;
+  const subirCard = document.getElementById('subirFintocCard');
+  const subirLista = document.getElementById('subirFintocLista');
+  if (subirCard && subirLista) {
+    subirCard.style.display = cfg.links.length ? '' : 'none';
+    subirLista.innerHTML = filas;
+  }
+}
+// Trae movimientos nuevos de UNA cuenta y los pasa al modal de cartola.
+let _fintocSyncEnCurso = false;
+async function sincronizarFintocCuenta(linkId, accId) {
+  if (!_fintocDisponible()) { toast('Solo funciona en la app de escritorio', 'error'); return; }
+  if (_fintocSyncEnCurso) return;
+  const cfg = _fintocCfg();
+  const l = cfg.links.find(x => x.id === linkId); if (!l) return;
+  const c = l.cuentas.find(x => x.accId === accId); if (!c) return;
+  if (!cfg.sk) { toast('Guarda tu secret key de Fintoc en Configuración', 'error'); return; }
+  if (c.moneda && c.moneda !== 'CLP') { toast('Por ahora solo sincronizo cuentas en pesos (CLP)', 'error'); return; }
+  _fintocSyncEnCurso = true;
+  toast(`Leyendo movimientos de ${l.label}…`, '');
+  try {
+    // Primera vez: 90 días. Después: desde la última sync menos 7 días (el
+    // dedupe por id evita repetidos).
+    const base = c.lastSync ? new Date(c.lastSync) : new Date(Date.now() - 90 * 86400000);
+    if (c.lastSync) base.setDate(base.getDate() - 7);
+    const since = base.toISOString().slice(0, 10);
+    const r = await window.electronAPI.fintocMovements({ sk: cfg.sk, linkToken: l.token, accountId: accId, since });
+    if (!r || !r.ok) { toast(r && r.error ? r.error : 'No pude leer movimientos', 'error'); return; }
+    const vistos = _fintocVistos();
+    const nuevos = (r.movements || []).filter(m => m.id && !vistos[m.id] && m.amount);
+    if (!nuevos.length) {
+      c.lastSync = new Date().toISOString(); saveState(); renderFintocBancos();
+      toast(`${l.label} · ${c.nombre}: al día, sin movimientos nuevos`, 'success');
+      return;
+    }
+    const movs = nuevos.map(m => ({
+      _id: uid(),
+      fecha: m.post_date || m.transaction_date,
+      descripcion: (m.description + (m.comment ? ` · ${m.comment}` : '')).slice(0, 250),
+      monto: Math.round(m.amount), // negativo = cargo, positivo = abono (igual que la cartola)
+      _raw: { fintoc_id: m.id, type: m.type, reference_id: m.reference_id }
+    })).sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+    // Abrir el modal de cartola directo en el paso 2 con la cuenta mapeada.
+    abrirModalConciliacion();
+    const sel = document.getElementById('concAccount');
+    if (sel && c.appCuentaId) sel.value = c.appCuentaId;
+    document.getElementById('concStep1').style.display = 'none';
+    document.getElementById('concStep2').style.display = '';
+    document.getElementById('btnConcConfirmar').style.display = '';
+    _cargarMovimientosEnConciliacion({ movimientos: movs }, null, {
+      _fintoc: { linkId, accId, ids: nuevos.map(m => m.id), label: `${l.label} · ${c.nombre}` }
+    });
+    toast(`${nuevos.length} movimiento${nuevos.length === 1 ? '' : 's'} nuevo${nuevos.length === 1 ? '' : 's'} de ${l.label}. Revisa y confirma.`, 'success');
+  } finally {
+    _fintocSyncEnCurso = false;
+  }
+}
+
 // Entry point del file picker o del drop. Determina si es CSV/TSV (texto) o
 // XLSX/XLS (binario via SheetJS) y delega al parser apropiado, luego corre
 // matching y pasa al paso 2 del modal.
@@ -10279,30 +10561,7 @@ function _procesarArchivoCartola(file) {
   const nombre = (file.name || '').toLowerCase();
   const esXLSX = nombre.endsWith('.xlsx') || nombre.endsWith('.xls');
 
-  const procesar = (r) => {
-    if (r.error) {
-      errEl.textContent = r.error;
-      errEl.style.display = '';
-      return;
-    }
-    errEl.style.display = 'none';
-    const matches = Conciliacion.matchearMovimientos(r.movimientos, state);
-    const items = matches.map(m => ({
-      mov: m.mov,
-      candidatos: m.candidatos,
-      decision: m.candidatos.length > 0
-        ? { tipo: 'match', candidato: m.candidatos[0] }
-        : { tipo: 'crear', categoria: _sugerirCatConc(m.mov) }
-    }));
-    _conciliacionStaging = {
-      account_id: document.getElementById('concAccount').value,
-      items,
-      _filas: r.filas || null,
-      _cols: r.columnas || null
-    };
-    _renderMapeoColumnas();
-    _renderConciliacionPaso2();
-  };
+  const procesar = (r) => _cargarMovimientosEnConciliacion(r, errEl);
 
   const reader = new FileReader();
   reader.onerror = () => {
@@ -10861,6 +11120,7 @@ function confirmarConciliacion() {
     }
   });
   // Registro del lote para poder retirarlo después
+  const fintocInfo = _conciliacionStaging._fintoc || null;
   if (aplicados + creados > 0) {
     if (!Array.isArray(state.cartolaLotes)) state.cartolaLotes = [];
     const cta = (state.config.cuentas || []).find(c => c.id === account_id);
@@ -10869,12 +11129,25 @@ function confirmarConciliacion() {
       fecha: new Date().toISOString(),
       account_id,
       account_nombre: cta ? cta.nombre : '—',
+      origen: fintocInfo ? fintocInfo.label : 'archivo',
       aplicados, creados
     });
   }
+  // Bancos conectados: marcar vistos (también los ignorados, para no volver
+  // a preguntarlos) y registrar la sync de esa cuenta.
+  if (fintocInfo) {
+    const vistos = _fintocVistos();
+    (fintocInfo.ids || []).forEach(id => { vistos[id] = 1; });
+    const keys = Object.keys(vistos);
+    if (keys.length > 8000) keys.slice(0, keys.length - 8000).forEach(k => { delete vistos[k]; });
+    const l = _fintocCfg().links.find(x => x.id === fintocInfo.linkId);
+    const c = l && l.cuentas.find(x => x.accId === fintocInfo.accId);
+    if (c) c.lastSync = new Date().toISOString();
+  }
   saveState();
   cerrarModalConciliacion();
-  toast(`Cartola aplicada: ${aplicados} cruzado(s), ${creados} creado(s)`, 'success');
+  toast(`${fintocInfo ? 'Movimientos aplicados' : 'Cartola aplicada'}: ${aplicados} cruzado(s), ${creados} creado(s)`, 'success');
+  if (fintocInfo && typeof renderFintocBancos === 'function') renderFintocBancos();
   renderCuentas();
   if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
 }

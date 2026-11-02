@@ -85,6 +85,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // items=[{tipo,simbolo}] → {usdclp, uf, cotizaciones:{SIM:{precio,moneda}}, errores}
   cotizarInversiones: (items) => ipcRenderer.invoke('precios:cotizar', items),
 
+  // Fintoc (bancos conectados). creds = { sk }. La secret key y los
+  // link_token los ingresa el usuario y se guardan por perfil en el renderer.
+  fintocTest:      (creds) => ipcRenderer.invoke('fintoc:test', creds),
+  fintocAccounts:  (args)  => ipcRenderer.invoke('fintoc:accounts', args),
+  fintocMovements: (args)  => ipcRenderer.invoke('fintoc:movements', args),
+
   // Marca de que estamos corriendo en Electron (para el HTML lo detecte)
   isElectron: true,
   platform: process.platform,

@@ -17,6 +17,7 @@ const metaApi = require('./meta-api');
 const googleApi = require('./google-api');
 const siiApi = require('./sii-api');
 const preciosApi = require('./precios-api');
+const fintocApi = require('./fintoc-api');
 const updater = require('./updater');
 const attachments = require('./attachments');
 
@@ -51,6 +52,11 @@ function register({ getMainWindow }) {
 
   // === Cotización de inversiones (Yahoo / CoinGecko / mindicador, sin keys) ===
   ipcMain.handle('precios:cotizar',    async (_e, items) => preciosApi.cotizar(items));
+
+  // === Fintoc: bancos conectados (secret key + link_token por banco) ===
+  ipcMain.handle('fintoc:test',      async (_e, creds) => fintocApi.test(creds));
+  ipcMain.handle('fintoc:accounts',  async (_e, args)  => fintocApi.accounts(args));
+  ipcMain.handle('fintoc:movements', async (_e, args)  => fintocApi.movements(args));
 
   // === Attachments ===
   ipcMain.handle('app:attachFile',     async ()            => attachments.attachFile(win()));
