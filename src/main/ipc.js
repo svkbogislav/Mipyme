@@ -18,6 +18,7 @@ const googleApi = require('./google-api');
 const siiApi = require('./sii-api');
 const preciosApi = require('./precios-api');
 const fintocApi = require('./fintoc-api');
+const mercadopagoApi = require('./mercadopago-api');
 const updater = require('./updater');
 const attachments = require('./attachments');
 
@@ -57,6 +58,10 @@ function register({ getMainWindow }) {
   ipcMain.handle('fintoc:test',      async (_e, creds) => fintocApi.test(creds));
   ipcMain.handle('fintoc:accounts',  async (_e, args)  => fintocApi.accounts(args));
   ipcMain.handle('fintoc:movements', async (_e, args)  => fintocApi.movements(args));
+
+  // === Mercado Pago: plata que entra a la cuenta MP (access token del usuario) ===
+  ipcMain.handle('mp:test', async (_e, creds) => mercadopagoApi.test(creds));
+  ipcMain.handle('mp:sync', async (_e, args)  => mercadopagoApi.sync(args));
 
   // === Attachments ===
   ipcMain.handle('app:attachFile',     async ()            => attachments.attachFile(win()));

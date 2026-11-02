@@ -91,6 +91,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   fintocAccounts:  (args)  => ipcRenderer.invoke('fintoc:accounts', args),
   fintocMovements: (args)  => ipcRenderer.invoke('fintoc:movements', args),
 
+  // Mercado Pago (informe "Todas las transacciones"). creds = { token }.
+  // El access token lo ingresa el usuario y se guarda por perfil en el renderer.
+  mpTest: (creds) => ipcRenderer.invoke('mp:test', creds),
+  mpSync: (args)  => ipcRenderer.invoke('mp:sync', args),
+
   // Marca de que estamos corriendo en Electron (para el HTML lo detecte)
   isElectron: true,
   platform: process.platform,

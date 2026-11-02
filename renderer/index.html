@@ -1850,6 +1850,20 @@
         <div id="subirFintocLista" style="margin-top:10px"></div>
       </div>
 
+      <!-- Mercado Pago: sincronizar lo que entra sin subir archivo -->
+      <div class="card" id="subirMpCard" style="margin-bottom:14px; display:none">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap">
+          <div>
+            <h3 style="margin:0 0 4px">💙 Mercado Pago</h3>
+            <div class="card-sub" id="subirMpInfo"></div>
+          </div>
+          <div style="display:flex; gap:8px; flex-shrink:0">
+            <button class="btn primary sm" onclick="sincronizarMercadoPago(false)">Sincronizar</button>
+            <button class="btn ghost sm" onclick="document.querySelector('.nav-item[data-view=config]')?.click(); setTimeout(()=>{var e=document.getElementById('cfgMpSection'); if(e){e.open=true; e.scrollIntoView({block:'center'});}},200)">Administrar →</button>
+          </div>
+        </div>
+      </div>
+
       <div class="grid-2-eq" style="margin-bottom:14px">
         <div class="card">
           <h3>🏦 Cartola del banco</h3>
@@ -3007,6 +3021,58 @@
         <div style="font-size:11px; color:var(--text-muted); margin-top:4px">Aplica los movimientos nuevos de todos tus bancos sin preguntar. Lo que no reconoce queda en <strong>"Por clasificar"</strong>; cada sincronización es un lote que puedes retirar en Cuentas. El botón "Sincronizar" de cada cuenta sigue abriendo la revisión manual.</div>
 
         <div id="fintocLinksBox" style="margin-top:14px"></div>
+      </div>
+        </div>
+      </details>
+
+      <!-- Mercado Pago: la plata que entra a tu cuenta MP (visible en empresa y personal) -->
+      <details class="config-section" id="cfgMpSection">
+        <summary>
+          <svg class="cs-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          <span class="cs-title">Mercado Pago</span>
+          <span class="cs-hint">Lee solo lo que entra a tu cuenta de Mercado Pago (pagos recibidos, devoluciones)</span>
+        </summary>
+        <div class="cs-body">
+      <div class="card" style="margin-bottom:14px">
+        <h3>Conexión Mercado Pago</h3>
+        <div class="card-sub">La app pide a Mercado Pago el informe "Todas las transacciones" de tu cuenta con un access token tuyo. El token se guarda <strong>solo en este equipo</strong>. Los retiros a tu banco no se importan (ya llegan por tu cuenta bancaria), salvo que lo actives abajo.</div>
+
+        <div class="row" style="margin-top:12px; align-items:flex-end">
+          <div style="flex:2">
+            <label>Access token (producción)</label>
+            <input id="mpToken" type="password" placeholder="APP_USR-…" autocomplete="off" />
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px">mercadopago.cl/developers → Tus integraciones → tu aplicación → Credenciales de producción → <strong>Access Token</strong>. Si no tienes aplicación, crea una (tipo "Pagos online", cualquier nombre).</div>
+          </div>
+          <div style="display:flex; gap:8px; flex-shrink:0">
+            <button class="btn" onclick="guardarMpToken()">Guardar</button>
+            <button class="btn" onclick="probarMercadoPago()">Probar conexión</button>
+          </div>
+        </div>
+        <div id="mpEstado" style="font-size:12px; color:var(--text-muted); margin-top:8px"></div>
+        <div id="mpResumen" style="font-size:12px; margin-top:8px"></div>
+
+        <div class="row" style="margin-top:14px; align-items:flex-end">
+          <div style="flex:1">
+            <label>Lo que entra se registra en la cuenta</label>
+            <select id="mpCuentaSel" onchange="_mpSetCuenta(this.value)"></select>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px">Crea una cuenta llamada "Mercado Pago" en Cuentas para verla separada de tus bancos.</div>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px">
+          <div style="display:flex; flex-direction:column; gap:6px">
+            <label style="display:flex; align-items:center; gap:8px; margin:0; cursor:pointer; font-size:13px">
+              <input type="checkbox" id="mpAuto" style="width:auto; margin:0" onchange="_mpSetAuto(this.checked)" />
+              Sincronizar solo al abrir la app
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; margin:0; cursor:pointer; font-size:13px">
+              <input type="checkbox" id="mpRetiros" style="width:auto; margin:0" onchange="_mpSetRetiros(this.checked)" />
+              Incluir también los retiros a mi banco
+            </label>
+          </div>
+          <button class="btn primary sm" onclick="sincronizarMercadoPago(false)">Sincronizar ahora</button>
+        </div>
+        <div style="font-size:11px; color:var(--text-muted); margin-top:6px">"Sincronizar ahora" abre la revisión para que confirmes uno por uno. La primera sincronización siempre la revisas tú; después, al abrir la app, lo nuevo se aplica solo (lote retirable en Cuentas). Mercado Pago genera el informe en segundo plano: puede tardar un minuto.</div>
       </div>
         </div>
       </details>
@@ -4640,7 +4706,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     if (view === 'cashflow') renderCashflow();
     if (view === 'facturacion') renderFacturacion();
     if (view === 'presupuesto') renderPresupuesto();
-    if (view === 'subir' || view === 'config') { try { renderFintocBancos(); } catch (e) { console.error(e); } }
+    if (view === 'subir' || view === 'config') { try { renderFintocBancos(); } catch (e) { console.error(e); } try { renderMercadoPagoCfg(); } catch (e) { console.error(e); } }
     if (view === 'metas') renderMetas();
     if (view === 'patrimonio') renderPatrimonio();
     if (view === 'productos') renderProductos();
@@ -10653,6 +10719,203 @@ async function sincronizarFintocTodo(silencioso) {
   }
 }
 
+/* =================================================================
+   MERCADO PAGO (la plata que entra a tu cuenta MP)
+   state.config.mercadopago = { token, auto, appCuentaId, incluirRetiros,
+     lastSync, lastAutoSync, cuenta: { nickname, nombre, email } }
+   state.mpVistos = { [movId]: 1 }  → dedupe entre sincronizaciones.
+   Usa el informe "Todas las transacciones" de la API oficial de MP (main:
+   src/main/mercadopago-api.js). Los movimientos entran al MISMO flujo de
+   cartola (cruce + revisión + lote retirable). La primera sincronización
+   siempre se revisa; las automáticas (al abrir) se aplican solas.
+   ================================================================= */
+function _mpCfg() {
+  if (!state.config.mercadopago || typeof state.config.mercadopago !== 'object') state.config.mercadopago = { token: '' };
+  return state.config.mercadopago;
+}
+function _mpVistos() {
+  if (!state.mpVistos || typeof state.mpVistos !== 'object') state.mpVistos = {};
+  return state.mpVistos;
+}
+function _mpPodarVistos() {
+  const vistos = _mpVistos();
+  const keys = Object.keys(vistos);
+  if (keys.length > 8000) keys.slice(0, keys.length - 8000).forEach(k => { delete vistos[k]; });
+}
+function _mpDisponible() {
+  return !!(window.electronAPI && window.electronAPI.mpSync);
+}
+function _mpEstado(msg, tipo, detalle) {
+  const el = document.getElementById('mpEstado');
+  if (!el) return;
+  el.innerHTML = escapeHtml(msg || '') + (detalle ? `<div style="font-size:11px; color:var(--text-muted); margin-top:2px">${escapeHtml(detalle)}</div>` : '');
+  el.style.color = tipo === 'err' ? 'var(--danger-text)' : tipo === 'ok' ? 'var(--success-text)' : 'var(--text-muted)';
+}
+function guardarMpToken() {
+  const cfg = _mpCfg();
+  cfg.token = (document.getElementById('mpToken').value || '').trim();
+  saveState();
+  _mpEstado(cfg.token ? 'Access token guardado en este equipo.' : 'Access token borrado.', 'ok');
+  renderMercadoPagoCfg();
+}
+async function probarMercadoPago() {
+  if (!_mpDisponible()) { _mpEstado('Solo funciona en la app de escritorio.', 'err'); return; }
+  const cfg = _mpCfg();
+  const token = (document.getElementById('mpToken').value || '').trim() || cfg.token;
+  if (!token) { _mpEstado('Pega tu access token primero.', 'err'); return; }
+  _mpEstado('Probando…');
+  let r;
+  try { r = await window.electronAPI.mpTest({ token }); } catch (e) { r = { ok: false, error: e.message }; }
+  if (!r || !r.ok) { _mpEstado(r && r.error ? r.error : 'No pude conectar.', 'err', r && r.detalle); return; }
+  cfg.token = token;
+  cfg.cuenta = { nickname: r.nickname || '', nombre: r.nombre || '', email: r.email || '' };
+  saveState();
+  const quien = cfg.cuenta.nombre || cfg.cuenta.nickname || 'tu cuenta';
+  _mpEstado(`✓ Conectado${r.modo === 'test' ? ' (cuenta de prueba)' : ''}: ${quien}${cfg.cuenta.email ? ` · ${cfg.cuenta.email}` : ''}`, 'ok');
+  renderMercadoPagoCfg();
+}
+function _mpSetAuto(v) {
+  _mpCfg().auto = !!v;
+  saveState();
+  toast(v ? 'Mercado Pago se sincronizará solo al abrir la app' : 'Sincronización automática de Mercado Pago apagada', '');
+}
+function _mpSetRetiros(v) {
+  _mpCfg().incluirRetiros = !!v;
+  saveState();
+}
+function _mpSetCuenta(id) {
+  _mpCfg().appCuentaId = id || '';
+  saveState();
+  renderMercadoPagoCfg();
+}
+// Cuenta de la app donde cae lo de MP: la que se llame "Mercado Pago", si
+// no, la default, si no, la primera.
+function _mpSugerirAppCuenta() {
+  const cuentas = state.config.cuentas || [];
+  const hit = cuentas.find(c => /mercado\s*pago|\bmp\b/i.test(c.nombre || ''));
+  return hit ? hit.id : (state.config.cuenta_default_id || (cuentas[0] && cuentas[0].id) || '');
+}
+function renderMercadoPagoCfg() {
+  const cfg = _mpCfg();
+  const inp = document.getElementById('mpToken');
+  if (inp && document.activeElement !== inp) inp.value = cfg.token || '';
+  const auto = document.getElementById('mpAuto');
+  if (auto) auto.checked = cfg.auto !== false;
+  const ret = document.getElementById('mpRetiros');
+  if (ret) ret.checked = !!cfg.incluirRetiros;
+  const cuentas = state.config.cuentas || [];
+  if (!cfg.appCuentaId || !cuentas.some(c => c.id === cfg.appCuentaId)) cfg.appCuentaId = _mpSugerirAppCuenta();
+  const sel = document.getElementById('mpCuentaSel');
+  if (sel) sel.innerHTML = cuentas.length
+    ? cuentas.map(c => `<option value="${escapeHtml(c.id)}" ${c.id === cfg.appCuentaId ? 'selected' : ''}>${escapeHtml(c.nombre)}</option>`).join('')
+    : '<option value="">(crea una cuenta primero)</option>';
+  const fmt = (iso) => iso ? new Date(iso).toLocaleString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'nunca';
+  const quien = cfg.cuenta && (cfg.cuenta.nombre || cfg.cuenta.nickname) ? (cfg.cuenta.nombre || cfg.cuenta.nickname) : '';
+  const resumen = document.getElementById('mpResumen');
+  if (resumen) resumen.innerHTML = cfg.token
+    ? `<span style="color:var(--success-text)">●</span> Conectado${quien ? ` como <strong>${escapeHtml(quien)}</strong>` : ''} · última sincronización: ${escapeHtml(fmt(cfg.lastSync))}`
+    : `<span style="color:var(--text-muted)">○ Sin conectar</span>`;
+  const card = document.getElementById('subirMpCard');
+  if (card) {
+    card.style.display = cfg.token ? '' : 'none';
+    const cta = cuentas.find(c => c.id === cfg.appCuentaId);
+    const info = document.getElementById('subirMpInfo');
+    if (info) info.innerHTML = `${quien ? `<strong>${escapeHtml(quien)}</strong> · ` : ''}lo que entra se registra en <strong>${escapeHtml(cta ? cta.nombre : '—')}</strong> · última sincronización: ${escapeHtml(fmt(cfg.lastSync))}`;
+  }
+}
+// Movimientos del informe → formato de cartola (positivo = entra plata).
+function _mpMovsNuevos(r) {
+  const vistos = _mpVistos();
+  return (r.movements || []).filter(m => m.id && !vistos[m.id] && m.monto).map(m => ({
+    _id: uid(),
+    fecha: m.fecha,
+    descripcion: (`Mercado Pago · ${m.descripcion}` + (m.comision ? ` (bruto ${clp(m.bruto)}, comisión ${clp(Math.abs(m.comision))})` : '')).slice(0, 250),
+    monto: Math.round(m.monto),
+    _raw: { mp_id: m.id, tipo: m.tipo, source_id: m.source_id, metodo: m.metodoTipo }
+  })).sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+}
+// Primera vez: 90 días. Después: desde la última sync menos 7 días (el
+// dedupe por id evita repetidos).
+function _mpSince(cfg) {
+  const base = cfg.lastSync ? new Date(cfg.lastSync) : new Date(Date.now() - 90 * 86400000);
+  if (cfg.lastSync) base.setDate(base.getDate() - 7);
+  return base.toISOString().slice(0, 10);
+}
+let _mpSyncEnCurso = false;
+// silencioso=false: abre la revisión (paso 2 del modal de cartola).
+// silencioso=true: aplica solo (auto al abrir la app), en un lote retirable.
+async function sincronizarMercadoPago(silencioso) {
+  if (!_mpDisponible()) { if (!silencioso) toast('Solo funciona en la app de escritorio', 'error'); return; }
+  const cfg = _mpCfg();
+  if (!cfg.token) { if (!silencioso) toast('Primero conecta Mercado Pago en Configuración', 'error'); return; }
+  if (silencioso && !cfg.lastSync) return; // la primera siempre se revisa a mano
+  if (_mpSyncEnCurso) return;
+  const appCuentaId = cfg.appCuentaId || _mpSugerirAppCuenta();
+  if (!appCuentaId) { if (!silencioso) toast('Crea una cuenta en Cuentas para registrar lo de Mercado Pago', 'error'); return; }
+  _mpSyncEnCurso = true;
+  const ahoraISO = new Date().toISOString();
+  if (!silencioso) toast('Pidiendo el informe a Mercado Pago… puede tardar un minuto', '');
+  try {
+    let r;
+    try { r = await window.electronAPI.mpSync({ token: cfg.token, since: _mpSince(cfg), incluirRetiros: !!cfg.incluirRetiros }); }
+    catch (e) { r = { ok: false, error: e.message }; }
+    if (!r || !r.ok) {
+      console.error('Mercado Pago sync:', r);
+      if (silencioso) { cfg.lastAutoSync = ahoraISO; saveState(); return; }
+      const msg = r && r.error ? r.error : 'No pude leer Mercado Pago';
+      toast(msg, 'error');
+      _mpEstado(msg, 'err', r && r.detalle);
+      return;
+    }
+    const nuevos = _mpMovsNuevos(r);
+    if (!nuevos.length) {
+      cfg.lastSync = ahoraISO;
+      if (silencioso) cfg.lastAutoSync = ahoraISO;
+      saveState();
+      if (!silencioso) toast(r.vacio ? 'Mercado Pago devolvió un informe vacío para ese período' : 'Mercado Pago al día: sin movimientos nuevos', 'success');
+      return;
+    }
+    const ids = nuevos.map(m => m._raw.mp_id);
+    if (!silencioso) {
+      abrirModalConciliacion();
+      const sel = document.getElementById('concAccount');
+      if (sel) sel.value = appCuentaId;
+      document.getElementById('concStep1').style.display = 'none';
+      document.getElementById('concStep2').style.display = '';
+      document.getElementById('btnConcConfirmar').style.display = '';
+      _cargarMovimientosEnConciliacion({ movimientos: nuevos }, null, { _mp: { ids, label: 'Mercado Pago' } });
+      toast(`${nuevos.length} movimiento${nuevos.length === 1 ? '' : 's'} nuevo${nuevos.length === 1 ? '' : 's'} de Mercado Pago. Revisa y confirma.`, 'success');
+      return;
+    }
+    // Automático: aplicar sin preguntar. Lo que no cruza se crea con la
+    // categoría sugerida (o "Por clasificar"). Lote retirable en Cuentas.
+    const lote = 'L' + Date.now() + '_mp';
+    let ap = 0, cr = 0, pc = 0;
+    Conciliacion.matchearMovimientos(nuevos, state).forEach(m => {
+      if (m.candidatos && m.candidatos.length) {
+        Conciliacion.aplicarMatch(state, m.mov, m.candidatos[0], appCuentaId, lote); ap++;
+      } else {
+        const cat = _sugerirCatConc(m.mov);
+        Conciliacion.crearDesdeMovimiento(state, m.mov, appCuentaId, cat, lote); cr++;
+        if (m.mov.monto < 0 && !cat) pc++;
+      }
+    });
+    const vistos = _mpVistos();
+    ids.forEach(id => { vistos[id] = 1; });
+    _mpPodarVistos();
+    if (!Array.isArray(state.cartolaLotes)) state.cartolaLotes = [];
+    const cta = (state.config.cuentas || []).find(x => x.id === appCuentaId);
+    state.cartolaLotes.push({ lote, fecha: ahoraISO, account_id: appCuentaId, account_nombre: cta ? cta.nombre : '—', origen: 'auto · Mercado Pago', aplicados: ap, creados: cr });
+    cfg.lastSync = ahoraISO; cfg.lastAutoSync = ahoraISO;
+    saveState();
+    toast(`Mercado Pago: ${nuevos.length} movimiento${nuevos.length === 1 ? '' : 's'} nuevo${nuevos.length === 1 ? '' : 's'} (${ap} cruzado${ap === 1 ? '' : 's'}, ${cr} creado${cr === 1 ? '' : 's'})${pc ? ` · ${pc} por clasificar` : ''}`, 'success');
+    try { refreshVistaActiva(); } catch (e) { console.error(e); }
+  } finally {
+    _mpSyncEnCurso = false;
+    try { renderMercadoPagoCfg(); } catch (e) {}
+  }
+}
+
 // Entry point del file picker o del drop. Determina si es CSV/TSV (texto) o
 // XLSX/XLS (binario via SheetJS) y delega al parser apropiado, luego corre
 // matching y pasa al paso 2 del modal.
@@ -11233,6 +11496,7 @@ function confirmarConciliacion() {
   });
   // Registro del lote para poder retirarlo después
   const fintocInfo = _conciliacionStaging._fintoc || null;
+  const mpInfo = _conciliacionStaging._mp || null;
   if (aplicados + creados > 0) {
     if (!Array.isArray(state.cartolaLotes)) state.cartolaLotes = [];
     const cta = (state.config.cuentas || []).find(c => c.id === account_id);
@@ -11241,7 +11505,7 @@ function confirmarConciliacion() {
       fecha: new Date().toISOString(),
       account_id,
       account_nombre: cta ? cta.nombre : '—',
-      origen: fintocInfo ? fintocInfo.label : 'archivo',
+      origen: fintocInfo ? fintocInfo.label : (mpInfo ? mpInfo.label : 'archivo'),
       aplicados, creados
     });
   }
@@ -11256,10 +11520,18 @@ function confirmarConciliacion() {
     const c = l && l.cuentas.find(x => x.accId === fintocInfo.accId);
     if (c) c.lastSync = new Date().toISOString();
   }
+  // Mercado Pago: marcar vistos (también los ignorados) y registrar la sync.
+  if (mpInfo) {
+    const vistos = _mpVistos();
+    (mpInfo.ids || []).forEach(id => { vistos[id] = 1; });
+    _mpPodarVistos();
+    _mpCfg().lastSync = new Date().toISOString();
+  }
   saveState();
   cerrarModalConciliacion();
-  toast(`${fintocInfo ? 'Movimientos aplicados' : 'Cartola aplicada'}: ${aplicados} cruzado(s), ${creados} creado(s)`, 'success');
+  toast(`${(fintocInfo || mpInfo) ? 'Movimientos aplicados' : 'Cartola aplicada'}: ${aplicados} cruzado(s), ${creados} creado(s)`, 'success');
   if (fintocInfo && typeof renderFintocBancos === 'function') renderFintocBancos();
+  if (mpInfo && typeof renderMercadoPagoCfg === 'function') renderMercadoPagoCfg();
   renderCuentas();
   if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
 }
@@ -16914,6 +17186,16 @@ function init() {
       if (hace > 6 * 3600 * 1000) sincronizarFintocTodo(true);
     } catch (e) { console.error(e); }
   }, 6000);
+  // Mercado Pago: igual que Fintoc, solo si ya hubo una primera sync manual
+  // y la última automática fue hace > 6h.
+  setTimeout(() => {
+    try {
+      const m = state.config && state.config.mercadopago;
+      if (!m || m.auto === false || !m.token || !m.lastSync) return;
+      const hace = m.lastAutoSync ? (Date.now() - new Date(m.lastAutoSync).getTime()) : Infinity;
+      if (hace > 6 * 3600 * 1000) sincronizarMercadoPago(true);
+    } catch (e) { console.error(e); }
+  }, 9000);
   // Inversiones (modo personal): refrescar precios al abrir si la última
   // cotización fue hace > 6h. Silencioso. Política: al abrir + botón manual.
   setTimeout(() => {
