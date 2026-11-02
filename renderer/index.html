@@ -1840,9 +1840,12 @@
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap">
           <div>
             <h3 style="margin:0 0 4px">🔗 Bancos conectados</h3>
-            <div class="card-sub">Trae los movimientos nuevos de cada cuenta y revísalos igual que una cartola antes de aplicar.</div>
+            <div class="card-sub">Se sincronizan solos al abrir la app. "Sincronizar todo" aplica lo nuevo ahora; el botón de cada cuenta abre la revisión manual.</div>
           </div>
-          <button class="btn ghost sm" onclick="document.querySelector('.nav-item[data-view=config]')?.click(); setTimeout(()=>{var e=document.getElementById('cfgFintocSection'); if(e){e.open=true; e.scrollIntoView({block:'center'});}},200)">Administrar →</button>
+          <div style="display:flex; gap:8px; flex-shrink:0">
+            <button class="btn primary sm" onclick="sincronizarFintocTodo(false)">Sincronizar todo</button>
+            <button class="btn ghost sm" onclick="document.querySelector('.nav-item[data-view=config]')?.click(); setTimeout(()=>{var e=document.getElementById('cfgFintocSection'); if(e){e.open=true; e.scrollIntoView({block:'center'});}},200)">Administrar →</button>
+          </div>
         </div>
         <div id="subirFintocLista" style="margin-top:10px"></div>
       </div>
@@ -2993,6 +2996,15 @@
           </div>
           <div style="font-size:11px; color:var(--text-muted); margin-top:6px">Para probar en sandbox: crea el Link en modo test con RUT <code>41614850-3</code> y clave <code>jonsnow</code> (credenciales de prueba de Fintoc, sirven en cualquier banco).</div>
         </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-top:16px">
+          <label style="display:flex; align-items:center; gap:8px; margin:0; cursor:pointer; font-size:13px">
+            <input type="checkbox" id="fintocAuto" style="width:auto; margin:0" onchange="_fintocSetAuto(this.checked)" />
+            Sincronizar solo al abrir la app
+          </label>
+          <button class="btn primary sm" onclick="sincronizarFintocTodo(false)">Sincronizar todo ahora</button>
+        </div>
+        <div style="font-size:11px; color:var(--text-muted); margin-top:4px">Aplica los movimientos nuevos de todos tus bancos sin preguntar. Lo que no reconoce queda en <strong>"Por clasificar"</strong>; cada sincronización es un lote que puedes retirar en Cuentas. El botón "Sincronizar" de cada cuenta sigue abriendo la revisión manual.</div>
 
         <div id="fintocLinksBox" style="margin-top:14px"></div>
       </div>
@@ -10472,6 +10484,8 @@ function renderFintocBancos() {
   const cfg = _fintocCfg();
   const skInp = document.getElementById('fintocSk');
   if (skInp && document.activeElement !== skInp) skInp.value = cfg.sk || '';
+  const autoChk = document.getElementById('fintocAuto');
+  if (autoChk) autoChk.checked = cfg.auto !== false;
   const cuentasApp = state.config.cuentas || [];
   const opciones = (sel) => cuentasApp.map(c => `<option value="${escapeHtml(c.id)}" ${c.id === sel ? 'selected' : ''}>${escapeHtml(c.nombre)}</option>`).join('');
   const fmtSync = (iso) => iso ? new Date(iso).toLocaleString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'nunca';
@@ -10551,6 +10565,91 @@ async function sincronizarFintocCuenta(linkId, accId) {
     toast(`${nuevos.length} movimiento${nuevos.length === 1 ? '' : 's'} nuevo${nuevos.length === 1 ? '' : 's'} de ${l.label}. Revisa y confirma.`, 'success');
   } finally {
     _fintocSyncEnCurso = false;
+  }
+}
+
+function _fintocSetAuto(v) {
+  _fintocCfg().auto = !!v;
+  saveState();
+  toast(v ? 'Se sincronizará solo al abrir la app' : 'Sincronización automática apagada', '');
+}
+
+// Sincronización automática de TODOS los bancos: aplica los movimientos
+// nuevos sin abrir la revisión. Lo que no cruza con algo existente se crea
+// con la categoría que sugiere el categorizador (o "Por clasificar").
+// Cada cuenta genera su propio lote (retirable en Cuentas → Cartolas).
+async function sincronizarFintocTodo(silencioso) {
+  if (!_fintocDisponible()) { if (!silencioso) toast('Solo funciona en la app de escritorio', 'error'); return; }
+  const cfg = _fintocCfg();
+  if (!cfg.sk || !cfg.links.length) { if (!silencioso) toast('Primero conecta un banco en Configuración', 'error'); return; }
+  if (_fintocSyncEnCurso) return;
+  _fintocSyncEnCurso = true;
+  if (!silencioso) toast('Sincronizando bancos…', '');
+  const vistos = _fintocVistos();
+  const ahoraISO = new Date().toISOString();
+  let total = 0, cruzados = 0, creados = 0, porClasificar = 0;
+  const porBanco = [];
+  const errores = [];
+  try {
+    for (const l of cfg.links) {
+      let nBanco = 0;
+      for (const c of l.cuentas) {
+        if (c.moneda && c.moneda !== 'CLP') continue;
+        const appCuentaId = c.appCuentaId || state.config.cuenta_default_id;
+        if (!appCuentaId) continue;
+        const base = c.lastSync ? new Date(c.lastSync) : new Date(Date.now() - 90 * 86400000);
+        if (c.lastSync) base.setDate(base.getDate() - 7);
+        const since = base.toISOString().slice(0, 10);
+        let r;
+        try { r = await window.electronAPI.fintocMovements({ sk: cfg.sk, linkToken: l.token, accountId: c.accId, since }); }
+        catch (e) { r = { ok: false, error: e.message }; }
+        if (!r || !r.ok) { errores.push(`${l.label}: ${r && r.error ? r.error : 'sin respuesta'}`); continue; }
+        const nuevos = (r.movements || []).filter(m => m.id && !vistos[m.id] && m.amount);
+        if (!nuevos.length) { c.lastSync = ahoraISO; continue; }
+        const movs = nuevos.map(m => ({
+          _id: uid(),
+          fecha: m.post_date || m.transaction_date,
+          descripcion: (m.description + (m.comment ? ` · ${m.comment}` : '')).slice(0, 250),
+          monto: Math.round(m.amount),
+          _raw: { fintoc_id: m.id, type: m.type, reference_id: m.reference_id }
+        }));
+        const lote = 'L' + Date.now() + '_' + String(c.accId).slice(-4);
+        let ap = 0, cr = 0, pc = 0;
+        Conciliacion.matchearMovimientos(movs, state).forEach(m => {
+          if (m.candidatos && m.candidatos.length) {
+            Conciliacion.aplicarMatch(state, m.mov, m.candidatos[0], appCuentaId, lote); ap++;
+          } else {
+            const cat = _sugerirCatConc(m.mov);
+            Conciliacion.crearDesdeMovimiento(state, m.mov, appCuentaId, cat, lote); cr++;
+            if (m.mov.monto < 0 && !cat) pc++;
+          }
+        });
+        nuevos.forEach(m => { vistos[m.id] = 1; });
+        if (!Array.isArray(state.cartolaLotes)) state.cartolaLotes = [];
+        const cta = (state.config.cuentas || []).find(x => x.id === appCuentaId);
+        state.cartolaLotes.push({ lote, fecha: ahoraISO, account_id: appCuentaId, account_nombre: cta ? cta.nombre : '—', origen: `auto · ${l.label} · ${c.nombre}`, aplicados: ap, creados: cr });
+        c.lastSync = ahoraISO;
+        total += nuevos.length; cruzados += ap; creados += cr; porClasificar += pc; nBanco += nuevos.length;
+      }
+      if (nBanco) porBanco.push(`${l.label} ${nBanco}`);
+    }
+    const keys = Object.keys(vistos);
+    if (keys.length > 8000) keys.slice(0, keys.length - 8000).forEach(k => { delete vistos[k]; });
+    cfg.lastAutoSync = ahoraISO;
+    saveState();
+    if (total > 0) {
+      toast(`Bancos sincronizados: ${total} movimiento${total === 1 ? '' : 's'} nuevo${total === 1 ? '' : 's'} (${porBanco.join(' · ')})${porClasificar ? ` · ${porClasificar} por clasificar en Gastos` : ''}`, 'success');
+      try { refreshVistaActiva(); } catch (e) { console.error(e); }
+    } else if (!silencioso) {
+      toast(errores.length ? 'Sin movimientos nuevos (con errores en algún banco)' : 'Bancos al día: sin movimientos nuevos', errores.length ? 'error' : 'success');
+    }
+    if (errores.length) {
+      console.error('Fintoc auto-sync:', errores);
+      if (!silencioso) _fintocEstado(errores.join(' | '), 'err');
+    }
+  } finally {
+    _fintocSyncEnCurso = false;
+    try { renderFintocBancos(); } catch (e) {}
   }
 }
 
@@ -16805,6 +16904,16 @@ function init() {
   setTimeout(intentarAutoSyncAdSpend, 3000);
   // Análisis profundo automático los lunes (si no se corrió en los últimos 6 días)
   intentarAnalisisSemanalLunes();
+  // Bancos conectados (Fintoc): sincronización automática al abrir si está
+  // activada y la última fue hace > 6h. Silenciosa salvo que traiga algo.
+  setTimeout(() => {
+    try {
+      const f = state.config && state.config.fintoc;
+      if (!f || f.auto === false || !f.sk || !Array.isArray(f.links) || !f.links.length) return;
+      const hace = f.lastAutoSync ? (Date.now() - new Date(f.lastAutoSync).getTime()) : Infinity;
+      if (hace > 6 * 3600 * 1000) sincronizarFintocTodo(true);
+    } catch (e) { console.error(e); }
+  }, 6000);
   // Inversiones (modo personal): refrescar precios al abrir si la última
   // cotización fue hace > 6h. Silencioso. Política: al abrir + botón manual.
   setTimeout(() => {
