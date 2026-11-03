@@ -150,7 +150,7 @@
 
   // Suma el saldo de todas las cuentas líquidas (excluye tarjetas y
   // cuentas que el usuario marcó como "no sumar al total" — útil para
-  // cuentas administradas a nombre de terceros o que querés ver aparte).
+  // cuentas administradas a nombre de terceros o que quieres ver aparte).
   function calcularCajaLiquidaTotal(state, ventasPorMes) {
     return ((state && state.config && state.config.cuentas) || [])
       .filter(c => TIPOS_LIQUIDOS.has(c.tipo) && !c.excluir_del_total)

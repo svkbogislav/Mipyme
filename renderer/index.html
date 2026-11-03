@@ -3096,7 +3096,7 @@
         <div style="background:var(--primary-soft); border:1px solid var(--primary); border-radius:9px; padding:14px; margin-bottom:14px">
           <strong style="color:var(--primary)">Conexión automática con OAuth (recomendado)</strong>
           <div style="font-size:12px; color:var(--text); margin-top:6px; line-height:1.5">
-            Click "Conectar con Shopify", se abre tu navegador para autorizar la app, y volvés acá con el token automáticamente. <strong>NO necesitas pegar el token a mano.</strong>
+            Click "Conectar con Shopify", se abre tu navegador para autorizar la app, y vuelves acá con el token automáticamente. <strong>NO necesitas pegar el token a mano.</strong>
           </div>
           <div style="font-size:11px; color:var(--text-muted); margin-top:8px">
             <strong>Setup una sola vez en tu Dev Dashboard:</strong>
@@ -14472,7 +14472,7 @@ function computarAlertasActivas(a) {
   if (refundRate >= 0.30) {
     alertas.push({ nivel: 'critico', titulo: 'Refund rate crítico', detalle: `<strong>${(refundRate * 100).toFixed(0)}%</strong> del gross se devuelve. Esperado en e-commerce: 5-15%. Auditá causas urgente.` });
   } else if (refundRate >= 0.20) {
-    alertas.push({ nivel: 'alto', titulo: 'Refund rate alto', detalle: `<strong>${(refundRate * 100).toFixed(0)}%</strong> de devoluciones — sobre el promedio del sector. Revisá pedidos cancelados.` });
+    alertas.push({ nivel: 'alto', titulo: 'Refund rate alto', detalle: `<strong>${(refundRate * 100).toFixed(0)}%</strong> de devoluciones — sobre el promedio del sector. Revisa los pedidos cancelados.` });
   }
 
   // Alerta: runway crítico
@@ -16073,7 +16073,7 @@ function renderAnaAcciones(a) {
   const wrap = document.getElementById('anaAccionesList');
   const filtradas = mostrarComp ? acciones : acciones.filter(ac => !completadas[ac.id]);
   if (filtradas.length === 0) {
-    wrap.innerHTML = '<div class="empty" style="padding:20px"><h4>✓ Sin acciones pendientes</h4>El análisis no detecta acciones críticas. Activa "Mostrar completadas" si querés ver las pasadas.</div>';
+    wrap.innerHTML = '<div class="empty" style="padding:20px"><h4>✓ Sin acciones pendientes</h4>El análisis no detecta acciones críticas. Activa "Mostrar completadas" si quieres ver las pasadas.</div>';
     return;
   }
   wrap.innerHTML = filtradas.map(ac => {
@@ -16171,7 +16171,7 @@ function generarAccionesRecomendadas(a) {
       id: 'conectar-meta',
       prioridad: 'media',
       titulo: 'Conectar Meta Ads para ROAS automático',
-      descripcion: `Sin data de ad spend no podés calcular ROAS real. Setup en Configuración → Conexiones publicitarias → Meta Ads. Tarda 15 min con system user token.`,
+      descripcion: `Sin data de ad spend no puedes calcular ROAS real. Setup en Configuración → Conexiones publicitarias → Meta Ads. Tarda 15 min con system user token.`,
       impacto: 'Visibilidad ROAS / CAC',
       esfuerzo: '15 min',
       cuando: 'Esta semana'
