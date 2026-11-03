@@ -7410,6 +7410,55 @@ function _cargoRegularHacerFijo(i) {
   poblarSelectCategoriasRec(c.categoria || (esPerfilPersonal() ? 'Suscripciones y apps' : 'Apps / Software'));
   document.getElementById('recMetodo').value = 'Transferencia';
 }
+// Los movimientos que llegaron por un banco conectado antes de que cada
+// cuenta bancaria tuviera su propia cuenta en la app quedaron en la cuenta
+// de depósito ("Caja chica"). El lote de cada importación guarda de qué
+// cuenta del banco vino (sufijo del lote = fin del id Fintoc, o el nombre
+// "Banco · Cuenta" en origen): con eso se reasignan a la cuenta correcta.
+// Una vez por perfil.
+function migrarCuentasBancoV1() {
+  if (state.config._cuentasBancoV1) return;
+  const cfg = state.config.fintoc;
+  if (!cfg || !Array.isArray(cfg.links) || !cfg.links.length) return;
+  _fintocAsegurarCuentas();
+  const cuentasApp = state.config.cuentas || [];
+  const fintocCuentas = [];
+  cfg.links.forEach(l => (l.cuentas || []).forEach(c => fintocCuentas.push({ link: l, c })));
+  const objetivoDeLote = (lote) => {
+    const m = /_([A-Za-z0-9]{4})$/.exec(lote.lote || '');
+    let cands = [];
+    if (m) {
+      cands = fintocCuentas.filter(x => String(x.c.accId || '').endsWith(m[1]));
+      if (cands.length > 1) cands = cands.filter(x => String(lote.origen || '').includes(x.link.label)) || cands;
+    } else {
+      const origen = String(lote.origen || '').replace(/^auto\s*·\s*/, '');
+      cands = fintocCuentas.filter(x => origen === `${x.link.label} · ${x.c.nombre}` || origen === x.link.label);
+      if (cands.length > 1) {
+        const conSaldo = cands.filter(x => Number(x.c.saldo || 0) !== 0);
+        if (conSaldo.length) cands = conSaldo;
+      }
+    }
+    if (!cands.length) return null;
+    const app = cuentasApp.find(x => x.id === cands[0].c.appCuentaId);
+    return app || null;
+  };
+  let n = 0;
+  (state.cartolaLotes || []).forEach(lote => {
+    const app = objetivoDeLote(lote);
+    if (!app || app.id === lote.account_id) return;
+    (state.conciliaciones || []).filter(c => c.lote === lote.lote).forEach(c => {
+      c.account_id = app.id;
+      const lista = c.ref_type === 'gasto' ? state.gastos : (c.ref_type === 'venta' ? state.ventasManuales : null);
+      const ref = lista ? (lista || []).find(x => x.id === c.ref_id) : null;
+      if (ref && ref.account_id !== app.id) { ref.account_id = app.id; n++; }
+    });
+    lote.account_id = app.id;
+    lote.account_nombre = app.nombre;
+  });
+  state.config._cuentasBancoV1 = true;
+  saveState();
+  if (n) console.log('[migración] movimientos reasignados a su cuenta bancaria: ' + n);
+}
 // Perfil personal: los cargos regulares que quedaron "Por clasificar" pasan a
 // "Suscripciones y apps". Una vez por perfil.
 function migrarSuscripcionesV1() {
@@ -17706,6 +17755,7 @@ function init() {
   bootstrapDatos();
   migrarCategoriasPersonalV2();
   migrarSuscripcionesV1();
+  migrarCuentasBancoV1();
   asegurarCuentaDefault();
   generarGastosRecurrentes();
   generarCobrosRecurrentes();
