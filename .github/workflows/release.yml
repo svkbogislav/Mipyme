@@ -21,7 +21,11 @@ permissions:
 jobs:
   # ─────────────────────────────  macOS  ─────────────────────────────
   release-mac:
-    runs-on: macos-latest
+    # macos-15-intel: los runners Mac arm64 (macos-latest) se quedan sin
+    # capacidad y el job no consigue máquina en 15 min (v1.0.164, 3 intentos).
+    # La app no tiene módulos nativos y no se firma, así que desde Intel se
+    # compilan igual los zips arm64 y x64.
+    runs-on: macos-15-intel
     steps:
       - name: Checkout código
         uses: actions/checkout@v4
