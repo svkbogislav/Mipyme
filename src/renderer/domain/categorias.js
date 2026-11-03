@@ -94,12 +94,19 @@
     personal: [
       'Vivienda (arriendo/dividendo)',
       'Alimentación',
+      'Restaurantes y delivery',
       'Transporte',
       'Servicios (luz/agua/internet)',
+      'Suscripciones y apps',
+      'Compras (tiendas y online)',
       'Salud',
+      'Seguros',
       'Educación',
       'Ocio / Entretención',
       'Deudas / Créditos',
+      'Pago tarjeta de crédito',
+      'Comisiones e intereses bancarios',
+      'Transferencias a personas',
       'Ahorro',
       'Otros'
     ]

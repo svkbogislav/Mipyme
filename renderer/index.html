@@ -17484,8 +17484,39 @@ function _tourTerminar(silencioso) {
 /* =================================================================
    INIT
    ================================================================= */
+// Perfil personal: categorías nuevas (suscripciones, tarjeta, comisiones,
+// transferencias a personas…) y reclasificación, con las reglas personales,
+// de los gastos que quedaron "Por clasificar" o con categorías de empresa.
+// Corre una sola vez por perfil.
+function migrarCategoriasPersonalV2() {
+  if (!esPerfilPersonal() || state.config._catsPersonalV2) return;
+  const base = window.Categorias ? Categorias.getCategoriasPorTipo('personal') : [];
+  if (!Array.isArray(state.config.categorias)) state.config.categorias = [];
+  base.forEach(c => { if (!state.config.categorias.includes(c)) state.config.categorias.push(c); });
+  const io = state.config.categorias.indexOf('Otros');
+  if (io >= 0) { state.config.categorias.splice(io, 1); state.config.categorias.push('Otros'); }
+  const cats = new Set(state.config.categorias);
+  let n = 0;
+  (state.gastos || []).forEach(g => {
+    if (g.auto_estimado) return;
+    const cat = g.categoria || '';
+    if (/^(Pago deuda|Cuota de crédito) — /.test(g.descripcion || '')) {
+      if (cat !== 'Deudas / Créditos') { g.categoria = 'Deudas / Créditos'; n++; }
+      return;
+    }
+    if (cats.has(cat) && cat !== 'Otros') return;
+    const sug = window.Categorizador ? Categorizador.sugerir(g.descripcion || g.proveedor || '', -Math.abs(Number(g.monto || 0)), state) : null;
+    if (sug && sug.categoria && sug.categoria !== cat) { g.categoria = sug.categoria; n++; }
+    else if (cat && cat !== 'Por clasificar' && cat !== 'Otros' && !cats.has(cat)) { g.categoria = 'Otros'; n++; }
+  });
+  state.config._catsPersonalV2 = true;
+  saveState();
+  if (n) console.log('[migración] categorías personales: ' + n + ' gastos reclasificados');
+}
+
 function init() {
   bootstrapDatos();
+  migrarCategoriasPersonalV2();
   asegurarCuentaDefault();
   generarGastosRecurrentes();
   generarCobrosRecurrentes();
