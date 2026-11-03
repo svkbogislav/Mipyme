@@ -2934,7 +2934,7 @@
 
       <div class="card" style="margin-bottom:14px">
         <h3>Reportes mensuales</h3>
-        <div class="card-sub">Exporta gastos y ventas del mes, o imprime el <strong>resumen de ganancias</strong> listo para enviar al contador.</div>
+        <div class="card-sub" id="reportesCardSub">Exporta gastos y ventas del mes, o imprime el <strong>resumen de ganancias</strong> listo para enviar al contador.</div>
         <div class="row" style="margin-top:10px">
           <div>
             <label>Período</label>
@@ -2950,7 +2950,7 @@
           </button>
           <button class="btn" onclick="exportarReporteVentas()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M12 3v12M7 8l5-5 5 5"/></svg>
-            Ventas (CSV / Excel)
+            <span id="btnExportVentasTxt">Ventas (CSV / Excel)</span>
           </button>
           <button class="btn primary" onclick="abrirReportePnL()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
@@ -9414,6 +9414,11 @@ function aplicarPerfilUI() {
   setTxt('proyVentasLbl', personal ? 'Ingresos base por semana' : 'Ventas base por semana');
   setTxt('presVentaTitulo', personal ? '¿Cuánto necesitas que entre al mes?' : '¿Cuánto necesitas vender?');
   setTxt('presVentaSub', personal ? 'Lo mínimo que debe entrar para no quedar en rojo' : 'El piso de ventas para no perder plata');
+  setTxt('btnExportVentasTxt', personal ? 'Ingresos (CSV / Excel)' : 'Ventas (CSV / Excel)');
+  const repSub = document.getElementById('reportesCardSub');
+  if (repSub) repSub.innerHTML = personal
+    ? 'Exporta tus gastos e ingresos del mes, o imprime el <strong>resumen del mes</strong> (lo que entró, lo que salió y lo que te quedó).'
+    : 'Exporta gastos y ventas del mes, o imprime el <strong>resumen de ganancias</strong> listo para enviar al contador.';
   setTxt('cfgSecSub', personal ? 'Tu perfil, conexiones, respaldo y datos' : 'Tu negocio, conexiones, reportes y datos');
   setTxt('cfgSecTitle', personal ? 'Tu perfil' : 'Tu negocio');
   setTxt('cfgEmpresaH3', personal ? 'Perfil' : 'Empresa');
