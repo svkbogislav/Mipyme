@@ -10,7 +10,9 @@
 // Flujo (docs: mercadopago.cl/developers → Reportes → Todas las transacciones):
 //   1. GET/POST/PUT /v1/account/settlement_report/config → asegura columnas.
 //   2. POST /v1/account/settlement_report {begin_date, end_date} → 202, se
-//      genera asíncrono (segundos a un par de minutos).
+//      genera asíncrono (segundos a un par de minutos). MP acepta como
+//      máximo 60 días por informe y rechaza fechas futuras (400 "Error
+//      creating Statement"): períodos más largos se piden en tramos.
 //   3. GET /v1/account/settlement_report/list → aparece el archivo.
 //   4. GET /v1/account/settlement_report/:file_name → CSV (separador ';').
 // Auth: header `Authorization: Bearer <access token>`.
@@ -184,14 +186,38 @@ async function listar(token) {
   return { ok: true, lista: Array.isArray(r.json) ? r.json : [] };
 }
 
+// Máximo de días por informe (la doc dice 60; margen por el huso GMT-4).
+const MAX_DIAS_INFORME = 55;
+
+// Parte [since, until] en tramos consecutivos de hasta maxDias días.
+function ventanas(since, until, maxDias) {
+  const a0 = new Date(`${since}T00:00:00Z`);
+  const fin = new Date(`${until}T00:00:00Z`);
+  if (isNaN(a0) || isNaN(fin) || a0 > fin) return [{ since, until }];
+  const out = [];
+  let a = a0;
+  while (a <= fin) {
+    const b = new Date(a.getTime() + (maxDias - 1) * 86400000);
+    const hasta = b < fin ? b : fin;
+    out.push({ since: a.toISOString().slice(0, 10), until: hasta.toISOString().slice(0, 10) });
+    a = new Date(hasta.getTime() + 86400000);
+  }
+  return out;
+}
+
 async function generarYDescargar(token, since, until) {
   const begin = `${since}T00:00:00Z`;
-  const end = `${until}T23:59:59Z`;
+  // MP rechaza un end_date en el futuro: si el tramo llega a hoy, se corta ahora.
+  const ahora = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  let end = `${until}T23:59:59Z`;
+  if (end > ahora) end = ahora;
+  if (begin >= end) return { ok: true, csv: '', file_name: '' };
   const antes = await listar(token);
   const idsAntes = new Set(antes.ok ? antes.lista.map(x => String(x.id || x.file_name)) : []);
 
   const c = await request('POST', '/v1/account/settlement_report', token, { begin_date: begin, end_date: end });
   if (c.status === 203) return { ok: false, error: 'Mercado Pago no pudo generar el informe para esas fechas. Intenta de nuevo en unos minutos.', detalle: detalleMP(c) };
+  if (c.status === 400) return { ok: false, error: `Mercado Pago rechazó el informe del ${since} al ${until}. Intenta de nuevo en un minuto.`, status: 400, detalle: detalleMP(c) };
   if (!ok2xx(c)) return { ok: false, error: mensajeError(c), status: c.status, detalle: detalleMP(c) };
 
   // Espera activa: hasta ~3 minutos.
@@ -371,18 +397,28 @@ async function sync(args) {
   try {
     const cfg = await asegurarConfig(token);
     if (!cfg.ok) return cfg;
-    const g = await generarYDescargar(token, since, until);
-    if (!g.ok) return g;
-    const { headers, rows } = parseCSV(g.csv);
-    if (!headers.length) return { ok: true, movements: [], file_name: g.file_name, vacio: true };
-    const faltan = ['TRANSACTION_TYPE', 'TRANSACTION_DATE'].filter(k => !headers.includes(k));
-    if (faltan.length) return { ok: false, error: 'El informe no trae las columnas esperadas.', detalle: 'Encabezados: ' + headers.slice(0, 12).join(', ') };
-    const movements = normalizar(rows, { incluirRetiros: !!(args && args.incluirRetiros) })
+    // Un informe por tramo de hasta MAX_DIAS_INFORME días, del más viejo al
+    // más nuevo. Si uno falla, se avisa y no se marca nada como sincronizado.
+    const tramos = ventanas(since, until, MAX_DIAS_INFORME);
+    const rowsTodas = [];
+    let file_name = '';
+    for (const t of tramos) {
+      const g = await generarYDescargar(token, t.since, t.until);
+      if (!g.ok) return g;
+      if (g.file_name) file_name = g.file_name;
+      const { headers, rows } = parseCSV(g.csv);
+      if (!headers.length) continue;
+      const faltan = ['TRANSACTION_TYPE', 'TRANSACTION_DATE'].filter(k => !headers.includes(k));
+      if (faltan.length) return { ok: false, error: 'El informe no trae las columnas esperadas.', detalle: 'Encabezados: ' + headers.slice(0, 12).join(', ') };
+      rowsTodas.push(...rows);
+    }
+    if (!rowsTodas.length) return { ok: true, movements: [], file_name, vacio: true, since, until };
+    const movements = normalizar(rowsTodas, { incluirRetiros: !!(args && args.incluirRetiros) })
       .filter(m => m.fecha >= since && m.fecha <= until);
-    return { ok: true, movements, file_name: g.file_name, filas: rows.length, since, until };
+    return { ok: true, movements, file_name, filas: rowsTodas.length, since, until, informes: tramos.length };
   } catch (e) {
     return { ok: false, error: 'No pude conectar con Mercado Pago: ' + (e.message || 'error de red') };
   }
 }
 
-module.exports = { test, sync, parseCSV, normalizar, clasificar, num, limpiarToken };
+module.exports = { test, sync, parseCSV, normalizar, clasificar, num, limpiarToken, ventanas, MAX_DIAS_INFORME };

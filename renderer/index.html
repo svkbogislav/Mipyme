@@ -3073,7 +3073,7 @@
           </div>
           <button class="btn primary sm" onclick="sincronizarMercadoPago(false)">Sincronizar ahora</button>
         </div>
-        <div style="font-size:11px; color:var(--text-muted); margin-top:6px">"Sincronizar ahora" abre la revisión para que confirmes uno por uno. La primera sincronización siempre la revisas tú; después, al abrir la app, lo nuevo se aplica solo (lote retirable en Cuentas). Mercado Pago genera el informe en segundo plano: puede tardar un minuto.</div>
+        <div style="font-size:11px; color:var(--text-muted); margin-top:6px">"Sincronizar ahora" abre la revisión para que confirmes uno por uno. La primera sincronización siempre la revisas tú; después, al abrir la app, lo nuevo se aplica solo (lote retirable en Cuentas). Mercado Pago genera el informe en segundo plano, en tramos de hasta 60 días: la primera vez puede tardar un par de minutos.</div>
       </div>
         </div>
       </details>
@@ -10916,7 +10916,7 @@ async function sincronizarMercadoPago(silencioso) {
   if (!appCuentaId) { if (!silencioso) toast('Crea una cuenta en Cuentas para registrar lo de Mercado Pago', 'error'); return; }
   _mpSyncEnCurso = true;
   const ahoraISO = new Date().toISOString();
-  if (!silencioso) toast('Pidiendo el informe a Mercado Pago… puede tardar un minuto', '');
+  if (!silencioso) toast('Pidiendo el informe a Mercado Pago… la primera vez puede tardar un par de minutos', '');
   try {
     let r;
     try { r = await window.electronAPI.mpSync({ token: cfg.token, since: _mpSince(cfg), incluirRetiros: !!cfg.incluirRetiros }); }
