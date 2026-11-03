@@ -10996,15 +10996,17 @@ async function sincronizarMercadoPago(silencioso) {
   const ahoraISO = new Date().toISOString();
   if (!silencioso) {
     toast('Pidiendo el informe a Mercado Pago… la primera vez puede tardar un par de minutos', '');
-    _mpEstado('Pidiendo el informe a Mercado Pago… puede tardar hasta 3 minutos por tramo. Puedes seguir usando la app: cuando llegue se abre la revisión sola.');
+    _mpEstado('Pidiendo el informe a Mercado Pago… puede tardar hasta 5 minutos por tramo. Puedes seguir usando la app: cuando llegue se abre la revisión sola.');
   }
   try {
     let r;
-    try { r = await window.electronAPI.mpSync({ token: cfg.token, since: _mpSince(cfg), incluirRetiros: !!cfg.incluirRetiros }); }
+    try { r = await window.electronAPI.mpSync({ token: cfg.token, since: _mpSince(cfg), incluirRetiros: !!cfg.incluirRetiros, pendiente: cfg.pendienteInforme || null }); }
     catch (e) { r = { ok: false, error: e.message }; }
     if (!r || !r.ok) {
       console.error('Mercado Pago sync:', r);
       cfg.ultimo = { at: ahoraISO, ok: false, error: (r && r.error) || 'No pude leer Mercado Pago', detalle: (r && r.detalle) || '' };
+      // Informe que MP aún genera: se recuerda para retomarlo en el próximo intento.
+      if (r && r.pendiente) cfg.pendienteInforme = r.pendiente;
       if (silencioso) { cfg.lastAutoSync = ahoraISO; saveState(); return; }
       saveState();
       const msg = cfg.ultimo.error;
@@ -11013,6 +11015,7 @@ async function sincronizarMercadoPago(silencioso) {
       return;
     }
     const nuevos = _mpMovsNuevos(r);
+    delete cfg.pendienteInforme;
     cfg.ultimo = _mpResumenSync(r, nuevos.length, ahoraISO);
     if (!nuevos.length) {
       cfg.lastSync = ahoraISO;

@@ -207,50 +207,102 @@ function ventanas(since, until, maxDias) {
   return out;
 }
 
-async function generarYDescargar(token, since, until) {
+// ¿La fecha ISO cae a ±36 h del día YYYY-MM-DD? MP devuelve begin/end_date
+// con huso (GMT-4 o Z), así que comparar el string recortado fallaba.
+function cercaDia(iso, ymd) {
+  if (!iso || !ymd) return false;
+  const a = new Date(iso).getTime(); const b = new Date(`${ymd}T12:00:00Z`).getTime();
+  if (isNaN(a) || isNaN(b)) return String(iso).slice(0, 10) === ymd;
+  return Math.abs(a - b) <= 36 * 3600000;
+}
+function _edadMin(x, ahora) {
+  const t = new Date(x && x.date_created || 0).getTime();
+  return isNaN(t) ? Infinity : (ahora - t) / 60000;
+}
+// Elige, de la lista de informes de la cuenta, uno ya generado que sirva
+// para [since, until]: el del id pendiente de un intento anterior, o uno con
+// las mismas fechas creado hace poco (20 min si el tramo llega a hoy, 6 h si
+// es histórico). Pura, para poder probarla.
+function elegirListo(lista, since, until, pendiente, ahora = Date.now()) {
+  const hoy = new Date(ahora).toISOString().slice(0, 10);
+  const maxMin = until >= hoy ? 20 : 6 * 60;
+  const ok = (lista || []).filter(x => x && x.file_name && (
+    (pendiente && pendiente.id && String(x.id) === String(pendiente.id)) ||
+    (cercaDia(x.begin_date, since) && cercaDia(x.end_date, until) && _edadMin(x, ahora) <= maxMin)));
+  ok.sort((p, q) => String(q.date_created || '').localeCompare(String(p.date_created || '')));
+  return ok[0] || null;
+}
+// Informe pedido antes y todavía sin archivo: se retoma en vez de pedir otro.
+function elegirPendiente(lista, since, until, pendiente, ahora = Date.now()) {
+  return (lista || []).find(x => x && !x.file_name && _edadMin(x, ahora) <= 6 * 60 && (
+    (pendiente && pendiente.id && String(x.id) === String(pendiente.id)) ||
+    (cercaDia(x.begin_date, since) && cercaDia(x.end_date, until)))) || null;
+}
+function _resumenLista(lista) {
+  return (lista || []).slice()
+    .sort((p, q) => String(q.date_created || '').localeCompare(String(p.date_created || '')))
+    .slice(0, 6)
+    .map(x => ({ id: x.id, begin_date: x.begin_date, end_date: x.end_date, file_name: x.file_name || '', status: x.status || '', created_from: x.created_from || '', date_created: x.date_created || '' }));
+}
+
+const ESPERA_MAX_MS = 5 * 60000;
+
+async function generarYDescargar(token, since, until, pendiente) {
   const begin = `${since}T00:00:00Z`;
   // MP rechaza un end_date en el futuro: si el tramo llega a hoy, se corta ahora.
   const ahora = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
   let end = `${until}T23:59:59Z`;
   if (end > ahora) end = ahora;
   if (begin >= end) return { ok: true, csv: '', file_name: '' };
+  const diag = {};
   const antes = await listar(token);
-  const idsAntes = new Set(antes.ok ? antes.lista.map(x => String(x.id || x.file_name)) : []);
+  const lista0 = antes.ok ? antes.lista : [];
+  const idsAntes = new Set(lista0.map(x => String(x.id || x.file_name)));
 
-  const c = await request('POST', '/v1/account/settlement_report', token, { begin_date: begin, end_date: end });
-  if (c.status === 203) return { ok: false, error: 'Mercado Pago no pudo generar el informe para esas fechas. Intenta de nuevo en unos minutos.', detalle: detalleMP(c) };
-  if (c.status === 400) return { ok: false, error: `Mercado Pago rechazó el informe del ${since} al ${until}. Intenta de nuevo en un minuto.`, status: 400, detalle: detalleMP(c) };
-  if (!ok2xx(c)) return { ok: false, error: mensajeError(c), status: c.status, detalle: detalleMP(c) };
-
-  // Espera activa: hasta ~3 minutos.
-  const t0 = Date.now();
-  let archivo = null;
-  while (Date.now() - t0 < 180000) {
-    await dormir(4000);
-    const l = await listar(token);
-    if (!l.ok) continue;
-    const cand = l.lista.filter(x => x && x.file_name && !idsAntes.has(String(x.id || x.file_name)))
-      .filter(x => String(x.begin_date || '').slice(0, 10) === since || !x.begin_date)
-      .sort((a, b) => String(b.date_created || '').localeCompare(String(a.date_created || '')));
-    if (cand.length) { archivo = cand[0]; break; }
-  }
-  if (!archivo) {
-    // Último recurso: un informe manual con las mismas fechas creado hace poco.
-    const l = await listar(token);
-    if (l.ok) {
-      const reciente = l.lista.filter(x => x && x.file_name
-        && String(x.begin_date || '').slice(0, 10) === since
-        && String(x.end_date || '').slice(0, 10) === until
-        && (Date.now() - new Date(x.date_created || 0).getTime()) < 15 * 60000)
-        .sort((a, b) => String(b.date_created || '').localeCompare(String(a.date_created || '')));
-      if (reciente.length) archivo = reciente[0];
+  // 1) ¿Ya hay un informe listo de un intento anterior? Se usa sin pedir otro.
+  let archivo = elegirListo(lista0, since, until, pendiente);
+  let reportId = null;
+  if (archivo) diag.reutilizado = archivo.file_name;
+  else {
+    // 2) ¿Hay uno pendiente con estas fechas? Se espera ese. Si no, se pide.
+    const pend = elegirPendiente(lista0, since, until, pendiente);
+    if (pend) { reportId = pend.id; diag.retomado = pend.id; }
+    else {
+      const c = await request('POST', '/v1/account/settlement_report', token, { begin_date: begin, end_date: end });
+      diag.creacion = { status: c.status, id: c.json && c.json.id, estado: c.json && c.json.status };
+      if (c.status === 203) return { ok: false, error: 'Mercado Pago no pudo generar el informe para esas fechas. Intenta de nuevo en unos minutos.', detalle: detalleMP(c), diag };
+      if (c.status === 400) return { ok: false, error: `Mercado Pago rechazó el informe del ${since} al ${until}. Intenta de nuevo en un minuto.`, status: 400, detalle: detalleMP(c), diag };
+      if (!ok2xx(c)) return { ok: false, error: mensajeError(c), status: c.status, detalle: detalleMP(c), diag };
+      reportId = c.json && c.json.id ? c.json.id : null;
+    }
+    // 3) Espera activa (hasta ESPERA_MAX_MS): por id si lo tenemos, si no
+    //    por "informe nuevo con estas fechas".
+    const t0 = Date.now();
+    while (Date.now() - t0 < ESPERA_MAX_MS) {
+      await dormir(5000);
+      const l = await listar(token);
+      if (!l.ok) continue;
+      const porId = reportId ? l.lista.find(x => x && x.file_name && String(x.id) === String(reportId)) : null;
+      if (porId) { archivo = porId; break; }
+      const nuevos = l.lista.filter(x => x && x.file_name && !idsAntes.has(String(x.id || x.file_name)) && cercaDia(x.begin_date, since))
+        .sort((p, q) => String(q.date_created || '').localeCompare(String(p.date_created || '')));
+      if (nuevos.length) { archivo = nuevos[0]; break; }
     }
   }
-  if (!archivo) return { ok: false, error: 'Mercado Pago sigue generando el informe. Espera un minuto y vuelve a sincronizar.' };
+  if (!archivo) {
+    const l = await listar(token);
+    diag.lista = _resumenLista(l.ok ? l.lista : []);
+    return {
+      ok: false,
+      error: 'Mercado Pago sigue generando el informe (a veces tarda varios minutos). Vuelve a apretar "Sincronizar ahora" en un rato: la app retoma el mismo informe sin pedir otro.',
+      pendiente: { id: reportId, since, until, at: new Date().toISOString() },
+      diag
+    };
+  }
 
   const d = await request('GET', `/v1/account/settlement_report/${encodeURIComponent(archivo.file_name)}`, token, null, { timeout: 60000 });
-  if (!ok2xx(d)) return { ok: false, error: 'No pude descargar el informe: ' + mensajeError(d), detalle: detalleMP(d) };
-  return { ok: true, csv: d.raw || '', file_name: archivo.file_name };
+  if (!ok2xx(d)) return { ok: false, error: 'No pude descargar el informe: ' + mensajeError(d), detalle: detalleMP(d), diag };
+  return { ok: true, csv: d.raw || '', file_name: archivo.file_name, diag };
 }
 
 // ---------- CSV ----------
@@ -416,7 +468,7 @@ async function sync(args) {
   const diagDir = args && args.diagDir;
   const diag = { at: new Date().toISOString(), since, until, incluirRetiros: !!(args && args.incluirRetiros), tramos: [] };
   const fin = (res) => {
-    escribirDiag(diagDir, Object.assign(diag, { ok: !!res.ok, error: res.error || null, detalle: res.detalle || null, status: res.status || null,
+    escribirDiag(diagDir, Object.assign(diag, { ok: !!res.ok, error: res.error || null, detalle: res.detalle || null, status: res.status || null, pendiente: res.pendiente || null,
       filas: res.filas || 0, movimientos: res.movements ? res.movements.length : 0, vacio: !!res.vacio,
       clases: res.movements ? contar(res.movements, 'clase') : null, tiposMov: res.movements ? contar(res.movements, 'tipo') : null }), res._csv);
     delete res._csv;
@@ -431,12 +483,14 @@ async function sync(args) {
     const rowsTodas = [];
     const csvs = [];
     let file_name = '';
+    const pendiente = args && args.pendiente && typeof args.pendiente === 'object' ? args.pendiente : null;
     for (const t of tramos) {
-      const g = await generarYDescargar(token, t.since, t.until);
-      if (!g.ok) { diag.tramos.push({ since: t.since, until: t.until, error: g.error || 'falló' }); return fin(g); }
+      const pend = pendiente && pendiente.since === t.since && pendiente.until === t.until ? pendiente : null;
+      const g = await generarYDescargar(token, t.since, t.until, pend);
+      if (!g.ok) { diag.tramos.push({ since: t.since, until: t.until, error: g.error || 'falló', detalle: g.diag || null }); return fin(g); }
       if (g.file_name) file_name = g.file_name;
       const { headers, rows } = parseCSV(g.csv);
-      diag.tramos.push({ since: t.since, until: t.until, file_name: g.file_name || '', bytes: (g.csv || '').length, filas: rows.length, headers: headers.slice(0, 40), tipos: contar(rows, 'TRANSACTION_TYPE'), metodos: contar(rows, 'PAYMENT_METHOD_TYPE') });
+      diag.tramos.push({ since: t.since, until: t.until, file_name: g.file_name || '', bytes: (g.csv || '').length, filas: rows.length, headers: headers.slice(0, 40), tipos: contar(rows, 'TRANSACTION_TYPE'), metodos: contar(rows, 'PAYMENT_METHOD_TYPE'), detalle: g.diag || null });
       csvs.push(g.csv || '');
       if (!headers.length) continue;
       const faltan = ['TRANSACTION_TYPE', 'TRANSACTION_DATE'].filter(k => !headers.includes(k));
@@ -452,4 +506,4 @@ async function sync(args) {
   }
 }
 
-module.exports = { test, sync, parseCSV, normalizar, clasificar, num, limpiarToken, ventanas, MAX_DIAS_INFORME };
+module.exports = { test, sync, parseCSV, normalizar, clasificar, num, limpiarToken, ventanas, MAX_DIAS_INFORME, cercaDia, elegirListo, elegirPendiente };
