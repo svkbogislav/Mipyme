@@ -119,6 +119,11 @@
         return { categoria: r.cat, fuente: 'regla' };
       }
     }
+    // 3) Cargo que se repite cada mes (mismo comercio, monto y fecha parecidos)
+    if (!esIngreso && window.CargosRegulares) {
+      const r = window.CargosRegulares.sugerirCategoria(glosa, monto, state);
+      if (r) return r;
+    }
     return null;
   }
 

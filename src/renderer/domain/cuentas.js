@@ -74,6 +74,11 @@
   function calcularSaldoCuenta(state, cuentaId, ventasPorMes) {
     const cuenta = getCuenta(state, cuentaId);
     if (!cuenta) return 0;
+    // Cuenta conectada al banco (Fintoc): manda el saldo que informa el
+    // banco, actualizado en cada sincronización. Es la verdad, no un cálculo.
+    if (cuenta.saldo_banco !== undefined && cuenta.saldo_banco !== null && cuenta.saldo_banco !== '') {
+      return Number(cuenta.saldo_banco) || 0;
+    }
     let saldo = Number(cuenta.saldo_inicial || 0);
 
     const desdeYM = cuenta.saldo_inicial_mes || state.config.mesInicial || '0000-00';
