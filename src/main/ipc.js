@@ -66,6 +66,12 @@ function register({ getMainWindow }) {
     try { diagDir = require('electron').app.getPath('userData'); } catch (e) { diagDir = null; }
     return mercadopagoApi.sync(Object.assign({}, args || {}, { diagDir }));
   });
+  // Informe de retiros (activities_withdraw): a qué cuenta bancaria fue cada retiro.
+  ipcMain.handle('mp:retiros', async (_e, args) => {
+    let diagDir = null;
+    try { diagDir = require('electron').app.getPath('userData'); } catch (e) { diagDir = null; }
+    return mercadopagoApi.retiros(Object.assign({}, args || {}, { diagDir }));
+  });
 
   // === Attachments ===
   ipcMain.handle('app:attachFile',     async ()            => attachments.attachFile(win()));

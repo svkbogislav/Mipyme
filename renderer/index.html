@@ -3072,7 +3072,7 @@
               <input type="checkbox" id="mpRetiros" style="width:auto; margin:0" onchange="_mpSetRetiros(this.checked)" />
               Incluir también los retiros a mi banco
             </label>
-            <div style="font-size:11px; color:var(--text-muted); padding-left:26px">Recomendado si tus bancos también están en la app: cada retiro se registra como traspaso hacia el banco donde cayó (y reemplaza el abono si ya entró como ingreso). Si el abono aún no llega, queda en espera y se reconoce solo. Nunca se cuenta doble.</div>
+            <div style="font-size:11px; color:var(--text-muted); padding-left:26px">Recomendado si tus bancos también están en la app: Mercado Pago informa a qué cuenta fue cada retiro y se registra como traspaso hacia ese banco (si el abono ya entró como ingreso, lo reemplaza). Si no se puede saber el banco, queda en espera y se reconoce cuando llegue el abono. Nunca se cuenta doble.</div>
           </div>
           <button class="btn primary sm" onclick="sincronizarMercadoPago(false)">Sincronizar ahora</button>
         </div>
@@ -4581,6 +4581,7 @@
 <!-- SheetJS (xlsx): parser de cartolas bancarias en Excel. Expone window.XLSX. -->
 <script src="../node_modules/xlsx/dist/xlsx.full.min.js"></script>
 <script src="../src/renderer/domain/categorizador.js"></script>
+<script src="../src/renderer/domain/mp-retiros.js"></script>
 <script src="../src/renderer/domain/cargos-regulares.js"></script>
 <script src="../src/renderer/domain/dte-xml.js"></script>
 <!-- pdf.js (legacy UMD) para leer facturas en PDF. Expone window.pdfjsLib. -->
@@ -10687,7 +10688,8 @@ function _decisionInicialConc(m, account_id) {
   // Retiro de Mercado Pago a tu banco: no es gasto, es traspaso entre tus cuentas.
   if (m.mov._raw && m.mov._raw.retiro) return _mpRetiroDecision(m.mov, account_id);
   const otra = _detectarTraspasoConc(m.mov, account_id);
-  if (otra) return { tipo: 'traspaso', otra };
+  // Si el retiro de MP ya quedó como traspaso a este banco, el abono no se cuenta de nuevo.
+  if (otra) return _traspasoYaRegistrado(m.mov, otra, account_id) ? { tipo: 'ignorar', motivo: 'traspaso' } : { tipo: 'traspaso', otra };
   const cuota = Conciliacion.detectarCuotaDeuda(m.mov, state);
   if (cuota && cuota.claro) return { tipo: 'cuota', deudaId: cuota.deuda.id, auto: true };
   return { tipo: 'crear', categoria: _sugerirCatConc(m.mov) };
@@ -11022,7 +11024,7 @@ async function sincronizarFintocTodo(silencioso) {
             Conciliacion.aplicarMatch(state, m.mov, m.candidatos[0], appCuentaId, lote); ap++;
           } else {
             const otra = _detectarTraspasoConc(m.mov, appCuentaId);
-            if (otra) { if (_crearTraspasoDesdeMov(m.mov, appCuentaId, otra, lote)) cr++; return; }
+            if (otra) { if (!_traspasoYaRegistrado(m.mov, otra, appCuentaId) && _crearTraspasoDesdeMov(m.mov, appCuentaId, otra, lote)) cr++; return; }
             // Cuota de un crédito de "Mis deudas": solo si es clara (glosa +
             // monto). Si hay duda, queda como gasto normal (como siempre).
             const cuota = Conciliacion.detectarCuotaDeuda(m.mov, state);
@@ -11198,6 +11200,7 @@ function _mpUltimoHtml(cfg) {
   let t = `Último informe (${escapeHtml(cuando)})${escapeHtml(periodo)}: ${n('filas', 'fila', 'filas')}, ${n('movimientos', 'movimiento', 'movimientos')}, ${n('nuevos', 'nuevo', 'nuevos')}`;
   if (u.pendientes) t += ` · <strong>${u.pendientes} esperando que los confirmes</strong>: vuelve a "Sincronizar ahora" para abrir la revisión`;
   else if (u.confirmados !== undefined) t += ` · ${n('confirmados', 'registrado', 'registrados')}`;
+  if (u.retiros) t += u.retiros.ok ? ` · ${u.retiros.ligados} de ${u.retiros.total} retiro${u.retiros.total === 1 ? '' : 's'} con banco de destino` : ' · informe de retiros no disponible';
   return `<div style="margin-top:4px">${t}</div>`;
 }
 // Movimientos del informe → formato de cartola (positivo = entra plata).
@@ -11212,6 +11215,27 @@ function _mpMovsNuevos(r) {
     monto: Math.round(m.monto),
     _raw: { mp_id: m.id, tipo: m.tipo, clase: m.clase || null, retiro: !!m.retiro, source_id: m.source_id, metodo: m.metodoTipo, detalle: m.detalle || '', canal: m.canal || '' }
   })).sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+}
+// Retiros a tu banco: pide el informe de retiros (activities_withdraw) del
+// período y anota en cada movimiento de retiro la cuenta de la app a la que
+// fue la plata (_raw.destino), según el bank_account que informa MP. Si el
+// informe no está disponible, no pasa nada: el retiro sigue sin destino.
+async function _mpLigarDestinoRetiros(nuevos, cfg, mpCuentaId) {
+  const retirosMov = (nuevos || []).filter(m => m._raw && m._raw.retiro);
+  if (!retirosMov.length || !window.MpRetiros || !(window.electronAPI && window.electronAPI.mpRetiros)) return;
+  const fechas = retirosMov.map(m => m.fecha).sort();
+  const dia = (ymd, delta) => { const d = new Date(ymd + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + delta); return d.toISOString().slice(0, 10); };
+  let res;
+  try { res = await window.electronAPI.mpRetiros({ token: cfg.token, since: dia(fechas[0], -1), until: dia(fechas[fechas.length - 1], 1) }); }
+  catch (e) { res = { ok: false, error: e.message }; }
+  if (!res || !res.ok) {
+    console.error('Mercado Pago retiros:', res);
+    if (cfg.ultimo) cfg.ultimo.retiros = { ok: false, error: (res && res.error) || 'No pude leer el informe de retiros' };
+    return;
+  }
+  const links = (state.config.fintoc && Array.isArray(state.config.fintoc.links)) ? state.config.fintoc.links : [];
+  const ligados = window.MpRetiros.ligarRetiros(retirosMov, res.retiros || [], state.config.cuentas || [], links, mpCuentaId);
+  if (cfg.ultimo) cfg.ultimo.retiros = { ok: true, informe: (res.retiros || []).length, ligados, total: retirosMov.length };
 }
 // Rendimientos del saldo de Mercado Pago (intereses diarios de pocos pesos):
 // UN ingreso por mes que crece con cada sincronización. mp_dias guarda los
@@ -11291,6 +11315,9 @@ async function sincronizarMercadoPago(silencioso) {
     const nuevos = _mpMovsNuevos(r);
     delete cfg.pendienteInforme;
     cfg.ultimo = _mpResumenSync(r, nuevos.length, ahoraISO);
+    // Retiros: el informe de actividades de MP dice a qué banco fue cada uno.
+    // Si no está disponible, siguen como hasta ahora (sin cuenta de destino).
+    await _mpLigarDestinoRetiros(nuevos, cfg, appCuentaId);
     const rend = _mpAplicarRendimientos(r, appCuentaId);
     cfg.ultimo.rendimientos = rend.monto;
     const txtRend = rend.monto ? ` · rendimientos del saldo +${clp(rend.monto)} (ya registrados)` : '';
@@ -11855,9 +11882,9 @@ function _renderConciliacionPaso2() {
     // Cuota de un crédito: una opción por deuda pendiente (solo en cargos).
     const cuotaOpts = m.monto < 0 ? _opcionesCuotaConc(d) : '';
     const esRetiroMP = !!(m._raw && m._raw.retiro);
-    const catCell = (d.tipo === 'traspaso' && d.ventaDup)
-      ? '<span style="font-size:11px">Reemplaza el ingreso duplicado del banco</span><span style="font-size:9px; color:var(--success); white-space:nowrap"> ● auto</span>'
-      : (d.tipo === 'ignorar' && esRetiroMP)
+    const catCell = (d.tipo === 'traspaso' && (esRetiroMP || d.ventaDup))
+      ? _celdaTraspasoRetiroMP(d)
+      : (d.tipo === 'ignorar' && (esRetiroMP || d.motivo === 'traspaso'))
       ? `<span style="font-size:11px; color:var(--text-muted)">${d.motivo === 'traspaso' ? 'Ya registrado como traspaso' : 'Retiro a tu banco: se reconoce cuando llegue el abono'}</span>`
       : d.tipo === 'cuota'
       ? _celdaCuotaConc(m, d)
@@ -11890,6 +11917,16 @@ function _renderConciliacionPaso2() {
     </tr></thead>
     <tbody>${filas}</tbody>
   </table>`;
+}
+
+// Celda "Categoría" de un retiro de Mercado Pago que va como traspaso:
+// "Traspaso a Banco Bice ···2713 · ● auto".
+function _celdaTraspasoRetiroMP(d) {
+  const cta = (state.config.cuentas || []).find(c => c.id === d.otra);
+  const partes = [`Traspaso a ${cta ? cta.nombre : 'otra cuenta'}`];
+  if (d.ventaDup) partes.push('reemplaza el ingreso duplicado del banco');
+  else if (d.destino) partes.push('según Mercado Pago');
+  return `<span style="font-size:11px">${escapeHtml(partes.join(' · '))}</span>${d.auto ? '<span style="font-size:9px; color:var(--success); white-space:nowrap"> ● auto</span>' : ''}`;
 }
 
 // Sugerencia de categoría para un cargo (monto<0) usando el categorizador
@@ -11938,7 +11975,18 @@ function _detectarTraspasoConc(mov, account_id) {
   if (!(state.config.cuentas || []).some(c => c.id === mp.appCuentaId)) return null;
   if (/MERCADO ?PAGO|MERCADOPAGO|MERPAGO|MPAGO/i.test(String(mov.descripcion || '') + ' ' + String(raw.contraparte || ''))) return mp.appCuentaId;
   // Sin glosa: ¿calza con un retiro de Mercado Pago ya visto (mismo monto, 0 a 4 días antes)?
-  return _mpRetiroQueCalza(mov) ? mp.appCuentaId : null;
+  return _mpRetiroQueCalza(mov, account_id) ? mp.appCuentaId : null;
+}
+// ¿Ya existe el traspaso entre esas dos cuentas por ese monto (±1%) cerca de
+// la fecha? Pasa cuando el retiro de MP se registró con su banco de destino
+// (informe de retiros) y después llega el abono por Fintoc o cartola.
+function _traspasoYaRegistrado(mov, otra, account_id) {
+  const monto = Math.abs(Math.round(mov.monto));
+  const tol = Math.max(1, Math.round(monto * 0.01));
+  const origen = mov.monto > 0 ? otra : account_id;
+  const destino = mov.monto > 0 ? account_id : otra;
+  return _transferencias().some(t => t.cuenta_origen === origen && t.cuenta_destino === destino
+    && Math.abs(Number(t.monto) - monto) <= tol && Math.abs(_diasEntre(t.fecha, mov.fecha)) <= 5);
 }
 // Retiros de Mercado Pago ya leídos que todavía no tienen su abono en el
 // banco. Cuando el abono llega (por Fintoc o cartola) se reconoce como
@@ -11951,21 +11999,26 @@ function _registrarRetiroMP(mov) {
   const lista = _mpRetiros();
   const id = mov._raw && mov._raw.mp_id;
   if (id && lista.some(r => r.mp_id === id)) return;
-  lista.push({ mp_id: id || null, fecha: String(mov.fecha || '').slice(0, 10), monto: Math.abs(Math.round(mov.monto)), usado: false });
+  lista.push({ mp_id: id || null, fecha: String(mov.fecha || '').slice(0, 10), monto: Math.abs(Math.round(mov.monto)), usado: false, destino: (mov._raw && mov._raw.destino) || null });
   const limite = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10);
   state.mpRetiros = lista.filter(r => r.fecha >= limite).slice(-500);
 }
 function _diasEntre(a, b) {
   return Math.round((new Date(String(b).slice(0, 10) + 'T12:00:00') - new Date(String(a).slice(0, 10) + 'T12:00:00')) / 86400000);
 }
-function _mpRetiroQueCalza(mov) {
+// accountId: banco donde cayó el abono; si el retiro recordado ya sabía su
+// destino y es otro banco, no calza.
+function _mpRetiroQueCalza(mov, accountId) {
   const monto = Math.abs(Math.round(mov.monto));
-  return _mpRetiros().find(r => !r.usado && r.monto === monto && _diasEntre(r.fecha, mov.fecha) >= 0 && _diasEntre(r.fecha, mov.fecha) <= 4) || null;
+  return _mpRetiros().find(r => !r.usado && r.monto === monto && !(r.destino && accountId && r.destino !== accountId)
+    && _diasEntre(r.fecha, mov.fecha) >= 0 && _diasEntre(r.fecha, mov.fecha) <= 4) || null;
 }
 // Qué hacer con un retiro de Mercado Pago en la revisión:
 //   a) ya existe el traspaso MP → banco por ese monto y fecha → nada (ignorar);
 //   b) el abono ya está en un banco como ingreso → traspaso que lo reemplaza;
-//   c) el abono todavía no llega → ignorar y recordarlo para cuando llegue.
+//   c) el informe de retiros de MP dijo a qué banco fue (_raw.destino) →
+//      traspaso a esa cuenta, aunque el abono todavía no aparezca;
+//   d) si no, ignorar y recordarlo para reconocer el abono cuando llegue.
 function _mpRetiroDecision(mov, mpCuentaId) {
   const monto = Math.abs(Math.round(mov.monto));
   const tol = Math.max(1, Math.round(monto * 0.01));
@@ -11973,19 +12026,31 @@ function _mpRetiroDecision(mov, mpCuentaId) {
   if (_transferencias().some(t => t.cuenta_origen === mpCuentaId && Math.abs(Number(t.monto) - monto) <= tol && dentro(t.fecha, -1, 4))) {
     return { tipo: 'ignorar', motivo: 'traspaso' };
   }
+  const destino = _mpDestinoValido(mov, mpCuentaId);
   const rx = /MERCADO ?PAGO|MERCADOPAGO|MERPAGO|MPAGO/i;
   const dup = (state.ventasManuales || []).find(v => {
     if (!v.account_id || v.account_id === mpCuentaId || v.origen === 'mercadopago' || !dentro(v.fecha, 0, 4)) return false;
+    if (destino && v.account_id !== destino) return false; // MP ya dijo a qué banco fue
     const glosa = String(v.descripcion || v.concepto || '');
     const diff = Math.abs(Number(v.monto) - monto);
     return rx.test(glosa) ? diff <= tol : (!/[A-Za-z]{3}/.test(glosa) && diff === 0);
   });
   if (dup) return { tipo: 'traspaso', otra: dup.account_id, ventaDup: dup.id, auto: true };
+  if (destino) return { tipo: 'traspaso', otra: destino, auto: true, destino: true };
   return { tipo: 'ignorar', motivo: 'retiro' };
+}
+// Cuenta de destino anotada por el informe de retiros, si existe en la app y
+// no es la misma cuenta de Mercado Pago.
+function _mpDestinoValido(mov, mpCuentaId) {
+  const d = mov && mov._raw && mov._raw.destino;
+  if (!d || d === mpCuentaId) return null;
+  return (state.config.cuentas || []).some(c => c.id === d) ? d : null;
 }
 // Crea el traspaso y, si el abono ya estaba como ingreso en el banco, lo reemplaza.
 function _aplicarTraspasoConc(mov, account_id, decision, lote) {
   const t = _crearTraspasoDesdeMov(mov, account_id, decision.otra, lote);
+  // Retiro de MP que quedó como traspaso: si estaba recordado "en espera", se cierra.
+  if (t && mov._raw && mov._raw.retiro && mov._raw.mp_id) { const r = _mpRetiros().find(x => x.mp_id === mov._raw.mp_id); if (r) r.usado = true; }
   if (t && decision.ventaDup) {
     state.ventasManuales = (state.ventasManuales || []).filter(v => v.id !== decision.ventaDup);
     state.conciliaciones = (state.conciliaciones || []).filter(c => !(c.ref_type === 'venta' && c.ref_id === decision.ventaDup));
@@ -12008,7 +12073,7 @@ function _crearTraspasoDesdeMov(mov, account_id, otraId, lote) {
   };
   _transferencias().push(t);
   // Abono en el banco que viene de un retiro de MP ya visto: queda cerrado.
-  if (mov.monto > 0 && otraId === _mpCfg().appCuentaId) { const r = _mpRetiroQueCalza(mov); if (r) r.usado = true; }
+  if (mov.monto > 0 && otraId === _mpCfg().appCuentaId) { const r = _mpRetiroQueCalza(mov, account_id); if (r) r.usado = true; }
   if (!Array.isArray(state.conciliaciones)) state.conciliaciones = [];
   state.conciliaciones.push({
     id: uid(), ref_type: 'transferencia', ref_id: t.id, account_id,

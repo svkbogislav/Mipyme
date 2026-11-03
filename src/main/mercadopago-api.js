@@ -24,6 +24,8 @@
 const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
+const zlib = require('node:zlib');
+const MpRetiros = require('../renderer/domain/mp-retiros');
 
 const HOST = 'api.mercadopago.com';
 
@@ -43,7 +45,7 @@ const COLUMNAS_MINIMAS = COLUMNAS_REQUERIDAS.slice(0, 12);
 const COLUMNAS_OPCIONALES = ['BUSINESS_UNIT', 'SUB_UNIT', 'SEGMENT_DETAIL', 'OPERATION_TAGS', 'ORDER_ID', 'ISSUER_NAME'];
 let _opcionalesRechazadas = false;
 
-function request(method, path, token, body, { timeout = 30000 } = {}) {
+function request(method, path, token, body, { timeout = 30000, accept } = {}) {
   return new Promise((resolve, reject) => {
     const data = body != null ? JSON.stringify(body) : null;
     const req = https.request({
@@ -53,7 +55,7 @@ function request(method, path, token, body, { timeout = 30000 } = {}) {
       timeout,
       headers: {
         'Authorization': 'Bearer ' + String(token || '').trim(),
-        'Accept': 'application/json, text/csv;q=0.9, */*;q=0.5',
+        'Accept': accept || 'application/json, text/csv;q=0.9, */*;q=0.5',
         'User-Agent': 'Mipyme/1.0 (+electron)',
         ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}),
       },
@@ -61,10 +63,11 @@ function request(method, path, token, body, { timeout = 30000 } = {}) {
       const chunks = [];
       res.on('data', c => chunks.push(c));
       res.on('end', () => {
-        const raw = Buffer.concat(chunks).toString('utf8');
+        const buffer = Buffer.concat(chunks);
+        const raw = buffer.toString('utf8');
         let json = null;
         try { json = raw ? JSON.parse(raw) : null; } catch (e) { json = null; }
-        resolve({ status: res.statusCode || 0, headers: res.headers || {}, json, raw });
+        resolve({ status: res.statusCode || 0, headers: res.headers || {}, json, raw, buffer });
       });
     });
     req.on('error', reject);
@@ -531,4 +534,339 @@ async function sync(args) {
   }
 }
 
-module.exports = { test, sync, parseCSV, normalizar, clasificar, num, limpiarToken, ventanas, MAX_DIAS_INFORME, cercaDia, elegirListo, elegirPendiente };
+// ---------- Informe de retiros (activities_withdraw) ----------
+// El informe "Todas las transacciones" dice que hubo un retiro (PAYOUTS) pero
+// no a qué banco fue. El informe de actividades "Retiros" sí trae la cuenta
+// de destino (bank_account). Flujo (docs: mercadopago.cl/developers →
+// Reportes → Otras operaciones → Crear reporte a través de la API):
+//   1. GET /v1/reporting/operations/activities_withdraw/config → columnas
+//      (structure.columns[].key). Si falta alguna, PUT …/config/{structure.id}.
+//      Si no hay configuración, POST con structure + un notificador (la doc
+//      pide al menos uno; internal_sftp es el único sin servidor propio).
+//   2. POST …/statements {filters:{creation_date:{range:{gte,lte}}}} → record_id
+//      (fechas ISO 8601 con desfase; máximo un año por informe).
+//   3. GET …/statements/{uid} → status pending | available | failed | empty.
+//   4. GET …/statements/{uid}/download → CSV (los grandes vienen en .zip).
+// La referencia detallada de estos endpoints no está publicada, así que la
+// lectura de respuestas es tolerante (objeto / lista / {results}) y cada
+// intento queda en el diagnóstico local. Si la cuenta no tiene este informe
+// (403/404) se devuelve { ok:false, error } y la app sigue con la lógica de
+// siempre (retiro sin cuenta de destino).
+const RETIROS_BASE = '/v1/reporting/operations/activities_withdraw';
+const RETIROS_COLUMNAS = ['date_created', 'operation_id', 'status', 'operation_type', 'transaction_amount', 'net_received_amount', 'counterpart_name', 'bank_account'];
+const RETIROS_ESPERA_MAX_MS = 4 * 60000;
+
+function errorRetiros(r, que) {
+  const s = r && r.status;
+  if (s === 401 || s === 403 || s === 404) return 'Mercado Pago no tiene disponible el informe de retiros para esta cuenta.';
+  return `No pude ${que || 'pedir el informe de retiros a Mercado Pago'}: ` + mensajeError(r);
+}
+// La configuración puede venir como objeto, lista o {results:[…]}.
+function _configRetirosDe(json) {
+  const lista = Array.isArray(json) ? json
+    : (json && Array.isArray(json.results)) ? json.results
+      : (json && Array.isArray(json.configs)) ? json.configs
+        : json ? [json] : [];
+  for (const it of lista) {
+    if (!it || typeof it !== 'object') continue;
+    const st = it.structure && typeof it.structure === 'object' ? it.structure : (Array.isArray(it.columns) ? it : null);
+    if (st && Array.isArray(st.columns)) return { structure: st, notifiers: Array.isArray(it.notifiers) ? it.notifiers : [] };
+  }
+  return null;
+}
+function _keysColumnas(st) {
+  return ((st && st.columns) || []).map(c => String((c && typeof c === 'object') ? (c.key || c.name || '') : (c || '')).toLowerCase()).filter(Boolean);
+}
+async function asegurarConfigRetiros(token) {
+  const g = await request('GET', `${RETIROS_BASE}/config`, token);
+  if (g.status === 401 || g.status === 403) return { ok: false, error: errorRetiros(g), status: g.status, detalle: detalleMP(g) };
+  const actual = ok2xx(g) ? _configRetirosDe(g.json) : null;
+  const keys = actual ? _keysColumnas(actual.structure) : [];
+  const faltan = RETIROS_COLUMNAS.filter(k => !keys.includes(k));
+  if (actual && !faltan.length) return { ok: true, creado: false };
+  const columns = Array.from(new Set([...keys, ...RETIROS_COLUMNAS])).map(key => ({ key }));
+  let r;
+  if (actual && actual.structure.id) {
+    const st = actual.structure;
+    const structure = { name: st.name || 'mipyme-retiros', columns };
+    if (st.file_format) structure.file_format = st.file_format;
+    if (st.display_timezone) structure.display_timezone = st.display_timezone;
+    const ruta = `${RETIROS_BASE}/config/${encodeURIComponent(st.id)}`;
+    r = await request('PUT', ruta, token, { structure, notifiers: actual.notifiers });
+    if (!ok2xx(r)) r = await request('PUT', ruta, token, { structure });
+  } else {
+    const structure = { name: 'mipyme-retiros', columns };
+    r = await request('POST', `${RETIROS_BASE}/config`, token, { structure, notifiers: [{ type: 'internal_sftp', data: {} }] });
+    if (!ok2xx(r)) r = await request('POST', `${RETIROS_BASE}/config`, token, { structure, notifiers: [] });
+    if (!ok2xx(r)) r = await request('POST', `${RETIROS_BASE}/config`, token, { structure });
+  }
+  if (!ok2xx(r)) return { ok: false, error: errorRetiros(r, 'preparar el informe de retiros en Mercado Pago'), status: r.status, detalle: detalleMP(r) };
+  return { ok: true, creado: !actual };
+}
+
+// Lista de informes: lista directa o {results|statements|data|items:[…]}.
+function _itemsLista(json) {
+  if (Array.isArray(json)) return json;
+  if (!json || typeof json !== 'object') return [];
+  for (const k of ['results', 'statements', 'data', 'items']) if (Array.isArray(json[k])) return json[k];
+  return [];
+}
+const _idInforme = (x) => (x && typeof x === 'object' && (x.record_id || x.statement_id || x.id || x.uid)) || null;
+const _creadoInforme = (x) => (x && (x.date_created || x.created_at || x.creation_date || x.date_requested)) || '';
+function _rangoInforme(x) {
+  const f = x && x.filters && x.filters.creation_date && x.filters.creation_date.range;
+  return { gte: String((f && f.gte) || x.begin_date || x.date_from || ''), lte: String((f && f.lte) || x.end_date || x.date_to || '') };
+}
+// Informe de retiros ya generado que cubra [since, until] y sea reciente
+// (20 min si llega a hoy, 6 h si es histórico). Pura, para poder probarla.
+function elegirInformeRetiros(lista, since, until, ahora = Date.now()) {
+  const hoy = new Date(ahora).toISOString().slice(0, 10);
+  const maxMin = until >= hoy ? 20 : 6 * 60;
+  return _itemsLista(lista)
+    .filter(x => x && _idInforme(x) && String(x.status || '').toLowerCase() === 'available')
+    .filter(x => { const r = _rangoInforme(x); return cercaDia(r.gte, since) && cercaDia(r.lte, until) && _edadMin({ date_created: _creadoInforme(x) }, ahora) <= maxMin; })
+    .sort((p, q) => String(_creadoInforme(q)).localeCompare(String(_creadoInforme(p))))[0] || null;
+}
+// Ahora, escrito con desfase -04:00 (hora de Chile continental).
+function _ahoraDesfase() {
+  return new Date(Date.now() - 4 * 3600000).toISOString().replace(/\.\d{3}Z$/, '-04:00');
+}
+
+// Lector mínimo de .zip (directorio central → entradas; sin cifrado).
+function leerZip(buf) {
+  const out = [];
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) return out;
+  const n = buf.readUInt16LE(eocd + 10);
+  let p = buf.readUInt32LE(eocd + 16);
+  for (let k = 0; k < n && p + 46 <= buf.length; k++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) break;
+    const metodo = buf.readUInt16LE(p + 10);
+    const tam = buf.readUInt32LE(p + 20);
+    const nLen = buf.readUInt16LE(p + 28), eLen = buf.readUInt16LE(p + 30), cLen = buf.readUInt16LE(p + 32);
+    const local = buf.readUInt32LE(p + 42);
+    const nombre = buf.toString('utf8', p + 46, p + 46 + nLen);
+    p += 46 + nLen + eLen + cLen;
+    if (local + 30 > buf.length || buf.readUInt32LE(local) !== 0x04034b50) continue;
+    const ini = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+    const datos = buf.subarray(ini, ini + tam);
+    try { out.push({ nombre, datos: metodo === 8 ? zlib.inflateRawSync(datos) : Buffer.from(datos) }); }
+    catch (e) { /* entrada ilegible: se omite */ }
+  }
+  return out;
+}
+// Lee el cuerpo de la descarga: CSV directo, .zip con el CSV adentro, o un
+// JSON que apunta al archivo. Devuelve { csv, formato, url?, archivo? }.
+function extraerCSVDescarga(buffer, headers) {
+  if (!buffer || !buffer.length) return { csv: '', formato: 'vacio' };
+  if (buffer[0] === 0x50 && buffer[1] === 0x4b) {
+    const entradas = leerZip(buffer);
+    const csv = entradas.find(e => /\.csv$/i.test(e.nombre)) || entradas.find(e => /\.(txt|tsv)$/i.test(e.nombre));
+    if (csv) return { csv: csv.datos.toString('utf8'), formato: 'zip' };
+    if (entradas.some(e => /content_types|^xl\//i.test(e.nombre))) return { csv: '', formato: 'xlsx' };
+    return { csv: '', formato: entradas.length ? 'zip-sin-csv' : 'zip-ilegible' };
+  }
+  const texto = buffer.toString('utf8');
+  const tipo = String((headers && headers['content-type']) || '');
+  if (/json/i.test(tipo) || /^\s*[\[{]/.test(texto)) {
+    let j = null; try { j = JSON.parse(texto); } catch (e) { j = null; }
+    if (j && typeof j === 'object') {
+      const f0 = Array.isArray(j.files) && j.files[0] && typeof j.files[0] === 'object' ? j.files[0] : null;
+      const url = j.url || j.download_url || j.file_url || (j.file && j.file.url) || (f0 && (f0.url || f0.download_url)) || '';
+      const archivo = (f0 && f0.name) || j.file_name || j.name || '';
+      return { csv: '', formato: 'json', url: String(url || ''), archivo: String(archivo || '') };
+    }
+  }
+  return { csv: texto, formato: 'csv' };
+}
+// GET a una URL absoluta (archivo que MP deja en otro host). El token va
+// solo si el host es el de la API.
+function descargarUrl(url, token) {
+  return new Promise((resolve, reject) => {
+    let u; try { u = new URL(url); } catch (e) { return reject(new Error('URL inválida')); }
+    const req = https.request({
+      hostname: u.hostname, path: u.pathname + u.search, method: 'GET', timeout: 60000,
+      headers: {
+        'Accept': 'text/csv, application/zip, */*;q=0.5', 'User-Agent': 'Mipyme/1.0 (+electron)',
+        ...(u.hostname === HOST ? { 'Authorization': 'Bearer ' + token } : {}),
+      },
+    }, (res) => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => { const buffer = Buffer.concat(chunks); resolve({ status: res.statusCode || 0, headers: res.headers || {}, buffer, raw: buffer.toString('utf8'), json: null }); });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('Timeout')));
+    req.end();
+  });
+}
+async function _esperarInformeRetiros(token, uid, diag) {
+  const t0 = Date.now();
+  let ultimo = null;
+  diag.estados = [];
+  while (Date.now() - t0 < RETIROS_ESPERA_MAX_MS) {
+    const s = await request('GET', `${RETIROS_BASE}/statements/${encodeURIComponent(uid)}`, token);
+    ultimo = s;
+    const j = (s.json && typeof s.json === 'object') ? ((s.json.data && typeof s.json.data === 'object') ? s.json.data : s.json) : {};
+    const estado = String(j.status || '').toLowerCase();
+    if (diag.estados.length < 40) diag.estados.push(estado || String(s.status));
+    if (ok2xx(s) && (estado === 'available' || estado === 'empty')) return { ok: true, estado };
+    if (ok2xx(s) && (estado === 'failed' || estado === 'error')) return { ok: false, error: 'Mercado Pago no pudo generar el informe de retiros. Intenta de nuevo más tarde.', detalle: detalleMP(s) };
+    if (!ok2xx(s) && s.status !== 404 && s.status !== 429 && s.status < 500) return { ok: false, error: errorRetiros(s, 'consultar el informe de retiros'), status: s.status, detalle: detalleMP(s) };
+    await dormir(4000);
+  }
+  return { ok: false, error: 'Mercado Pago sigue generando el informe de retiros. La próxima sincronización lo retoma.', detalle: detalleMP(ultimo) };
+}
+async function _descargarInformeRetiros(token, uid, diag) {
+  const base = `${RETIROS_BASE}/statements/${encodeURIComponent(uid)}/download`;
+  const accept = 'text/csv, application/zip, application/octet-stream, application/json;q=0.8, */*;q=0.5';
+  const intentos = [base, `${base}?format=csv`, `${base}?file_type=csv`];
+  diag.descargas = [];
+  for (let i = 0; i < intentos.length; i++) {
+    let d = await request('GET', intentos[i], token, null, { timeout: 60000, accept });
+    if ([301, 302, 303, 307, 308].includes(d.status) && d.headers.location) {
+      try { d = await descargarUrl(String(d.headers.location), token); }
+      catch (e) { d = { status: 0, headers: {}, buffer: Buffer.alloc(0), raw: '', json: null }; }
+    }
+    const reg = { ruta: intentos[i].slice(RETIROS_BASE.length), status: d.status, tipo: String(d.headers['content-type'] || ''), bytes: d.buffer ? d.buffer.length : 0 };
+    diag.descargas.push(reg);
+    if (!ok2xx(d)) { reg.detalle = detalleMP(d); continue; }
+    const ex = extraerCSVDescarga(d.buffer, d.headers);
+    reg.formato = ex.formato;
+    if (ex.csv) return { ok: true, csv: ex.csv };
+    if (ex.formato === 'vacio') return { ok: true, csv: '' };
+    if (ex.formato === 'json' && ex.url) {
+      let f = null; try { f = await descargarUrl(ex.url, token); } catch (e) { f = null; }
+      if (f && ok2xx(f)) { const ex2 = extraerCSVDescarga(f.buffer, f.headers); reg.url = ex2.formato; if (ex2.csv) return { ok: true, csv: ex2.csv }; }
+    }
+    if (ex.formato === 'json' && ex.archivo) {
+      const conNombre = `${base}?file_name=${encodeURIComponent(ex.archivo)}`;
+      if (!intentos.includes(conNombre)) intentos.push(conNombre);
+    }
+  }
+  const primero = diag.descargas[0] || {};
+  return { ok: false, error: 'No pude leer el archivo del informe de retiros de Mercado Pago.', status: primero.status || null, detalle: [primero.status, primero.tipo, primero.formato, primero.detalle].filter(Boolean).join(' · ') };
+}
+
+// ---------- CSV del informe de retiros ----------
+function _colRetiro(headers, candidatos) {
+  for (const c of candidatos) { const h = headers.find(x => x === c); if (h) return h; }
+  for (const c of candidatos) { const h = headers.find(x => x.includes(c)); if (h) return h; }
+  return null;
+}
+function _fechaRetiro(v) {
+  const s = String(v || '').trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = s.match(/^(\d{2})[\/-](\d{2})[\/-](\d{4})/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  return '';
+}
+// Filas del CSV → [{ fecha, monto, neto, bank_account, ultimos4, banco,
+// counterpart_name, operation_id, estado, tipo }]. Las cabeceras pueden venir
+// como las claves (date_created…) o traducidas; se buscan por nombre parecido.
+function normalizarRetiros(rows, headers) {
+  headers = headers && headers.length ? headers : Object.keys(rows[0] || {});
+  const cFecha = _colRetiro(headers, ['DATE_CREATED', 'FECHA_DE_CREACI_N', 'FECHA', 'DATE']);
+  const cMonto = _colRetiro(headers, ['TRANSACTION_AMOUNT', 'MONTO_BRUTO', 'MONTO', 'AMOUNT']);
+  const cNeto = _colRetiro(headers, ['NET_RECEIVED_AMOUNT', 'MONTO_NETO', 'NETO']);
+  const cBanco = _colRetiro(headers, ['BANK_ACCOUNT', 'CUENTA_BANCARIA', 'CUENTA', 'BANK']);
+  const cNombre = _colRetiro(headers, ['COUNTERPART_NAME', 'CONTRAPARTE', 'NOMBRE']);
+  const cId = _colRetiro(headers, ['OPERATION_ID', 'ID_DE_OPERACI_N', 'ID_OPERACI_N', 'OPERATION', 'ID']);
+  const cEstado = _colRetiro(headers, ['STATUS', 'ESTADO']);
+  const cTipo = _colRetiro(headers, ['OPERATION_TYPE', 'TIPO']);
+  const texto = (col, r) => (col && !vacio(r[col])) ? String(r[col]).trim() : '';
+  const out = [];
+  for (const r of rows) {
+    const fecha = _fechaRetiro(cFecha ? r[cFecha] : '');
+    if (!fecha) continue;
+    const estado = texto(cEstado, r).toLowerCase();
+    if (/reject|cancel|rechaz|anul/.test(estado)) continue;
+    const monto = Math.abs(Math.round(num(cMonto ? r[cMonto] : 0)));
+    const neto = Math.abs(Math.round(num(cNeto ? r[cNeto] : 0)));
+    if (!monto && !neto) continue;
+    const bank_account = texto(cBanco, r);
+    out.push({
+      fecha, monto: monto || neto, neto: neto || monto, bank_account,
+      ultimos4: MpRetiros.ultimos4Cuenta(bank_account), banco: MpRetiros.bancoClave(bank_account),
+      counterpart_name: texto(cNombre, r).slice(0, 120),
+      operation_id: texto(cId, r),
+      estado, tipo: texto(cTipo, r),
+    });
+  }
+  return out;
+}
+
+// args = { token, since (YYYY-MM-DD), until?, diagDir? }
+// → { ok:true, retiros:[…], filas, since, until } | { ok:false, error, detalle? }
+async function retiros(args) {
+  const token = limpiarToken(args && args.token);
+  const v = validarToken(token); if (v) return { ok: false, error: v };
+  const hoy = new Date().toISOString().slice(0, 10);
+  let since = String((args && args.since) || '').slice(0, 10) || new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+  let until = String((args && args.until) || '').slice(0, 10) || hoy;
+  if (until > hoy) until = hoy;
+  // MP acepta hasta un año por informe.
+  const minSince = new Date(new Date(`${until}T00:00:00Z`).getTime() - 360 * 86400000).toISOString().slice(0, 10);
+  if (since < minSince) since = minSince;
+  if (since > until) since = until;
+  const diagDir = args && args.diagDir;
+  const diag = { at: new Date().toISOString(), since, until };
+  const fin = (res, csv) => {
+    if (diagDir) {
+      try {
+        fs.writeFileSync(path.join(diagDir, 'mercadopago-retiros-ultimo.json'), JSON.stringify(Object.assign(diag, {
+          ok: !!res.ok, error: res.error || null, detalle: res.detalle || null, status: res.status || null,
+          filas: res.filas || 0, retiros: res.retiros ? res.retiros.length : 0, conBanco: res.retiros ? res.retiros.filter(r => r.ultimos4).length : 0,
+        }), null, 2));
+        if (csv !== undefined) fs.writeFileSync(path.join(diagDir, 'mercadopago-retiros-ultimo.csv'), csv);
+      } catch (e) { /* diagnóstico opcional */ }
+    }
+    return res;
+  };
+  try {
+    const cfg = await asegurarConfigRetiros(token);
+    diag.config = { ok: cfg.ok, creado: !!cfg.creado, status: cfg.status || null };
+    if (!cfg.ok) return fin(cfg);
+    const gte = `${since}T00:00:00-04:00`;
+    let lte = `${until}T23:59:59-04:00`;
+    const ahora = _ahoraDesfase();
+    if (lte > ahora) lte = ahora;
+
+    // 1) ¿Ya hay uno listo con estas fechas? Se reutiliza sin pedir otro.
+    let d = null;
+    const l = await request('GET', `${RETIROS_BASE}/statements`, token);
+    const listo = ok2xx(l) ? elegirInformeRetiros(l.json, since, until) : null;
+    if (listo) {
+      diag.reutilizado = _idInforme(listo);
+      d = await _descargarInformeRetiros(token, _idInforme(listo), diag);
+      if (!d.ok) diag.reutilizadoFallo = d.error;
+    }
+    // 2) Si no, se pide, se espera y se descarga.
+    if (!d || !d.ok) {
+      const c = await request('POST', `${RETIROS_BASE}/statements`, token, { filters: { creation_date: { range: { gte, lte } } } });
+      const cj = (c.json && typeof c.json === 'object') ? c.json : {};
+      diag.creacion = { status: c.status, estado: cj.status || null };
+      if (!ok2xx(c)) return fin({ ok: false, error: errorRetiros(c), status: c.status, detalle: detalleMP(c) });
+      const uid = _idInforme(cj) || _idInforme(cj.data);
+      if (!uid) return fin({ ok: false, error: 'Mercado Pago no devolvió el identificador del informe de retiros.', detalle: detalleMP(c) });
+      diag.uid = uid;
+      const e = await _esperarInformeRetiros(token, uid, diag);
+      if (!e.ok) return fin(e);
+      if (e.estado === 'empty') return fin({ ok: true, retiros: [], filas: 0, vacio: true, since, until }, '');
+      d = await _descargarInformeRetiros(token, uid, diag);
+      if (!d.ok) return fin(d);
+    }
+    const { headers, rows } = parseCSV(d.csv);
+    diag.headers = headers.slice(0, 30);
+    const lista = normalizarRetiros(rows, headers);
+    return fin({ ok: true, retiros: lista, filas: rows.length, since, until, vacio: !rows.length }, d.csv);
+  } catch (e) {
+    return fin({ ok: false, error: 'No pude conectar con Mercado Pago: ' + (e.message || 'error de red') });
+  }
+}
+
+module.exports = { test, sync, retiros, parseCSV, normalizar, normalizarRetiros, clasificar, num, limpiarToken, ventanas, MAX_DIAS_INFORME, cercaDia, elegirListo, elegirPendiente, elegirInformeRetiros, leerZip, extraerCSVDescarga, RETIROS_COLUMNAS };

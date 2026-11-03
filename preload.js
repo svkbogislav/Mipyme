@@ -95,6 +95,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // El access token lo ingresa el usuario y se guarda por perfil en el renderer.
   mpTest: (creds) => ipcRenderer.invoke('mp:test', creds),
   mpSync: (args)  => ipcRenderer.invoke('mp:sync', args),
+  // Informe de retiros (activities_withdraw): { token, since, until } →
+  // { ok, retiros:[{ fecha, monto, bank_account, ultimos4, … }] }.
+  mpRetiros: (args) => ipcRenderer.invoke('mp:retiros', args),
 
   // Marca de que estamos corriendo en Electron (para el HTML lo detecte)
   isElectron: true,
