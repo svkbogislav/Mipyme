@@ -22,6 +22,8 @@
 // Fintoc, Meta, Google y LibreDTE). Nada se loguea.
 
 const https = require('node:https');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const HOST = 'api.mercadopago.com';
 
@@ -386,38 +388,67 @@ function normalizar(rows, { incluirRetiros = false } = {}) {
   return out;
 }
 
+// ---------- Diagnóstico local ----------
+// Deja en userData (args.diagDir) un resumen de la última sincronización y
+// el último informe crudo, para poder revisar qué devolvió MP cuando algo no
+// cuadra. Nunca incluye el token.
+function escribirDiag(dir, resumen, csv) {
+  if (!dir) return;
+  try {
+    fs.writeFileSync(path.join(dir, 'mercadopago-ultimo-sync.json'), JSON.stringify(resumen, null, 2));
+    if (csv !== undefined) fs.writeFileSync(path.join(dir, 'mercadopago-ultimo-informe.csv'), csv);
+  } catch (e) { /* diagnóstico opcional */ }
+}
+function contar(rows, campo) {
+  const c = {};
+  rows.forEach(r => { const k = String(r[campo] || '(vacío)'); c[k] = (c[k] || 0) + 1; });
+  return c;
+}
+
 // ---------- Sync completo ----------
-// args = { token, since (YYYY-MM-DD), until?, incluirRetiros? }
+// args = { token, since (YYYY-MM-DD), until?, incluirRetiros?, diagDir? }
 async function sync(args) {
   const token = limpiarToken(args && args.token);
   const v = validarToken(token); if (v) return { ok: false, error: v };
   const hoy = new Date().toISOString().slice(0, 10);
   const since = String((args && args.since) || '').slice(0, 10) || new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
   const until = String((args && args.until) || '').slice(0, 10) || hoy;
+  const diagDir = args && args.diagDir;
+  const diag = { at: new Date().toISOString(), since, until, incluirRetiros: !!(args && args.incluirRetiros), tramos: [] };
+  const fin = (res) => {
+    escribirDiag(diagDir, Object.assign(diag, { ok: !!res.ok, error: res.error || null, detalle: res.detalle || null, status: res.status || null,
+      filas: res.filas || 0, movimientos: res.movements ? res.movements.length : 0, vacio: !!res.vacio,
+      clases: res.movements ? contar(res.movements, 'clase') : null, tiposMov: res.movements ? contar(res.movements, 'tipo') : null }), res._csv);
+    delete res._csv;
+    return res;
+  };
   try {
     const cfg = await asegurarConfig(token);
-    if (!cfg.ok) return cfg;
+    if (!cfg.ok) return fin(cfg);
     // Un informe por tramo de hasta MAX_DIAS_INFORME días, del más viejo al
     // más nuevo. Si uno falla, se avisa y no se marca nada como sincronizado.
     const tramos = ventanas(since, until, MAX_DIAS_INFORME);
     const rowsTodas = [];
+    const csvs = [];
     let file_name = '';
     for (const t of tramos) {
       const g = await generarYDescargar(token, t.since, t.until);
-      if (!g.ok) return g;
+      if (!g.ok) { diag.tramos.push({ since: t.since, until: t.until, error: g.error || 'falló' }); return fin(g); }
       if (g.file_name) file_name = g.file_name;
       const { headers, rows } = parseCSV(g.csv);
+      diag.tramos.push({ since: t.since, until: t.until, file_name: g.file_name || '', bytes: (g.csv || '').length, filas: rows.length, headers: headers.slice(0, 40), tipos: contar(rows, 'TRANSACTION_TYPE'), metodos: contar(rows, 'PAYMENT_METHOD_TYPE') });
+      csvs.push(g.csv || '');
       if (!headers.length) continue;
       const faltan = ['TRANSACTION_TYPE', 'TRANSACTION_DATE'].filter(k => !headers.includes(k));
-      if (faltan.length) return { ok: false, error: 'El informe no trae las columnas esperadas.', detalle: 'Encabezados: ' + headers.slice(0, 12).join(', ') };
+      if (faltan.length) return fin({ ok: false, error: 'El informe no trae las columnas esperadas.', detalle: 'Encabezados: ' + headers.slice(0, 12).join(', '), _csv: csvs.join('\n') });
       rowsTodas.push(...rows);
     }
-    if (!rowsTodas.length) return { ok: true, movements: [], file_name, vacio: true, since, until };
+    if (!rowsTodas.length) return fin({ ok: true, movements: [], file_name, vacio: true, since, until, informes: tramos.length, _csv: csvs.join('\n') });
     const movements = normalizar(rowsTodas, { incluirRetiros: !!(args && args.incluirRetiros) })
       .filter(m => m.fecha >= since && m.fecha <= until);
-    return { ok: true, movements, file_name, filas: rowsTodas.length, since, until, informes: tramos.length };
+    return fin({ ok: true, movements, file_name, filas: rowsTodas.length, since, until, informes: tramos.length, _csv: csvs.join('\n') });
   } catch (e) {
-    return { ok: false, error: 'No pude conectar con Mercado Pago: ' + (e.message || 'error de red') };
+    return fin({ ok: false, error: 'No pude conectar con Mercado Pago: ' + (e.message || 'error de red') });
   }
 }
 

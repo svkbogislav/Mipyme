@@ -61,7 +61,11 @@ function register({ getMainWindow }) {
 
   // === Mercado Pago: plata que entra a la cuenta MP (access token del usuario) ===
   ipcMain.handle('mp:test', async (_e, creds) => mercadopagoApi.test(creds));
-  ipcMain.handle('mp:sync', async (_e, args)  => mercadopagoApi.sync(args));
+  ipcMain.handle('mp:sync', async (_e, args)  => {
+    let diagDir = null;
+    try { diagDir = require('electron').app.getPath('userData'); } catch (e) { diagDir = null; }
+    return mercadopagoApi.sync(Object.assign({}, args || {}, { diagDir }));
+  });
 
   // === Attachments ===
   ipcMain.handle('app:attachFile',     async ()            => attachments.attachFile(win()));

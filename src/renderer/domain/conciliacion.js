@@ -11,8 +11,11 @@
 //   - matchearMovimientos(movs, state) → [{ mov, candidatos }]
 //        Para cada movimiento, busca ventas (si monto>0) o gastos (monto<0)
 //        cercanos en fecha (±2 días) y mismo monto absoluto.
-//   - aplicarMatch / crearDesdeMovimiento: mutan state in-place. El caller
-//        persiste con saveState().
+//   - detectarCuotaDeuda(mov, state) → { deuda, claro } | null
+//        Reconoce la cuota de un crédito (glosa + monto ±2% de la cuota
+//        mensual) y devuelve la deuda de "Mis deudas" a la que pertenece.
+//   - aplicarMatch / crearDesdeMovimiento / aplicarCuotaDeuda: mutan state
+//        in-place. El caller persiste con saveState().
 //
 // Asume window.uid() y window.ymdOf() ya están cargados (utils/*).
 
@@ -551,6 +554,9 @@
     const conciliados = new Set();
     (state.conciliaciones || []).forEach(c => {
       if (c.ref_type && c.ref_id) conciliados.add(`${c.ref_type}:${c.ref_id}`);
+      // La cuota de un crédito crea un gasto ligado al pago de la deuda: ese
+      // gasto ya está conciliado (no se vuelve a ofrecer como cruce).
+      if (c.gasto_id) conciliados.add(`gasto:${c.gasto_id}`);
     });
 
     return movs.map(mov => {
@@ -589,6 +595,159 @@
       candidatos.sort((a, b) => b.score - a.score);
       return { mov, candidatos };
     });
+  }
+
+  // ─── Cuotas de crédito → "Mis deudas" ─────────────────────────────────
+  // Fintoc no expone los créditos de consumo como cuenta: la cuota llega
+  // solo como un cargo en la cuenta corriente. Acá reconocemos ese cargo y
+  // lo ligamos a la deuda correspondiente (state.deudas) en vez de dejarlo
+  // como gasto suelto. Señales, por deuda activa (saldo pendiente > 0):
+  //   - texto:    la glosa trae CUOTA / CREDITO DE CONSUMO / PRESTAMO /
+  //               DIVIDENDO / HIPOTECARIO… (y no es tarjeta, línea, compra)
+  //   - acreedor: el nombre del acreedor aparece en la glosa
+  //   - monto:    |monto| coincide (±2%) con la cuota_mensual de la deuda
+  //   - fecha:    el día del mes está cerca (±5 días) del día de pago
+  // "claro" = (texto o acreedor) + monto. Solo lo claro se aplica solo; lo
+  // demás queda como candidato para que el usuario lo elija en la revisión.
+  const RE_CUOTA = /\b(CUOTAS?|CREDITO DE CONSUMO|CRED(?:ITO)?\.? ?(?:DE )?CONS(?:UMO)?|PAGO (?:DE )?CRED(?:ITO)?|PRESTAMO|DIVIDENDO|HIPOTECARI[OA]|AUTOMOTRIZ)\b/;
+  const RE_NO_CUOTA = /\b(LINEA DE CREDITO|TARJETA|COMPRA|INTERES(?:ES)?|COMISION|SEGURO)\b/;
+  const PALABRAS_GENERICAS = new Set(['BANCO', 'CREDITO', 'CONSUMO', 'PRESTAMO', 'DEUDA', 'CUOTA', 'TARJETA', 'FINANCIERA', 'COOPERATIVA', 'CAJA', 'CHILE']);
+
+  function _norm(s) {
+    return String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+  }
+
+  function _saldoDeuda(d) {
+    if (window.Deudas && window.Deudas.saldoPendiente) return window.Deudas.saldoPendiente(d);
+    const pagado = ((d && d.pagos) || []).reduce((s, p) => s + Number(p.monto || 0), 0);
+    return Math.max(0, Number((d && d.monto_total) || 0) - pagado);
+  }
+
+  // Palabras del acreedor que identifican al banco/financiera en una glosa
+  // ("Banco Santander" → SANTANDER; "Caja Los Andes" → ANDES).
+  function _clavesAcreedor(acreedor) {
+    return _norm(acreedor).replace(/[^A-Z0-9 ]/g, ' ').split(' ')
+      .filter(w => w.length >= 4 && !PALABRAS_GENERICAS.has(w));
+  }
+
+  // Día del mes en que se paga la cuota: el del vencimiento o, si no hay,
+  // el de la emisión. null si la deuda no tiene fechas.
+  function _diaPagoDeuda(d) {
+    const f = (d && (d.fecha_vencimiento || d.fecha_emision)) || '';
+    const dia = Number(String(f).slice(8, 10));
+    return dia >= 1 && dia <= 31 ? dia : null;
+  }
+
+  function _cercaDiaPago(ymd, dia) {
+    if (!dia) return true; // sin fecha de referencia no restringimos
+    const dm = Number(String(ymd || '').slice(8, 10));
+    if (!dm) return false;
+    const diff = Math.abs(dm - dia);
+    return Math.min(diff, 31 - diff) <= 5;
+  }
+
+  // ¿La deuda ya tiene un pago por este monto en una fecha cercana? (evita
+  // duplicar la cuota si se vuelve a subir la misma cartola o si el usuario
+  // ya la registró a mano)
+  function _yaTienePago(d, ymd, abs) {
+    return ((d && d.pagos) || []).some(p =>
+      p.fecha && Math.abs(Number(p.monto || 0) - abs) <= abs * 0.02 + 1 && _diffDias(p.fecha, ymd) <= 5);
+  }
+
+  // Devuelve { deuda, claro, score } con la mejor deuda candidata para el
+  // movimiento, o null si no hay ninguna.
+  function detectarCuotaDeuda(mov, state) {
+    if (!mov || !(mov.monto < 0)) return null;
+    const abs = Math.abs(Number(mov.monto));
+    if (!abs) return null;
+    const glosa = _norm(mov.descripcion);
+    const texto = RE_CUOTA.test(glosa) && !RE_NO_CUOTA.test(glosa);
+    const cands = [];
+    ((state && state.deudas) || []).forEach(d => {
+      if (_saldoDeuda(d) <= 0) return;
+      if (_yaTienePago(d, mov.fecha, abs)) return;
+      const cuota = Number(d.cuota_mensual || 0);
+      const monto = cuota > 0 && Math.abs(abs - cuota) <= cuota * 0.02;
+      const acreedor = _clavesAcreedor(d.acreedor).some(k => new RegExp('\\b' + k + '\\b').test(glosa));
+      const fecha = monto && _cercaDiaPago(mov.fecha, _diaPagoDeuda(d));
+      if (!texto && !acreedor && !fecha) return;
+      const score = (texto ? 2 : 0) + (acreedor ? 3 : 0) + (monto ? 3 : 0) + (fecha ? 1 : 0);
+      const dist = cuota > 0 ? Math.abs(abs - cuota) / cuota : 9;
+      cands.push({ deuda: d, score, dist, claro: (texto || acreedor) && monto });
+    });
+    if (!cands.length) return null;
+    cands.sort((a, b) => (b.score - a.score) || (a.dist - b.dist));
+    const top = cands[0];
+    // Dos deudas igual de probables → no es claro: que decida el usuario.
+    const empate = cands.length > 1 && cands[1].score === top.score && cands[1].dist === top.dist;
+    return { deuda: top.deuda, claro: !!top.claro && !empate, score: top.score };
+  }
+
+  // Registra el movimiento como pago de la deuda. Crea UN gasto (igual que
+  // el pago manual en "Mis deudas": así el flujo de caja y el saldo de la
+  // cuenta ven la plata que salió) ligado al pago, y una conciliación
+  // ref_type 'deuda_pago' con el lote para poder retirarla después.
+  function aplicarCuotaDeuda(state, mov, deuda, account_id, lote, categoria) {
+    const d = (state.deudas || []).find(x => x === deuda || (deuda && x.id === deuda.id));
+    if (!d || !mov || !(mov.monto < 0)) return null;
+    const monto = Math.abs(Math.round(mov.monto));
+    if (!monto) return null;
+    const personal = !!(state.config && state.config.perfil === 'personal');
+    const gasto = {
+      id: window.uid(),
+      fecha: mov.fecha,
+      monto,
+      categoria: categoria || 'Bancarios',
+      proveedor: d.acreedor || mov.descripcion,
+      descripcion: `${personal ? 'Cuota de crédito' : 'Pago deuda'} — ${d.descripcion || d.acreedor}`,
+      metodo: 'Transferencia',
+      account_id,
+      deuda_id: d.id,
+      attachments: []
+    };
+    if (d.acreedor && typeof window.buscarOCrearProveedor === 'function') {
+      gasto.proveedor_id = window.buscarOCrearProveedor(d.acreedor);
+    }
+    if (!state.gastos) state.gastos = [];
+    state.gastos.push(gasto);
+    const pago = { id: window.uid(), fecha: mov.fecha, monto, account_id, gasto_id: gasto.id, origen: 'cartola' };
+    if (!d.pagos) d.pagos = [];
+    d.pagos.push(pago);
+    if (!state.conciliaciones) state.conciliaciones = [];
+    state.conciliaciones.push({
+      id: window.uid(),
+      ref_type: 'deuda_pago',
+      ref_id: pago.id,
+      deuda_id: d.id,
+      gasto_id: gasto.id,
+      account_id,
+      cartola_fecha: mov.fecha,
+      cartola_descripcion: mov.descripcion,
+      cartola_monto: mov.monto,
+      auto_creado: true,
+      lote: lote || null,
+      created_at: new Date().toISOString()
+    });
+    return { tipo: 'deuda_pago', ref: pago, gasto, deuda: d };
+  }
+
+  // Deshace una conciliación 'deuda_pago': quita el pago de la deuda y borra
+  // el gasto ligado. Devuelve true si borró algo.
+  function deshacerCuotaDeuda(state, conc) {
+    if (!conc || conc.ref_type !== 'deuda_pago') return false;
+    let quitado = false;
+    const d = (state.deudas || []).find(x => x.id === conc.deuda_id);
+    if (d && Array.isArray(d.pagos)) {
+      const n = d.pagos.length;
+      d.pagos = d.pagos.filter(p => p.id !== conc.ref_id);
+      quitado = d.pagos.length < n;
+    }
+    if (conc.gasto_id) {
+      const n = (state.gastos || []).length;
+      state.gastos = (state.gastos || []).filter(g => g.id !== conc.gasto_id);
+      quitado = quitado || state.gastos.length < n;
+    }
+    return quitado;
   }
 
   // ─── Aplicar match (marca como conciliado en state.conciliaciones) ───
@@ -692,6 +851,9 @@
     matchearMovimientos,
     aplicarMatch,
     crearDesdeMovimiento,
+    detectarCuotaDeuda,
+    aplicarCuotaDeuda,
+    deshacerCuotaDeuda,
     _parsearFecha,
     _parsearMonto
   };

@@ -4200,7 +4200,7 @@
     </div>
     <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-top:8px">
       <input type="checkbox" id="pagoCrearGasto" style="width:auto; margin:0" checked />
-      Registrar también como gasto (categoría "Bancarios")
+      Registrar también como gasto (así cuadra tu flujo de caja)
     </label>
     <div class="modal-actions">
       <button class="btn" onclick="cerrarModalPagoDeuda()">Cancelar</button>
@@ -10495,6 +10495,18 @@ function cerrarModalConciliacion() {
   _conciliacionStaging = null;
 }
 
+// Decisión inicial para un movimiento cruzado ({ mov, candidatos }), en
+// orden: cruce con algo existente → traspaso entre mis cuentas → cuota de
+// un crédito de "Mis deudas" (solo si es clara) → crear ingreso/gasto.
+function _decisionInicialConc(m, account_id) {
+  if (m.candidatos.length > 0) return { tipo: 'match', candidato: m.candidatos[0] };
+  const otra = _detectarTraspasoConc(m.mov, account_id);
+  if (otra) return { tipo: 'traspaso', otra };
+  const cuota = Conciliacion.detectarCuotaDeuda(m.mov, state);
+  if (cuota && cuota.claro) return { tipo: 'cuota', deudaId: cuota.deuda.id, auto: true };
+  return { tipo: 'crear', categoria: _sugerirCatConc(m.mov) };
+}
+
 // Carga un resultado parseado ({ movimientos, filas?, columnas?, error? })
 // en el staging del modal y pasa al paso 2. Lo usan la cartola (archivo) y
 // los bancos conectados (Fintoc): mismo cruce, misma revisión, mismo lote.
@@ -10507,15 +10519,7 @@ function _cargarMovimientosEnConciliacion(r, errEl, extra) {
   if (errEl) errEl.style.display = 'none';
   const matches = Conciliacion.matchearMovimientos(r.movimientos, state);
   const account_id = document.getElementById('concAccount').value;
-  const items = matches.map(m => {
-    let decision;
-    if (m.candidatos.length > 0) decision = { tipo: 'match', candidato: m.candidatos[0] };
-    else {
-      const otra = _detectarTraspasoConc(m.mov, account_id);
-      decision = otra ? { tipo: 'traspaso', otra } : { tipo: 'crear', categoria: _sugerirCatConc(m.mov) };
-    }
-    return { mov: m.mov, candidatos: m.candidatos, decision };
-  });
+  const items = matches.map(m => ({ mov: m.mov, candidatos: m.candidatos, decision: _decisionInicialConc(m, account_id) }));
   _conciliacionStaging = {
     account_id,
     items,
@@ -10748,7 +10752,7 @@ async function sincronizarFintocTodo(silencioso) {
   if (!silencioso) toast('Sincronizando bancos…', '');
   const vistos = _fintocVistos();
   const ahoraISO = new Date().toISOString();
-  let total = 0, cruzados = 0, creados = 0, porClasificar = 0;
+  let total = 0, cruzados = 0, creados = 0, porClasificar = 0, cuotas = 0;
   const porBanco = [];
   const errores = [];
   try {
@@ -10775,13 +10779,17 @@ async function sincronizarFintocTodo(silencioso) {
           _raw: { fintoc_id: m.id, type: m.type, reference_id: m.reference_id }
         }));
         const lote = 'L' + Date.now() + '_' + String(c.accId).slice(-4);
-        let ap = 0, cr = 0, pc = 0;
+        let ap = 0, cr = 0, pc = 0, cu = 0;
         Conciliacion.matchearMovimientos(movs, state).forEach(m => {
           if (m.candidatos && m.candidatos.length) {
             Conciliacion.aplicarMatch(state, m.mov, m.candidatos[0], appCuentaId, lote); ap++;
           } else {
             const otra = _detectarTraspasoConc(m.mov, appCuentaId);
             if (otra) { if (_crearTraspasoDesdeMov(m.mov, appCuentaId, otra, lote)) cr++; return; }
+            // Cuota de un crédito de "Mis deudas": solo si es clara (glosa +
+            // monto). Si hay duda, queda como gasto normal (como siempre).
+            const cuota = Conciliacion.detectarCuotaDeuda(m.mov, state);
+            if (cuota && cuota.claro && Conciliacion.aplicarCuotaDeuda(state, m.mov, cuota.deuda, appCuentaId, lote, _categoriaPagoDeuda())) { cr++; cu++; return; }
             const cat = _sugerirCatConc(m.mov);
             Conciliacion.crearDesdeMovimiento(state, m.mov, appCuentaId, cat, lote); cr++;
             if (m.mov.monto < 0 && !cat) pc++;
@@ -10792,7 +10800,7 @@ async function sincronizarFintocTodo(silencioso) {
         const cta = (state.config.cuentas || []).find(x => x.id === appCuentaId);
         state.cartolaLotes.push({ lote, fecha: ahoraISO, account_id: appCuentaId, account_nombre: cta ? cta.nombre : '—', origen: `auto · ${l.label} · ${c.nombre}`, aplicados: ap, creados: cr });
         c.lastSync = ahoraISO;
-        total += nuevos.length; cruzados += ap; creados += cr; porClasificar += pc; nBanco += nuevos.length;
+        total += nuevos.length; cruzados += ap; creados += cr; porClasificar += pc; cuotas += cu; nBanco += nuevos.length;
       }
       if (nBanco) porBanco.push(`${l.label} ${nBanco}`);
     }
@@ -10801,7 +10809,7 @@ async function sincronizarFintocTodo(silencioso) {
     cfg.lastAutoSync = ahoraISO;
     saveState();
     if (total > 0) {
-      toast(`Bancos sincronizados: ${total} movimiento${total === 1 ? '' : 's'} nuevo${total === 1 ? '' : 's'} (${porBanco.join(' · ')})${porClasificar ? ` · ${porClasificar} por clasificar en Gastos` : ''}`, 'success');
+      toast(`Bancos sincronizados: ${total} movimiento${total === 1 ? '' : 's'} nuevo${total === 1 ? '' : 's'} (${porBanco.join(' · ')})${cuotas ? ` · ${_txtCuotas(cuotas)} en Mis deudas` : ''}${porClasificar ? ` · ${porClasificar} por clasificar en Gastos` : ''}`, 'success');
       try { refreshVistaActiva(); } catch (e) { console.error(e); }
     } else if (!silencioso) {
       toast(errores.length ? 'Sin movimientos nuevos (con errores en algún banco)' : 'Bancos al día: sin movimientos nuevos', errores.length ? 'error' : 'success');
@@ -10928,15 +10936,32 @@ function renderMercadoPagoCfg() {
   const quien = cfg.cuenta && (cfg.cuenta.nombre || cfg.cuenta.nickname) ? (cfg.cuenta.nombre || cfg.cuenta.nickname) : '';
   const resumen = document.getElementById('mpResumen');
   if (resumen) resumen.innerHTML = cfg.token
-    ? `<span style="color:var(--success-text)">●</span> Conectado${quien ? ` como <strong>${escapeHtml(quien)}</strong>` : ''} · última sincronización: ${escapeHtml(fmt(cfg.lastSync))}${_mpResumenMesHtml() ? `<div style="margin-top:4px">${_mpResumenMesHtml()}</div>` : ''}`
+    ? `<span style="color:var(--success-text)">●</span> Conectado${quien ? ` como <strong>${escapeHtml(quien)}</strong>` : ''} · última sincronización: ${escapeHtml(fmt(cfg.lastSync))}${_mpResumenMesHtml() ? `<div style="margin-top:4px">${_mpResumenMesHtml()}</div>` : ''}${_mpUltimoHtml(cfg)}`
     : `<span style="color:var(--text-muted)">○ Sin conectar</span>`;
   const card = document.getElementById('subirMpCard');
   if (card) {
     card.style.display = cfg.token ? '' : 'none';
     const cta = cuentas.find(c => c.id === cfg.appCuentaId);
     const info = document.getElementById('subirMpInfo');
-    if (info) info.innerHTML = `${quien ? `<strong>${escapeHtml(quien)}</strong> · ` : ''}lo que entra se registra en <strong>${escapeHtml(cta ? cta.nombre : '—')}</strong> · última sincronización: ${escapeHtml(fmt(cfg.lastSync))}${_mpResumenMesHtml() ? `<br>${_mpResumenMesHtml()}` : ''}`;
+    if (info) info.innerHTML = `${quien ? `<strong>${escapeHtml(quien)}</strong> · ` : ''}lo que entra se registra en <strong>${escapeHtml(cta ? cta.nombre : '—')}</strong> · última sincronización: ${escapeHtml(fmt(cfg.lastSync))}${_mpResumenMesHtml() ? `<br>${_mpResumenMesHtml()}` : ''}${_mpUltimoHtml(cfg)}`;
   }
+}
+// Resumen de la última sincronización (se guarda en la config para que se
+// vea qué pasó aunque el usuario haya cerrado la revisión sin confirmar).
+function _mpResumenSync(r, nuevos, at) {
+  return { at, ok: true, filas: r.filas || 0, movimientos: (r.movements || []).length, nuevos, informes: r.informes || 1, since: r.since || '', until: r.until || '', vacio: !!r.vacio, pendientes: 0 };
+}
+function _mpUltimoHtml(cfg) {
+  const u = cfg && cfg.ultimo;
+  if (!u || !u.at) return '';
+  const cuando = new Date(u.at).toLocaleString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  if (!u.ok) return `<div style="margin-top:4px; color:var(--danger-text)">Último intento (${escapeHtml(cuando)}): ${escapeHtml(u.error || 'falló')}${u.detalle ? ` · ${escapeHtml(String(u.detalle).slice(0, 160))}` : ''}</div>`;
+  const periodo = u.since && u.until ? ` del ${u.since} al ${u.until}` : '';
+  const n = (k, sing, plur) => `${u[k] || 0} ${(u[k] || 0) === 1 ? sing : plur}`;
+  let t = `Último informe (${escapeHtml(cuando)})${escapeHtml(periodo)}: ${n('filas', 'fila', 'filas')}, ${n('movimientos', 'movimiento', 'movimientos')}, ${n('nuevos', 'nuevo', 'nuevos')}`;
+  if (u.pendientes) t += ` · <strong>${u.pendientes} esperando que los confirmes</strong>: vuelve a "Sincronizar ahora" para abrir la revisión`;
+  else if (u.confirmados !== undefined) t += ` · ${n('confirmados', 'registrado', 'registrados')}`;
+  return `<div style="margin-top:4px">${t}</div>`;
 }
 // Movimientos del informe → formato de cartola (positivo = entra plata).
 function _mpMovsNuevos(r) {
@@ -10964,34 +10989,46 @@ async function sincronizarMercadoPago(silencioso) {
   const cfg = _mpCfg();
   if (!cfg.token) { if (!silencioso) toast('Primero conecta Mercado Pago en Configuración', 'error'); return; }
   if (silencioso && !cfg.lastSync) return; // la primera siempre se revisa a mano
-  if (_mpSyncEnCurso) return;
+  if (_mpSyncEnCurso) { if (!silencioso) toast('Ya estoy pidiendo el informe a Mercado Pago. Espera un momento: cuando llegue se abre la revisión sola.', ''); return; }
   const appCuentaId = cfg.appCuentaId || _mpSugerirAppCuenta();
   if (!appCuentaId) { if (!silencioso) toast('Crea una cuenta en Cuentas para registrar lo de Mercado Pago', 'error'); return; }
   _mpSyncEnCurso = true;
   const ahoraISO = new Date().toISOString();
-  if (!silencioso) toast('Pidiendo el informe a Mercado Pago… la primera vez puede tardar un par de minutos', '');
+  if (!silencioso) {
+    toast('Pidiendo el informe a Mercado Pago… la primera vez puede tardar un par de minutos', '');
+    _mpEstado('Pidiendo el informe a Mercado Pago… puede tardar hasta 3 minutos por tramo. Puedes seguir usando la app: cuando llegue se abre la revisión sola.');
+  }
   try {
     let r;
     try { r = await window.electronAPI.mpSync({ token: cfg.token, since: _mpSince(cfg), incluirRetiros: !!cfg.incluirRetiros }); }
     catch (e) { r = { ok: false, error: e.message }; }
     if (!r || !r.ok) {
       console.error('Mercado Pago sync:', r);
+      cfg.ultimo = { at: ahoraISO, ok: false, error: (r && r.error) || 'No pude leer Mercado Pago', detalle: (r && r.detalle) || '' };
       if (silencioso) { cfg.lastAutoSync = ahoraISO; saveState(); return; }
-      const msg = r && r.error ? r.error : 'No pude leer Mercado Pago';
+      saveState();
+      const msg = cfg.ultimo.error;
       toast(msg, 'error');
       _mpEstado(msg, 'err', r && r.detalle);
       return;
     }
     const nuevos = _mpMovsNuevos(r);
+    cfg.ultimo = _mpResumenSync(r, nuevos.length, ahoraISO);
     if (!nuevos.length) {
       cfg.lastSync = ahoraISO;
       if (silencioso) cfg.lastAutoSync = ahoraISO;
       saveState();
-      if (!silencioso) toast(r.vacio ? 'Mercado Pago devolvió un informe vacío para ese período' : 'Mercado Pago al día: sin movimientos nuevos', 'success');
+      if (!silencioso) {
+        toast(r.vacio ? 'Mercado Pago devolvió un informe vacío para ese período' : 'Mercado Pago al día: sin movimientos nuevos', 'success');
+        _mpEstado(r.vacio ? `El informe del ${r.since || '…'} al ${r.until || '…'} vino vacío: Mercado Pago no registra movimientos en ese período.` : `Informe leído (${r.filas || 0} fila${r.filas === 1 ? '' : 's'}): no hay movimientos nuevos que registrar.`, 'ok');
+      }
       return;
     }
     const ids = nuevos.map(m => m._raw.mp_id);
     if (!silencioso) {
+      cfg.ultimo.pendientes = nuevos.length;
+      saveState();
+      _mpEstado(`${nuevos.length} movimiento${nuevos.length === 1 ? '' : 's'} nuevo${nuevos.length === 1 ? '' : 's'} esperando tu confirmación en la ventana de revisión. Hasta que confirmes no se registra nada.`);
       abrirModalConciliacion();
       const sel = document.getElementById('concAccount');
       if (sel) sel.value = appCuentaId;
@@ -11022,6 +11059,7 @@ async function sincronizarMercadoPago(silencioso) {
     const cta = (state.config.cuentas || []).find(x => x.id === appCuentaId);
     state.cartolaLotes.push({ lote, fecha: ahoraISO, account_id: appCuentaId, account_nombre: cta ? cta.nombre : '—', origen: 'auto · Mercado Pago', aplicados: ap, creados: cr });
     cfg.lastSync = ahoraISO; cfg.lastAutoSync = ahoraISO;
+    cfg.ultimo.pendientes = 0; cfg.ultimo.confirmados = ap + cr;
     saveState();
     toast(`Mercado Pago: ${nuevos.length} movimiento${nuevos.length === 1 ? '' : 's'} nuevo${nuevos.length === 1 ? '' : 's'} (${ap} cruzado${ap === 1 ? '' : 's'}, ${cr} creado${cr === 1 ? '' : 's'})${pc ? ` · ${pc} por clasificar` : ''}`, 'success');
     try { refreshVistaActiva(); } catch (e) { console.error(e); }
@@ -11229,15 +11267,7 @@ function _reaplicarMapeoCartola() {
   const r = Conciliacion.reparsearConMapeo(st._filas, mapeo);
   if (r.error) { toast(r.error, 'error'); return; }
   const matches = Conciliacion.matchearMovimientos(r.movimientos, state);
-  st.items = matches.map(m => {
-    let decision;
-    if (m.candidatos.length > 0) decision = { tipo: 'match', candidato: m.candidatos[0] };
-    else {
-      const otra = _detectarTraspasoConc(m.mov, st.account_id);
-      decision = otra ? { tipo: 'traspaso', otra } : { tipo: 'crear', categoria: _sugerirCatConc(m.mov) };
-    }
-    return { mov: m.mov, candidatos: m.candidatos, decision };
-  });
+  st.items = matches.map(m => ({ mov: m.mov, candidatos: m.candidatos, decision: _decisionInicialConc(m, st.account_id) }));
   _renderMapeoColumnas();
   _renderConciliacionPaso2();
 }
@@ -11490,6 +11520,7 @@ function _renderConciliacionPaso2() {
   const nNuevo = items.filter(i => i.decision.tipo === 'crear').length;
   const nIgnorar = items.filter(i => i.decision.tipo === 'ignorar').length;
   const nTraspaso = items.filter(i => i.decision.tipo === 'traspaso').length;
+  const nCuota = items.filter(i => i.decision.tipo === 'cuota').length;
 
   // Rango de fechas detectado en la cartola — útil para que el usuario sepa
   // qué período está importando.
@@ -11505,7 +11536,8 @@ function _renderConciliacionPaso2() {
       Cruzados: <strong style="color:#15803d">${nMatch}</strong> ·
       Crear nuevo: <strong style="color:#b45309">${nNuevo}</strong> ·
       Ignorar: <strong style="color:#6b7280">${nIgnorar}</strong>${nTraspaso ? ` ·
-      Traspasos entre mis cuentas: <strong style="color:var(--primary-text)">${nTraspaso}</strong>` : ''}
+      Traspasos entre mis cuentas: <strong style="color:var(--primary-text)">${nTraspaso}</strong>` : ''}${nCuota ? ` ·
+      ${esPerfilPersonal() ? 'Cuotas de crédito' : 'Pagos de deudas'}: <strong style="color:var(--primary-text)">${nCuota}</strong>` : ''}
     </span>
   `;
 
@@ -11513,7 +11545,7 @@ function _renderConciliacionPaso2() {
   const filas = items.map((it, idx) => {
     const m = it.mov;
     const d = it.decision;
-    const barra = d.tipo === 'match' ? 'var(--success)' : (d.tipo === 'crear' ? 'var(--warning, #f59e0b)' : (d.tipo === 'traspaso' ? 'var(--primary)' : 'var(--text-muted)'));
+    const barra = d.tipo === 'match' ? 'var(--success)' : (d.tipo === 'crear' ? 'var(--warning, #f59e0b)' : ((d.tipo === 'traspaso' || d.tipo === 'cuota') ? 'var(--primary)' : 'var(--text-muted)'));
     const fechaFmt = fmtFechaCorta.format(new Date(m.fecha + 'T12:00:00')).replace(/,?\s*\d{4}/, '');
     const montoColor = m.monto >= 0 ? 'var(--success)' : 'var(--danger)';
     const candidatosOpts = it.candidatos.map((c, ci) => {
@@ -11532,7 +11564,11 @@ function _renderConciliacionPaso2() {
       `<option value="traspaso:${escapeHtml(c.id)}" ${d.tipo === 'traspaso' && d.otra === c.id ? 'selected' : ''}>Traspaso ${m.monto >= 0 ? 'desde' : 'hacia'} ${escapeHtml(c.nombre)} (entre mis cuentas)</option>`
     ).join('');
     const esMP = !!(m._raw && m._raw.mp_id);
-    const catCell = (d.tipo === 'crear' && m.monto < 0)
+    // Cuota de un crédito: una opción por deuda pendiente (solo en cargos).
+    const cuotaOpts = m.monto < 0 ? _opcionesCuotaConc(d) : '';
+    const catCell = d.tipo === 'cuota'
+      ? _celdaCuotaConc(m, d)
+      : (d.tipo === 'crear' && m.monto < 0)
       ? `<select onchange="setCategoriaConciliacion(${idx}, this.value)" title="Categoría detectada — corrígela si está mal" style="width:100%; font-size:11px; padding:3px 4px">${_opcionesCategoriaConc(d.categoria)}</select>${d.categoria ? '<span style="font-size:9px; color:var(--success); white-space:nowrap"> ● auto</span>' : ''}`
       : (d.tipo === 'crear' && m.monto >= 0 && (esMP || esPerfilPersonal()))
         ? `<select onchange="setCategoriaConciliacion(${idx}, this.value)" title="¿De dónde viene esta plata?" style="width:100%; font-size:11px; padding:3px 4px">${_opcionesTipoIngresoConc(d.categoria)}</select>${(esMP && d.categoria) ? '<span style="font-size:9px; color:var(--success); white-space:nowrap"> ● auto</span>' : ''}`
@@ -11545,6 +11581,7 @@ function _renderConciliacionPaso2() {
         ${candidatosOpts}
         <option value="crear" ${d.tipo === 'crear' ? 'selected' : ''}>Crear ${m.monto >= 0 ? 'ingreso' : 'gasto'} nuevo</option>
         <option value="ignorar" ${d.tipo === 'ignorar' ? 'selected' : ''}>Ignorar</option>
+        ${cuotaOpts}
         ${traspasoOpts}
       </select></td>
       <td style="padding:5px 6px; min-width:150px">${catCell}</td>
@@ -11632,6 +11669,46 @@ function _crearTraspasoDesdeMov(mov, account_id, otraId, lote) {
   return t;
 }
 
+// ─── Cuotas de crédito en la revisión de cartola ───
+// Deudas de "Mis deudas" con saldo pendiente: cada una es una opción
+// "Cuota de <deuda>" para los cargos. La detección (glosa + monto) vive en
+// Conciliacion.detectarCuotaDeuda; acá solo se dibuja y se aplica.
+function _deudasActivasConc() {
+  return (state.deudas || []).filter(d => saldoPendienteDeuda(d) > 0);
+}
+function _nombreDeudaConc(d) {
+  return [d.acreedor, d.descripcion].filter(Boolean).join(' · ').slice(0, 40);
+}
+function _labelCuotaConc(d) {
+  return esPerfilPersonal() ? `Cuota de ${_nombreDeudaConc(d)}` : `Pago de deuda · ${_nombreDeudaConc(d)}`;
+}
+function _opcionesCuotaConc(decision) {
+  return _deudasActivasConc().map(d =>
+    `<option value="cuota:${escapeHtml(d.id)}" ${decision.tipo === 'cuota' && decision.deudaId === d.id ? 'selected' : ''}>${escapeHtml(_labelCuotaConc(d))}</option>`
+  ).join('');
+}
+// Celda "Categoría" cuando la decisión es cuota: qué saldo le queda a la
+// deuda después de este pago, y ● auto si la detectamos nosotros.
+function _celdaCuotaConc(mov, decision) {
+  const d = (state.deudas || []).find(x => x.id === decision.deudaId);
+  const queda = d ? Math.max(0, saldoPendienteDeuda(d) - Math.abs(mov.monto)) : null;
+  return `<span style="font-size:11px">${esPerfilPersonal() ? 'Cuota de crédito' : 'Pago de deuda'}${queda != null ? ` · queda ${clp(queda)}` : ''}</span>${decision.auto ? '<span style="font-size:9px; color:var(--success); white-space:nowrap"> ● auto</span>' : ''}`;
+}
+// "2 cuotas de crédito" (personal) / "2 pagos de deuda" (pyme)
+function _txtCuotas(n) {
+  return esPerfilPersonal()
+    ? `${n} cuota${n === 1 ? '' : 's'} de crédito`
+    : `${n} pago${n === 1 ? '' : 's'} de deuda`;
+}
+// Categoría del gasto que deja un pago de deuda: la del perfil si existe
+// ("Deudas / Créditos" en personal), si no "Bancarios" (como siempre).
+function _categoriaPagoDeuda() {
+  const cats = (state.config && state.config.categorias) || [];
+  if (cats.includes('Deudas / Créditos')) return 'Deudas / Créditos';
+  if (cats.includes('Bancarios')) return 'Bancarios';
+  return esPerfilPersonal() ? 'Deudas / Créditos' : 'Bancarios';
+}
+
 // <option>s del selector de categoría en la revisión de cartola.
 function _opcionesCategoriaConc(sel) {
   const cats = (state.config && state.config.categorias) ? state.config.categorias.slice() : [];
@@ -11658,6 +11735,7 @@ function cambiarDecisionConciliacion(idx, valor) {
   if (valor === 'crear') it.decision = { tipo: 'crear', categoria: _sugerirCatConc(it.mov) };
   else if (valor === 'ignorar') it.decision = { tipo: 'ignorar' };
   else if (valor.startsWith('traspaso:')) it.decision = { tipo: 'traspaso', otra: valor.slice('traspaso:'.length) };
+  else if (valor.startsWith('cuota:')) it.decision = { tipo: 'cuota', deudaId: valor.slice('cuota:'.length) };
   else if (valor.startsWith('match:')) {
     const ci = Number(valor.split(':')[1]);
     it.decision = { tipo: 'match', candidato: it.candidatos[ci] };
@@ -11669,13 +11747,18 @@ function confirmarConciliacion() {
   if (!_conciliacionStaging) return;
   const account_id = _conciliacionStaging.account_id;
   const lote = 'L' + Date.now();
-  let aplicados = 0, creados = 0;
+  let aplicados = 0, creados = 0, cuotas = 0;
   _conciliacionStaging.items.forEach(it => {
     if (it.decision.tipo === 'match') {
       Conciliacion.aplicarMatch(state, it.mov, it.decision.candidato, account_id, lote);
       aplicados++;
     } else if (it.decision.tipo === 'traspaso') {
       if (_crearTraspasoDesdeMov(it.mov, account_id, it.decision.otra, lote)) creados++;
+    } else if (it.decision.tipo === 'cuota') {
+      // Pago a la deuda + un solo gasto ligado (no se duplica el gasto).
+      const dd = (state.deudas || []).find(x => x.id === it.decision.deudaId);
+      if (dd && Conciliacion.aplicarCuotaDeuda(state, it.mov, dd, account_id, lote, _categoriaPagoDeuda())) { creados++; cuotas++; }
+      else { Conciliacion.crearDesdeMovimiento(state, it.mov, account_id, _sugerirCatConc(it.mov), lote); creados++; }
     } else if (it.decision.tipo === 'crear') {
       const cat = it.decision.categoria || null;
       Conciliacion.crearDesdeMovimiento(state, it.mov, account_id, cat, lote);
@@ -11717,16 +11800,19 @@ function confirmarConciliacion() {
   if (mpInfo) {
     const vistos = _mpVistos();
     (mpInfo.ids || []).forEach(id => { vistos[id] = 1; });
+    const u = _mpCfg().ultimo;
+    if (u) { u.pendientes = 0; u.confirmados = aplicados + creados; }
     _mpPodarVistos();
     _mpCfg().lastSync = new Date().toISOString();
   }
   saveState();
   cerrarModalConciliacion();
-  toast(`${(fintocInfo || mpInfo) ? 'Movimientos aplicados' : 'Cartola aplicada'}: ${aplicados} cruzado(s), ${creados} creado(s)`, 'success');
+  toast(`${(fintocInfo || mpInfo) ? 'Movimientos aplicados' : 'Cartola aplicada'}: ${aplicados} cruzado(s), ${creados} creado(s)${cuotas ? ` · ${_txtCuotas(cuotas)} en Mis deudas` : ''}`, 'success');
   if (fintocInfo && typeof renderFintocBancos === 'function') renderFintocBancos();
   if (mpInfo && typeof renderMercadoPagoCfg === 'function') renderMercadoPagoCfg();
   renderCuentas();
   if (document.getElementById('view-ventas')?.classList.contains('active')) renderVentas();
+  if (cuotas && document.getElementById('view-deudas')?.classList.contains('active')) renderDeudas();
   if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
 }
 
@@ -11740,7 +11826,7 @@ function retirarLoteCartola(lote) {
   const autoCreados = concs.filter(c => c.auto_creado);
   if (!confirm(`¿Retirar esta cartola?\n\nSe borrarán ${autoCreados.length} movimiento(s) que creó y se desharán ${concs.length - autoCreados.length} cruce(s). Los gastos/ventas que ya tenías NO se borran.`)) return;
 
-  let borrados = 0, descruzados = 0;
+  let borrados = 0, descruzados = 0, hayDeudas = false;
   concs.forEach(c => {
     if (c.auto_creado) {
       if (c.ref_type === 'gasto') {
@@ -11755,6 +11841,9 @@ function retirarLoteCartola(lote) {
         const n = (state.transferencias || []).length;
         state.transferencias = (state.transferencias || []).filter(t => t.id !== c.ref_id);
         if ((state.transferencias || []).length < n) borrados++;
+      } else if (c.ref_type === 'deuda_pago') {
+        // Cuota de crédito: se quita el pago de la deuda y su gasto ligado
+        if (Conciliacion.deshacerCuotaDeuda(state, c)) { borrados++; hayDeudas = true; }
       }
     } else {
       descruzados++; // solo se elimina la conciliación (el original queda)
@@ -11765,6 +11854,7 @@ function retirarLoteCartola(lote) {
   saveState();
   toast(`Cartola retirada: ${borrados} movimiento(s) borrado(s), ${descruzados} cruce(s) deshecho(s)`, 'success');
   renderCuentas();
+  if (hayDeudas && document.getElementById('view-deudas')?.classList.contains('active')) renderDeudas();
   if (document.getElementById('view-dashboard')?.classList.contains('active')) renderDashboard();
 }
 
@@ -13392,7 +13482,7 @@ function guardarPagoDeuda() {
       id: gastoId,
       fecha,
       monto,
-      categoria: 'Bancarios',
+      categoria: _categoriaPagoDeuda(),
       proveedor: d.acreedor,
       proveedor_id: buscarOCrearProveedor(d.acreedor),
       descripcion: `Pago deuda — ${d.descripcion || d.acreedor}`,
