@@ -166,6 +166,38 @@ async function accounts(args) {
   }
 }
 
+// Un movimiento de Fintoc → lo que usa la app. Las transferencias suelen
+// venir sin glosa, pero el banco sí sabe quién mandó o recibió la plata
+// (sender_account / recipient_account): se usa para armar la descripción.
+function normalizarMovimiento(m) {
+  const amount = Number(m.amount || 0);
+  const cp = (amount >= 0 ? m.sender_account : m.recipient_account) || null;
+  const cpNombre = cp && cp.holder_name ? String(cp.holder_name).replace(/\s+/g, ' ').trim() : '';
+  const cpBanco = cp && cp.institution && cp.institution.name ? String(cp.institution.name).trim() : '';
+  const cpNumero = cp && cp.number ? String(cp.number).slice(-4) : '';
+  let description = String(m.description || '').replace(/\s+/g, ' ').trim();
+  const sinGlosa = !/[A-Za-z]{3}/.test(description.replace(/^(TRANSF\w*|TEF|ABONO|CARGO|TRASPASO|DEPOSITO)\b/i, ''));
+  if (cpNombre && sinGlosa) {
+    description = `${amount >= 0 ? 'Transferencia de' : 'Transferencia a'} ${cpNombre}${cpBanco ? ' · ' + cpBanco : ''}`;
+  } else if (cpNombre && !description.toUpperCase().includes(cpNombre.toUpperCase().split(' ')[0])) {
+    description = `${description} · ${amount >= 0 ? 'de' : 'a'} ${cpNombre}`;
+  }
+  return {
+    id: m.id,
+    amount,
+    currency: m.currency || 'CLP',
+    description,
+    comment: m.comment ? String(m.comment).trim() : '',
+    post_date: String(m.post_date || '').slice(0, 10),
+    transaction_date: m.transaction_date ? String(m.transaction_date).slice(0, 10) : null,
+    type: m.type || 'other',
+    reference_id: m.reference_id || null,
+    contraparte: cpNombre,
+    contraparte_banco: cpBanco,
+    contraparte_numero: cpNumero,
+  };
+}
+
 // Lee el header Link y devuelve true si hay página siguiente.
 function haySiguiente(headers) {
   const link = headers && (headers.link || headers.Link);
@@ -200,17 +232,7 @@ async function movements(args) {
       for (const m of list) {
         if (m.status && m.status !== 'confirmed') continue;
         if (m.pending) continue;
-        out.push({
-          id: m.id,
-          amount: Number(m.amount || 0),
-          currency: m.currency || 'CLP',
-          description: String(m.description || '').trim(),
-          comment: m.comment ? String(m.comment).trim() : '',
-          post_date: String(m.post_date || '').slice(0, 10),
-          transaction_date: m.transaction_date ? String(m.transaction_date).slice(0, 10) : null,
-          type: m.type || 'other',
-          reference_id: m.reference_id || null,
-        });
+        out.push(normalizarMovimiento(m));
       }
       if (list.length < 300 && !haySiguiente(r.headers)) break;
       if (!haySiguiente(r.headers)) break;
@@ -221,4 +243,4 @@ async function movements(args) {
   }
 }
 
-module.exports = { test, accounts, movements };
+module.exports = { test, accounts, movements, normalizarMovimiento };
