@@ -361,7 +361,8 @@ const TIPOS = {
   REFUND:            { label: 'Devolución',             signo: -1 },
   CHARGEBACK:        { label: 'Contracargo',            signo: -1 },
   DISPUTE:           { label: 'Reclamo',                signo: -1 },
-  PAYOUT:            { label: 'Retiro en efectivo',     signo: -1 },
+  PAYOUT:            { label: 'Retiro a banco',         signo: -1, retiro: true },
+  PAYOUTS:           { label: 'Retiro a banco',         signo: -1, retiro: true }, // así viene en Chile (plural)
   WITHDRAWAL:        { label: 'Retiro a banco',         signo: -1, retiro: true },
   WITHDRAWAL_CANCEL: { label: 'Retiro cancelado',       signo: +1, retiro: true },
 };
@@ -371,16 +372,32 @@ const TIPOS = {
 // alguien te envió plata a tu cuenta MP (no es una venta). 'otro' = cashback,
 // retiro cancelado, etc. Para lo que sale, null.
 const RE_TRANSFERENCIA = /transfer|env[ií]o de dinero|dinero recibido|ingreso de dinero|money[ _-]?(in|transfer|send)|send[ _-]?money|\bp2p\b|\bcvu\b|account[ _-]?fund|dep[oó]sito/i;
+// MP manda "null" como texto en varias columnas.
+const vacio = (v) => { const s = String(v === undefined || v === null ? '' : v).trim(); return !s || s.toLowerCase() === 'null'; };
+// Rendimientos del saldo (intereses diarios): SETTLEMENT positivo de pocos
+// pesos, sin medio de pago, sin referencia, sin orden ni canal. Verificado
+// con un informe real (116 filas en 3 meses, 1 a 468 pesos).
+function esRendimiento(r, tipo, neto) {
+  return tipo === 'SETTLEMENT' && neto > 0 && neto <= 5000
+    && vacio(r.PAYMENT_METHOD_TYPE) && vacio(r.PAYMENT_METHOD)
+    && vacio(r.EXTERNAL_REFERENCE) && vacio(r.ORDER_ID) && vacio(r.SUB_UNIT) && vacio(r.SEGMENT_DETAIL) && vacio(r.ISSUER_NAME);
+}
 function clasificar(r, tipo, def, neto) {
   if (neto <= 0) return null;
   if (tipo === 'CASHBACK' || tipo === 'WITHDRAWAL_CANCEL') return 'otro';
-  const texto = [r.DESCRIPTION, r.SUB_UNIT, r.SEGMENT_DETAIL, r.BUSINESS_UNIT, r.OPERATION_TAGS].filter(Boolean).join(' ');
+  if (tipo === 'REFUND') return 'otro'; // devolución que recibiste por una compra
+  if (esRendimiento(r, tipo, neto)) return 'rendimiento';
+  const texto = [r.DESCRIPTION, r.SUB_UNIT, r.SEGMENT_DETAIL, r.BUSINESS_UNIT, r.OPERATION_TAGS].filter(x => !vacio(x)).join(' ');
   if (RE_TRANSFERENCIA.test(texto)) return 'transferencia';
   const metodoTipo = String(r.PAYMENT_METHOD_TYPE || '').toLowerCase();
-  const sinVenta = !r.EXTERNAL_REFERENCE && !r.ORDER_ID && !r.POS_ID && !r.STORE_ID;
+  // Un cobro (link, QR, Point, checkout) siempre trae referencia, orden o canal.
+  const sinVenta = vacio(r.EXTERNAL_REFERENCE) && vacio(r.ORDER_ID) && vacio(r.POS_ID) && vacio(r.STORE_ID) && vacio(r.SUB_UNIT);
   // Plata enviada desde el saldo de otro usuario de MP, sin orden ni
   // referencia de venta: casi siempre es un envío de dinero entre personas.
   if ((metodoTipo === 'available_money' || metodoTipo === 'account_money') && sinVenta) return 'transferencia';
+  // TEF sin referencia, orden, canal ni comisión: alguien te transfirió
+  // desde su banco a tu cuenta MP (un cobro por transferencia trae canal).
+  if (metodoTipo === 'bank_transfer' && sinVenta && !num(r.FEE_AMOUNT)) return 'transferencia';
   if (tipo === 'SETTLEMENT') return 'pago';
   // Tipo que no conocemos y suma plata: lo más probable es un ingreso de
   // dinero que no pasó por un cobro. Se revisa a mano la primera vez.
@@ -399,8 +416,9 @@ function normalizar(rows, { incluirRetiros = false } = {}) {
     const fee = num(r.FEE_AMOUNT);
     let neto = r.SETTLEMENT_NET_AMOUNT !== undefined && r.SETTLEMENT_NET_AMOUNT !== '' ? num(r.SETTLEMENT_NET_AMOUNT) : (bruto + fee);
     if (!neto && bruto) neto = bruto + fee;
-    if (def.signo > 0 && neto < 0) neto = -neto;
-    if (def.signo < 0 && neto > 0) neto = -neto;
+    // El informe ya trae el signo correcto (verificado con datos reales): un
+    // SETTLEMENT negativo es una compra tuya pagada con el saldo, un REFUND
+    // positivo es una devolución que recibiste. No se fuerza el signo.
     const monto = moneda === 'CLP' ? Math.round(neto) : neto;
     if (!monto) continue;
     const fechaRaw = r.TRANSACTION_DATE || r.SETTLEMENT_DATE || '';
@@ -408,10 +426,15 @@ function normalizar(rows, { incluirRetiros = false } = {}) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) continue;
     const origen = r.POI_BANK_NAME || r.POI_WALLET_NAME || r.ISSUER_NAME || '';
     const metodo = r.PAYMENT_METHOD_TYPE ? String(r.PAYMENT_METHOD_TYPE).replace(/_/g, ' ') : '';
-    const detalle = r.DESCRIPTION || r.EXTERNAL_REFERENCE || '';
-    const canal = r.SUB_UNIT || r.BUSINESS_UNIT || '';
+    const detalle = !vacio(r.DESCRIPTION) ? r.DESCRIPTION : (!vacio(r.EXTERNAL_REFERENCE) ? r.EXTERNAL_REFERENCE : '');
+    const canal = !vacio(r.SUB_UNIT) ? r.SUB_UNIT : (!vacio(r.BUSINESS_UNIT) ? r.BUSINESS_UNIT : '');
     const clase = clasificar(r, tipo, def, monto);
-    const label = clase === 'transferencia' && tipo === 'SETTLEMENT' ? 'Transferencia recibida' : def.label;
+    const seg = vacio(r.SEGMENT_DETAIL) ? '' : String(r.SEGMENT_DETAIL);
+    let label = def.label;
+    if (clase === 'transferencia' && tipo === 'SETTLEMENT') label = 'Transferencia recibida';
+    else if (clase === 'rendimiento') label = 'Rendimiento del saldo';
+    else if (tipo === 'REFUND') label = monto > 0 ? 'Devolución recibida' : 'Devolución a cliente';
+    else if (tipo === 'SETTLEMENT' && monto < 0) label = /transport/i.test(seg) ? 'Recarga transporte público' : 'Pago con saldo de Mercado Pago';
     const partes = [label];
     if (detalle && String(detalle).trim().toLowerCase() !== label.toLowerCase()) partes.push(String(detalle).slice(0, 120));
     if (origen) partes.push(String(origen).slice(0, 60));
@@ -423,7 +446,8 @@ function normalizar(rows, { incluirRetiros = false } = {}) {
       fecha,
       tipo,
       tipoLabel: label,
-      clase,                 // 'pago' | 'transferencia' | 'otro' | null (sale plata)
+      clase,                 // 'pago' | 'transferencia' | 'rendimiento' | 'otro' | null (sale plata)
+      retiro: !!def.retiro,  // retiro a tu banco (no es gasto: es traspaso)
       detalle: String(detalle).slice(0, 120),
       canal: String(canal).slice(0, 60),
       monto,                 // positivo = entra plata, negativo = sale (igual que la cartola)
@@ -491,7 +515,8 @@ async function sync(args) {
       if (g.file_name) file_name = g.file_name;
       const { headers, rows } = parseCSV(g.csv);
       diag.tramos.push({ since: t.since, until: t.until, file_name: g.file_name || '', bytes: (g.csv || '').length, filas: rows.length, headers: headers.slice(0, 40), tipos: contar(rows, 'TRANSACTION_TYPE'), metodos: contar(rows, 'PAYMENT_METHOD_TYPE'), detalle: g.diag || null });
-      csvs.push(g.csv || '');
+      // Para el CSV de diagnóstico, el encabezado va una sola vez.
+      csvs.push(csvs.length && headers.length ? String(g.csv || '').replace(/^[^\n]*\n?/, '') : (g.csv || ''));
       if (!headers.length) continue;
       const faltan = ['TRANSACTION_TYPE', 'TRANSACTION_DATE'].filter(k => !headers.includes(k));
       if (faltan.length) return fin({ ok: false, error: 'El informe no trae las columnas esperadas.', detalle: 'Encabezados: ' + headers.slice(0, 12).join(', '), _csv: csvs.join('\n') });

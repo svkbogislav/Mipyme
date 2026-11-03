@@ -788,6 +788,8 @@
         metodo: 'Transferencia',
         account_id
       };
+      const rawG = mov._raw || {};
+      if (rawG.mp_id) { gasto.mp_id = rawG.mp_id; gasto.metodo = 'Mercado Pago'; gasto.origen = 'mercadopago'; }
       if (!state.gastos) state.gastos = [];
       state.gastos.push(gasto);
       if (!state.conciliaciones) state.conciliaciones = [];

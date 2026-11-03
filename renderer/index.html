@@ -3071,6 +3071,7 @@
               <input type="checkbox" id="mpRetiros" style="width:auto; margin:0" onchange="_mpSetRetiros(this.checked)" />
               Incluir también los retiros a mi banco
             </label>
+            <div style="font-size:11px; color:var(--text-muted); padding-left:26px">Si lo activas, los retiros aparecen en la revisión como "Ignorar" (no son gastos: la plata llega a tu banco). Solo sirve si quieres marcarlos a mano como traspaso.</div>
           </div>
           <button class="btn primary sm" onclick="sincronizarMercadoPago(false)">Sincronizar ahora</button>
         </div>
@@ -10500,6 +10501,9 @@ function cerrarModalConciliacion() {
 // un crédito de "Mis deudas" (solo si es clara) → crear ingreso/gasto.
 function _decisionInicialConc(m, account_id) {
   if (m.candidatos.length > 0) return { tipo: 'match', candidato: m.candidatos[0] };
+  // Retiro de Mercado Pago a tu banco: no es gasto. Queda en "Ignorar" (el
+  // abono se reconoce en el banco como traspaso); se puede marcar a mano.
+  if (m.mov._raw && m.mov._raw.retiro) return { tipo: 'ignorar' };
   const otra = _detectarTraspasoConc(m.mov, account_id);
   if (otra) return { tipo: 'traspaso', otra };
   const cuota = Conciliacion.detectarCuotaDeuda(m.mov, state);
@@ -10966,13 +10970,50 @@ function _mpUltimoHtml(cfg) {
 // Movimientos del informe → formato de cartola (positivo = entra plata).
 function _mpMovsNuevos(r) {
   const vistos = _mpVistos();
-  return (r.movements || []).filter(m => m.id && !vistos[m.id] && m.monto).map(m => ({
+  // Los rendimientos del saldo no pasan por la revisión: se suman por mes
+  // en _mpAplicarRendimientos.
+  return (r.movements || []).filter(m => m.id && !vistos[m.id] && m.monto && m.clase !== 'rendimiento').map(m => ({
     _id: uid(),
     fecha: m.fecha,
     descripcion: (`Mercado Pago · ${m.descripcion}` + (m.comision ? ` (bruto ${clp(m.bruto)}, comisión ${clp(Math.abs(m.comision))})` : '')).slice(0, 250),
     monto: Math.round(m.monto),
-    _raw: { mp_id: m.id, tipo: m.tipo, clase: m.clase || null, source_id: m.source_id, metodo: m.metodoTipo, detalle: m.detalle || '', canal: m.canal || '' }
+    _raw: { mp_id: m.id, tipo: m.tipo, clase: m.clase || null, retiro: !!m.retiro, source_id: m.source_id, metodo: m.metodoTipo, detalle: m.detalle || '', canal: m.canal || '' }
   })).sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+}
+// Rendimientos del saldo de Mercado Pago (intereses diarios de pocos pesos):
+// UN ingreso por mes que crece con cada sincronización. mp_dias guarda los
+// días ya contados para no sumar dos veces. Devuelve lo sumado ahora.
+function _mpAplicarRendimientos(r, appCuentaId) {
+  const rend = (r.movements || []).filter(m => m.clase === 'rendimiento' && m.monto > 0 && /^\d{4}-\d{2}-\d{2}$/.test(m.fecha || ''));
+  if (!rend.length) return { monto: 0, meses: 0 };
+  const porMes = {};
+  rend.forEach(m => {
+    const ym = m.fecha.slice(0, 7);
+    porMes[ym] = porMes[ym] || {};
+    porMes[ym][m.fecha] = (porMes[ym][m.fecha] || 0) + Math.round(m.monto);
+  });
+  if (!Array.isArray(state.ventasManuales)) state.ventasManuales = [];
+  let total = 0, meses = 0;
+  Object.keys(porMes).sort().forEach(ym => {
+    const mpId = `mp_rend_${ym}`;
+    let v = state.ventasManuales.find(x => x.mp_id === mpId);
+    const yaContados = (v && v.mp_dias) || {};
+    const nuevos = Object.keys(porMes[ym]).filter(dia => yaContados[dia] === undefined);
+    if (!nuevos.length) return;
+    if (!v) {
+      v = { id: uid(), fecha: '', monto: 0, canal: 'transferencia', concepto: 'Rendimientos del saldo de Mercado Pago',
+        descripcion: `Rendimientos del saldo de Mercado Pago · ${fmtMes.format(new Date(ym + '-02'))}`, cliente: '', metodo: 'Mercado Pago',
+        origen: 'mercadopago', tipo_ingreso: 'otro', account_id: appCuentaId, mp_id: mpId, mp_dias: {}, created_at: new Date().toISOString() };
+      state.ventasManuales.push(v);
+    }
+    v.mp_dias = v.mp_dias || {};
+    let sum = 0;
+    nuevos.forEach(dia => { v.mp_dias[dia] = porMes[ym][dia]; sum += porMes[ym][dia]; });
+    v.monto = Object.values(v.mp_dias).reduce((a, b) => a + b, 0);
+    v.fecha = Object.keys(v.mp_dias).sort().pop();
+    total += sum; meses++;
+  });
+  return { monto: total, meses };
 }
 // Primera vez: 90 días. Después: desde la última sync menos 7 días (el
 // dedupe por id evita repetidos).
@@ -11017,12 +11058,15 @@ async function sincronizarMercadoPago(silencioso) {
     const nuevos = _mpMovsNuevos(r);
     delete cfg.pendienteInforme;
     cfg.ultimo = _mpResumenSync(r, nuevos.length, ahoraISO);
+    const rend = _mpAplicarRendimientos(r, appCuentaId);
+    cfg.ultimo.rendimientos = rend.monto;
+    const txtRend = rend.monto ? ` · rendimientos del saldo +${clp(rend.monto)} (ya registrados)` : '';
     if (!nuevos.length) {
       cfg.lastSync = ahoraISO;
       if (silencioso) cfg.lastAutoSync = ahoraISO;
       saveState();
       if (!silencioso) {
-        toast(r.vacio ? 'Mercado Pago devolvió un informe vacío para ese período' : 'Mercado Pago al día: sin movimientos nuevos', 'success');
+        toast((r.vacio ? 'Mercado Pago devolvió un informe vacío para ese período' : 'Mercado Pago al día: sin movimientos nuevos') + txtRend, 'success');
         _mpEstado(r.vacio ? `El informe del ${r.since || '…'} al ${r.until || '…'} vino vacío: Mercado Pago no registra movimientos en ese período.` : `Informe leído (${r.filas || 0} fila${r.filas === 1 ? '' : 's'}): no hay movimientos nuevos que registrar.`, 'ok');
       }
       return;
@@ -11039,7 +11083,7 @@ async function sincronizarMercadoPago(silencioso) {
       document.getElementById('concStep2').style.display = '';
       document.getElementById('btnConcConfirmar').style.display = '';
       _cargarMovimientosEnConciliacion({ movimientos: nuevos }, null, { _mp: { ids, label: 'Mercado Pago' } });
-      toast(`${nuevos.length} movimiento${nuevos.length === 1 ? '' : 's'} nuevo${nuevos.length === 1 ? '' : 's'} de Mercado Pago. Revisa y confirma.`, 'success');
+      toast(`${nuevos.length} movimiento${nuevos.length === 1 ? '' : 's'} nuevo${nuevos.length === 1 ? '' : 's'} de Mercado Pago. Revisa y confirma.${txtRend}`, 'success');
       return;
     }
     // Automático: aplicar sin preguntar. Lo que no cruza se crea con la
@@ -11047,6 +11091,9 @@ async function sincronizarMercadoPago(silencioso) {
     const lote = 'L' + Date.now() + '_mp';
     let ap = 0, cr = 0, pc = 0;
     Conciliacion.matchearMovimientos(nuevos, state).forEach(m => {
+      // Retiro a tu banco: no es gasto (el abono en el banco se reconoce
+      // como traspaso). Se marca visto y no se crea nada.
+      if (m.mov._raw && m.mov._raw.retiro) return;
       if (m.candidatos && m.candidatos.length) {
         Conciliacion.aplicarMatch(state, m.mov, m.candidatos[0], appCuentaId, lote); ap++;
       } else {
@@ -11064,7 +11111,7 @@ async function sincronizarMercadoPago(silencioso) {
     cfg.lastSync = ahoraISO; cfg.lastAutoSync = ahoraISO;
     cfg.ultimo.pendientes = 0; cfg.ultimo.confirmados = ap + cr;
     saveState();
-    toast(`Mercado Pago: ${nuevos.length} movimiento${nuevos.length === 1 ? '' : 's'} nuevo${nuevos.length === 1 ? '' : 's'} (${ap} cruzado${ap === 1 ? '' : 's'}, ${cr} creado${cr === 1 ? '' : 's'})${pc ? ` · ${pc} por clasificar` : ''}`, 'success');
+    toast(`Mercado Pago: ${nuevos.length} movimiento${nuevos.length === 1 ? '' : 's'} nuevo${nuevos.length === 1 ? '' : 's'} (${ap} cruzado${ap === 1 ? '' : 's'}, ${cr} creado${cr === 1 ? '' : 's'})${pc ? ` · ${pc} por clasificar` : ''}${txtRend}`, 'success');
     try { refreshVistaActiva(); } catch (e) { console.error(e); }
   } finally {
     _mpSyncEnCurso = false;
@@ -11830,14 +11877,20 @@ function retirarLoteCartola(lote) {
   if (!confirm(`¿Retirar esta cartola?\n\nSe borrarán ${autoCreados.length} movimiento(s) que creó y se desharán ${concs.length - autoCreados.length} cruce(s). Los gastos/ventas que ya tenías NO se borran.`)) return;
 
   let borrados = 0, descruzados = 0, hayDeudas = false;
+  const esMP = !!(reg && /mercado ?pago/i.test(reg.origen || ''));
+  const mpIds = [];
   concs.forEach(c => {
     if (c.auto_creado) {
       if (c.ref_type === 'gasto') {
         const n = (state.gastos || []).length;
+        const g = (state.gastos || []).find(x => x.id === c.ref_id);
+        if (g && g.mp_id) mpIds.push(g.mp_id);
         state.gastos = (state.gastos || []).filter(g => g.id !== c.ref_id);
         if ((state.gastos || []).length < n) borrados++;
       } else if (c.ref_type === 'venta') {
         const n = (state.ventasManuales || []).length;
+        const v = (state.ventasManuales || []).find(x => x.id === c.ref_id);
+        if (v && v.mp_id) mpIds.push(v.mp_id);
         state.ventasManuales = (state.ventasManuales || []).filter(v => v.id !== c.ref_id);
         if ((state.ventasManuales || []).length < n) borrados++;
       } else if (c.ref_type === 'transferencia') {
@@ -11854,8 +11907,16 @@ function retirarLoteCartola(lote) {
   });
   state.conciliaciones = (state.conciliaciones || []).filter(c => c.lote !== lote);
   state.cartolaLotes = (state.cartolaLotes || []).filter(l => l.lote !== lote);
+  if (esMP) {
+    // Que la próxima sincronización vuelva a ofrecer estos movimientos.
+    const vistos = _mpVistos();
+    mpIds.forEach(id => { delete vistos[id]; });
+    const quedanMP = (state.cartolaLotes || []).some(l => /mercado ?pago/i.test(l.origen || ''));
+    if (!quedanMP) { state.mpVistos = {}; const c = _mpCfg(); c.lastSync = null; delete c.pendienteInforme; }
+    try { renderMercadoPagoCfg(); } catch (e) {}
+  }
   saveState();
-  toast(`Cartola retirada: ${borrados} movimiento(s) borrado(s), ${descruzados} cruce(s) deshecho(s)`, 'success');
+  toast(`Cartola retirada: ${borrados} movimiento(s) borrado(s), ${descruzados} cruce(s) deshecho(s)${esMP ? '. La próxima sincronización de Mercado Pago los vuelve a leer.' : ''}`, 'success');
   renderCuentas();
   if (hayDeudas && document.getElementById('view-deudas')?.classList.contains('active')) renderDeudas();
   if (document.getElementById('view-dashboard')?.classList.contains('active')) renderDashboard();
