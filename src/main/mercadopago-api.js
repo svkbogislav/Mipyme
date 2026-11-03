@@ -33,6 +33,11 @@ const COLUMNAS_REQUERIDAS = [
 ];
 // Subconjunto mínimo por si MP rechaza alguna de las anteriores.
 const COLUMNAS_MINIMAS = COLUMNAS_REQUERIDAS.slice(0, 12);
+// Columnas que ayudan a distinguir un pago de una transferencia recibida
+// (canal de venta, plataforma de cobro, etiquetas). Si MP las rechaza, se
+// sigue sin ellas y no se vuelve a intentar en esta sesión.
+const COLUMNAS_OPCIONALES = ['BUSINESS_UNIT', 'SUB_UNIT', 'SEGMENT_DETAIL', 'OPERATION_TAGS', 'ORDER_ID', 'ISSUER_NAME'];
+let _opcionalesRechazadas = false;
 
 function request(method, path, token, body, { timeout = 30000 } = {}) {
   return new Promise((resolve, reject) => {
@@ -140,9 +145,10 @@ async function asegurarConfig(token) {
   const actual = existe ? g.json : null;
   const colsActuales = actual && Array.isArray(actual.columns) ? actual.columns.map(c => (c && c.key) || '').filter(Boolean) : [];
   const faltan = COLUMNAS_REQUERIDAS.filter(k => !colsActuales.includes(k));
+  const faltanOpc = _opcionalesRechazadas ? [] : COLUMNAS_OPCIONALES.filter(k => !colsActuales.includes(k));
   const idiomaOk = !actual || !actual.header_language || /^en/i.test(String(actual.header_language));
   const sepOk = !actual || !actual.separator || actual.separator === ';';
-  if (existe && !faltan.length && idiomaOk && sepOk) return { ok: true, creado: false };
+  if (existe && !faltan.length && !faltanOpc.length && idiomaOk && sepOk) return { ok: true, creado: false };
 
   const base = actual ? { ...actual } : {};
   delete base.scheduled; delete base.sftp_info; delete base.id; delete base.user_id;
@@ -159,7 +165,12 @@ async function asegurarConfig(token) {
     columns: Array.from(new Set([...colsActuales, ...cols])).map(key => ({ key })),
   });
   const metodo = existe ? 'PUT' : 'POST';
-  let r = await request(metodo, '/v1/account/settlement_report/config', token, armar(COLUMNAS_REQUERIDAS));
+  let r = null;
+  if (faltanOpc.length) {
+    r = await request(metodo, '/v1/account/settlement_report/config', token, armar([...COLUMNAS_REQUERIDAS, ...COLUMNAS_OPCIONALES]));
+    if (!ok2xx(r)) _opcionalesRechazadas = true;
+  }
+  if (!r || !ok2xx(r)) r = await request(metodo, '/v1/account/settlement_report/config', token, armar(COLUMNAS_REQUERIDAS));
   if (!ok2xx(r)) r = await request(metodo, '/v1/account/settlement_report/config', token, armar(COLUMNAS_MINIMAS));
   if (!ok2xx(r) && !existe) r = await request('PUT', '/v1/account/settlement_report/config', token, armar(COLUMNAS_MINIMAS));
   if (!ok2xx(r)) return { ok: false, error: 'No pude preparar el informe en Mercado Pago: ' + mensajeError(r), detalle: detalleMP(r) };
@@ -275,6 +286,28 @@ const TIPOS = {
   WITHDRAWAL_CANCEL: { label: 'Retiro cancelado',       signo: +1, retiro: true },
 };
 
+// ¿Qué es esta plata que entró? 'pago' = alguien te pagó por algo (link,
+// QR, Point, checkout: una venta de tus emprendimientos). 'transferencia' =
+// alguien te envió plata a tu cuenta MP (no es una venta). 'otro' = cashback,
+// retiro cancelado, etc. Para lo que sale, null.
+const RE_TRANSFERENCIA = /transfer|env[ií]o de dinero|dinero recibido|ingreso de dinero|money[ _-]?(in|transfer|send)|send[ _-]?money|\bp2p\b|\bcvu\b|account[ _-]?fund|dep[oó]sito/i;
+function clasificar(r, tipo, def, neto) {
+  if (neto <= 0) return null;
+  if (tipo === 'CASHBACK' || tipo === 'WITHDRAWAL_CANCEL') return 'otro';
+  const texto = [r.DESCRIPTION, r.SUB_UNIT, r.SEGMENT_DETAIL, r.BUSINESS_UNIT, r.OPERATION_TAGS].filter(Boolean).join(' ');
+  if (RE_TRANSFERENCIA.test(texto)) return 'transferencia';
+  const metodoTipo = String(r.PAYMENT_METHOD_TYPE || '').toLowerCase();
+  const sinVenta = !r.EXTERNAL_REFERENCE && !r.ORDER_ID && !r.POS_ID && !r.STORE_ID;
+  // Plata enviada desde el saldo de otro usuario de MP, sin orden ni
+  // referencia de venta: casi siempre es un envío de dinero entre personas.
+  if ((metodoTipo === 'available_money' || metodoTipo === 'account_money') && sinVenta) return 'transferencia';
+  if (tipo === 'SETTLEMENT') return 'pago';
+  // Tipo que no conocemos y suma plata: lo más probable es un ingreso de
+  // dinero que no pasó por un cobro. Se revisa a mano la primera vez.
+  if (!TIPOS[tipo]) return 'transferencia';
+  return 'otro';
+}
+
 function normalizar(rows, { incluirRetiros = false } = {}) {
   const out = [];
   for (const r of rows) {
@@ -293,19 +326,26 @@ function normalizar(rows, { incluirRetiros = false } = {}) {
     const fechaRaw = r.TRANSACTION_DATE || r.SETTLEMENT_DATE || '';
     const fecha = String(fechaRaw).slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) continue;
-    const origen = r.POI_BANK_NAME || r.POI_WALLET_NAME || '';
+    const origen = r.POI_BANK_NAME || r.POI_WALLET_NAME || r.ISSUER_NAME || '';
     const metodo = r.PAYMENT_METHOD_TYPE ? String(r.PAYMENT_METHOD_TYPE).replace(/_/g, ' ') : '';
     const detalle = r.DESCRIPTION || r.EXTERNAL_REFERENCE || '';
-    const partes = [def.label];
-    if (detalle) partes.push(String(detalle).slice(0, 120));
+    const canal = r.SUB_UNIT || r.BUSINESS_UNIT || '';
+    const clase = clasificar(r, tipo, def, monto);
+    const label = clase === 'transferencia' && tipo === 'SETTLEMENT' ? 'Transferencia recibida' : def.label;
+    const partes = [label];
+    if (detalle && String(detalle).trim().toLowerCase() !== label.toLowerCase()) partes.push(String(detalle).slice(0, 120));
     if (origen) partes.push(String(origen).slice(0, 60));
     else if (metodo) partes.push(metodo);
+    if (canal) partes.push(String(canal).slice(0, 40));
     const id = `mp_${r.SOURCE_ID || r.EXTERNAL_REFERENCE || fecha}_${tipo}_${Math.abs(monto)}`;
     out.push({
       id,
       fecha,
       tipo,
-      tipoLabel: def.label,
+      tipoLabel: label,
+      clase,                 // 'pago' | 'transferencia' | 'otro' | null (sale plata)
+      detalle: String(detalle).slice(0, 120),
+      canal: String(canal).slice(0, 60),
       monto,                 // positivo = entra plata, negativo = sale (igual que la cartola)
       bruto: moneda === 'CLP' ? Math.round(bruto) : bruto,
       comision: moneda === 'CLP' ? Math.round(fee) : fee,
@@ -345,4 +385,4 @@ async function sync(args) {
   }
 }
 
-module.exports = { test, sync, parseCSV, normalizar, num, limpiarToken };
+module.exports = { test, sync, parseCSV, normalizar, clasificar, num, limpiarToken };

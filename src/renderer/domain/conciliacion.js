@@ -646,15 +646,26 @@
       });
       return { tipo: 'gasto', ref: gasto };
     } else {
-      // Abono → venta manual
+      // Abono → venta manual (en perfil personal, "ingreso"). categoriaOverride
+      // acá es el tipo de ingreso ('emprendimiento' | 'transferencia' |
+      // 'sueldo' | 'otro') o null si no se clasificó.
+      const raw = mov._raw || {};
+      const esMP = !!raw.mp_id;
       const venta = {
         id: window.uid(),
         fecha: mov.fecha,
         monto: mov.monto,
         canal: 'transferencia',
         concepto: mov.descripcion,
-        account_id
+        descripcion: mov.descripcion,
+        cliente: '',
+        metodo: esMP ? 'Mercado Pago' : 'Transferencia',
+        origen: esMP ? 'mercadopago' : (raw.fintoc_id ? 'banco' : 'cartola'),
+        tipo_ingreso: categoriaOverride || null,
+        account_id,
+        created_at: new Date().toISOString()
       };
+      if (esMP) venta.mp_id = raw.mp_id;
       if (!state.ventasManuales) state.ventasManuales = [];
       state.ventasManuales.push(venta);
       if (!state.conciliaciones) state.conciliaciones = [];

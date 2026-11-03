@@ -36,7 +36,9 @@
       _id: v.id,
       _recurring_id: v.recurring_id || null,
       metodo: v.metodo,
-      account_id: v.account_id
+      account_id: v.account_id,
+      tipo_ingreso: v.tipo_ingreso || null,
+      origen: v.origen || null
     };
   }
 

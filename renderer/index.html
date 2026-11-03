@@ -1422,6 +1422,7 @@
             <input id="ventasSearch" placeholder="Buscar por cliente o descripción..." style="max-width:280px" oninput="renderVentasTabla()" />
           </div>
         </div>
+        <div id="ingresosPorTipo" style="margin-bottom:10px; display:none"></div>
         <div id="ventasFiltradosResumen" style="margin-bottom:10px; display:none"></div>
         <div class="table-wrap"><table id="tablaVentas"></table></div>
       </div>
@@ -3030,18 +3031,18 @@
         <summary>
           <svg class="cs-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           <span class="cs-title">Mercado Pago</span>
-          <span class="cs-hint">Lee solo lo que entra a tu cuenta de Mercado Pago (pagos recibidos, devoluciones)</span>
+          <span class="cs-hint">Lee lo que entra a tu cuenta de Mercado Pago y separa pagos de emprendimientos de transferencias recibidas</span>
         </summary>
         <div class="cs-body">
       <div class="card" style="margin-bottom:14px">
         <h3>Conexión Mercado Pago</h3>
-        <div class="card-sub">La app pide a Mercado Pago el informe "Todas las transacciones" de tu cuenta con un access token tuyo. El token se guarda <strong>solo en este equipo</strong>. Los retiros a tu banco no se importan (ya llegan por tu cuenta bancaria), salvo que lo actives abajo.</div>
+        <div class="card-sub">La app pide a Mercado Pago el informe "Todas las transacciones" de tu cuenta con un access token tuyo. El token se guarda <strong>solo en este equipo</strong>. Los retiros a tu banco no se importan, salvo que lo actives abajo: cuando ese abono aparece en tu banco, la app lo reconoce como traspaso entre tus cuentas (no como ingreso).</div>
 
         <div class="row" style="margin-top:12px; align-items:flex-end">
           <div style="flex:2">
             <label>Access token (producción)</label>
             <input id="mpToken" type="password" placeholder="APP_USR-…" autocomplete="off" />
-            <div style="font-size:11px; color:var(--text-muted); margin-top:4px">mercadopago.cl/developers → Tus integraciones → tu aplicación → Credenciales de producción → <strong>Access Token</strong>. Si no tienes aplicación, crea una (tipo "Pagos online", cualquier nombre).</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px">mercadopago.cl/developers → Tus integraciones → tu aplicación → Credenciales de producción → <strong>Access Token</strong>. Si no tienes aplicación, crea una: "Pagos online" → Checkout API → API de Payments, con cualquier nombre.</div>
           </div>
           <div style="display:flex; gap:8px; flex-shrink:0">
             <button class="btn" onclick="guardarMpToken()">Guardar</button>
@@ -3974,6 +3975,16 @@
         <option>Tarjeta débito</option>
         <option>Webpay / MercadoPago</option>
         <option>Otro</option>
+      </select>
+    </div>
+    <div style="margin-bottom:10px" id="vmTipoIngresoWrap">
+      <label>¿De dónde viene?</label>
+      <select id="vmTipoIngreso">
+        <option value="">Sin clasificar</option>
+        <option value="sueldo">Sueldo / honorarios</option>
+        <option value="emprendimiento">Pago de emprendimiento</option>
+        <option value="transferencia">Transferencia recibida</option>
+        <option value="otro">Otro ingreso</option>
       </select>
     </div>
     <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:12px;">
@@ -6841,7 +6852,30 @@ function renderVentas() {
   document.getElementById('vUpdated').textContent = shopify.updated_at
     ? fmtFechaCorta.format(new Date(shopify.updated_at)) + ' ' + new Date(shopify.updated_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
     : '—';
+  _renderIngresosPorTipo();
   renderVentasTabla();
+}
+
+// "Este mes, de dónde entró": suma los ingresos manuales del mes por tipo.
+// Solo aparece cuando hay al menos uno clasificado.
+function _renderIngresosPorTipo() {
+  const el = document.getElementById('ingresosPorTipo');
+  if (!el) return;
+  const ym = nuevoMesActualYM();
+  const sum = {};
+  let alguno = false;
+  (state.ventasManuales || []).forEach(v => {
+    if ((v.fecha || '').slice(0, 7) !== ym) return;
+    const k = v.tipo_ingreso || '';
+    if (k) alguno = true;
+    sum[k] = (sum[k] || 0) + Number(v.monto || 0);
+  });
+  if (!alguno) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const chip = (lbl, monto, muted) => `<span style="display:inline-flex; gap:6px; align-items:center; padding:4px 10px; border:1px solid var(--border); border-radius:999px; font-size:12px; background:var(--surface-2)"><span style="color:var(--text-muted)">${escapeHtml(lbl)}</span><strong style="color:${muted ? 'var(--text-muted)' : 'var(--text)'}">${clp(monto)}</strong></span>`;
+  const partes = Object.keys(TIPOS_INGRESO).filter(k => sum[k]).map(k => chip(TIPOS_INGRESO[k], sum[k], false));
+  if (sum['']) partes.push(chip('Sin clasificar', sum[''], true));
+  el.innerHTML = `<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center"><span style="font-size:12px; color:var(--text-muted)">Este mes, de dónde entró:</span>${partes.join('')}</div>`;
+  el.style.display = '';
 }
 
 // Wrapper sobre Ventas.obtenerVentasClasificadas. Ver src/renderer/domain/ventas.js.
@@ -6994,7 +7028,7 @@ function renderVentasTabla() {
           <td>${origen}${acciones}</td>
           <td>${escapeHtml(v.cliente)}</td>
           <td style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${escapeHtml(detalle)}</td>
-          <td>${v.manual ? `<span class="badge success" style="font-size:10px">${escapeHtml(v.metodo || 'Pagado')}</span>` : badgeEstado(v.estado)}</td>
+          <td>${v.manual ? `<span class="badge success" style="font-size:10px">${escapeHtml(v.tipo_ingreso ? tipoIngresoLabel(v.tipo_ingreso) : (v.metodo || 'Pagado'))}</span>` : badgeEstado(v.estado)}</td>
           <td>${badgeFiltro(v._filterReason)}</td>
           <td class="num">${clp(v.total)}</td>
         </tr>`;
@@ -7030,6 +7064,8 @@ function abrirModalVentaManual() {
   document.getElementById('vmDescripcion').value = '';
   document.getElementById('vmCliente').value = '';
   document.getElementById('vmMetodo').value = 'Efectivo';
+  document.getElementById('vmTipoIngreso').value = '';
+  document.getElementById('vmTipoIngresoWrap').style.display = esPerfilPersonal() ? '' : 'none';
   poblarSelectVmCuenta();
   document.getElementById('btnEliminarVM').style.display = 'none';
   // Reset bloque recurrente y restaurar visibilidad (por si vino oculto de editar serie)
@@ -7054,6 +7090,8 @@ function editarVentaManual(id) {
   document.getElementById('vmDescripcion').value = v.descripcion || '';
   document.getElementById('vmCliente').value = v.cliente || '';
   document.getElementById('vmMetodo').value = v.metodo || 'Efectivo';
+  document.getElementById('vmTipoIngreso').value = v.tipo_ingreso || '';
+  document.getElementById('vmTipoIngresoWrap').style.display = (esPerfilPersonal() || v.origen === 'mercadopago') ? '' : 'none';
   poblarSelectVmCuenta(v.account_id);
   document.getElementById('btnEliminarVM').style.display = '';
   // Si es parte de una serie recurrente, no permitir convertirlo en otra serie
@@ -7101,6 +7139,7 @@ function guardarVentaManual() {
   const cliente = document.getElementById('vmCliente').value.trim();
   const account_id = document.getElementById('vmCuenta').value || state.config.cuenta_default_id;
   const metodo = document.getElementById('vmMetodo').value;
+  const tipo_ingreso = document.getElementById('vmTipoIngreso').value || null;
 
   if (!Array.isArray(state.ventasManuales)) state.ventasManuales = [];
 
@@ -7116,7 +7155,7 @@ function guardarVentaManual() {
       toast('Este ingreso ya es parte de una serie', 'error');
       return;
     }
-    Object.assign(v, { fecha, monto, descripcion, cliente, account_id, metodo });
+    Object.assign(v, { fecha, monto, descripcion, cliente, account_id, metodo, tipo_ingreso });
     if (esRecurrente && !v.recurring_id) {
       // CONVERTIR este ingreso existente en el "primer cargo" de una serie nueva.
       const frecuencia = document.getElementById('vmRecFrecuencia').value;
@@ -7124,7 +7163,7 @@ function guardarVentaManual() {
       const hasta = document.getElementById('vmRecHasta').value || null;
       if (!Array.isArray(state.config.ingresosRecurrentes)) state.config.ingresosRecurrentes = [];
       const rec = {
-        id: uid(), descripcion, monto, cliente, account_id, metodo,
+        id: uid(), descripcion, monto, cliente, account_id, metodo, tipo_ingreso,
         frecuencia, desde, hasta, dia: Number((fecha || '').slice(8, 10)) || 1,
         created_at: new Date().toISOString()
       };
@@ -7139,7 +7178,7 @@ function guardarVentaManual() {
     const hasta = document.getElementById('vmRecHasta').value || null;
     if (!Array.isArray(state.config.ingresosRecurrentes)) state.config.ingresosRecurrentes = [];
     const rec = {
-      id: uid(), descripcion, monto, cliente, account_id, metodo,
+      id: uid(), descripcion, monto, cliente, account_id, metodo, tipo_ingreso,
       frecuencia, desde, hasta, dia: Number((fecha || '').slice(8, 10)) || 1,
       created_at: new Date().toISOString()
     };
@@ -7147,7 +7186,7 @@ function guardarVentaManual() {
     nuevosRec = generarIngresosRecurrentes(rec.id);
   } else {
     state.ventasManuales.push({
-      id: uid(), fecha, monto, descripcion, cliente, account_id, metodo,
+      id: uid(), fecha, monto, descripcion, cliente, account_id, metodo, tipo_ingreso,
       created_at: new Date().toISOString()
     });
   }
@@ -10414,15 +10453,18 @@ function _cargarMovimientosEnConciliacion(r, errEl, extra) {
   }
   if (errEl) errEl.style.display = 'none';
   const matches = Conciliacion.matchearMovimientos(r.movimientos, state);
-  const items = matches.map(m => ({
-    mov: m.mov,
-    candidatos: m.candidatos,
-    decision: m.candidatos.length > 0
-      ? { tipo: 'match', candidato: m.candidatos[0] }
-      : { tipo: 'crear', categoria: _sugerirCatConc(m.mov) }
-  }));
+  const account_id = document.getElementById('concAccount').value;
+  const items = matches.map(m => {
+    let decision;
+    if (m.candidatos.length > 0) decision = { tipo: 'match', candidato: m.candidatos[0] };
+    else {
+      const otra = _detectarTraspasoConc(m.mov, account_id);
+      decision = otra ? { tipo: 'traspaso', otra } : { tipo: 'crear', categoria: _sugerirCatConc(m.mov) };
+    }
+    return { mov: m.mov, candidatos: m.candidatos, decision };
+  });
   _conciliacionStaging = {
-    account_id: document.getElementById('concAccount').value,
+    account_id,
     items,
     _filas: r.filas || null,
     _cols: r.columnas || null,
@@ -10685,6 +10727,8 @@ async function sincronizarFintocTodo(silencioso) {
           if (m.candidatos && m.candidatos.length) {
             Conciliacion.aplicarMatch(state, m.mov, m.candidatos[0], appCuentaId, lote); ap++;
           } else {
+            const otra = _detectarTraspasoConc(m.mov, appCuentaId);
+            if (otra) { if (_crearTraspasoDesdeMov(m.mov, appCuentaId, otra, lote)) cr++; return; }
             const cat = _sugerirCatConc(m.mov);
             Conciliacion.crearDesdeMovimiento(state, m.mov, appCuentaId, cat, lote); cr++;
             if (m.mov.monto < 0 && !cat) pc++;
@@ -10795,6 +10839,24 @@ function _mpSugerirAppCuenta() {
   const hit = cuentas.find(c => /mercado\s*pago|\bmp\b/i.test(c.nombre || ''));
   return hit ? hit.id : (state.config.cuenta_default_id || (cuentas[0] && cuentas[0].id) || '');
 }
+// Lo que entró por Mercado Pago este mes, separado en pagos de
+// emprendimientos y transferencias recibidas (según venta.tipo_ingreso).
+function _mpResumenMesHtml() {
+  const ym = nuevoMesActualYM();
+  let pagos = 0, transf = 0, otros = 0, n = 0;
+  (state.ventasManuales || []).forEach(v => {
+    if (v.origen !== 'mercadopago' || (v.fecha || '').slice(0, 7) !== ym) return;
+    n++;
+    const m = Number(v.monto || 0);
+    if (v.tipo_ingreso === 'transferencia') transf += m;
+    else if (v.tipo_ingreso === 'emprendimiento') pagos += m;
+    else otros += m;
+  });
+  if (!n) return '';
+  const partes = [`pagos de emprendimientos <strong>${clp(pagos)}</strong>`, `transferencias recibidas <strong>${clp(transf)}</strong>`];
+  if (otros) partes.push(`otros <strong>${clp(otros)}</strong>`);
+  return `Este mes entró: ${partes.join(' · ')}`;
+}
 function renderMercadoPagoCfg() {
   const cfg = _mpCfg();
   const inp = document.getElementById('mpToken');
@@ -10813,14 +10875,14 @@ function renderMercadoPagoCfg() {
   const quien = cfg.cuenta && (cfg.cuenta.nombre || cfg.cuenta.nickname) ? (cfg.cuenta.nombre || cfg.cuenta.nickname) : '';
   const resumen = document.getElementById('mpResumen');
   if (resumen) resumen.innerHTML = cfg.token
-    ? `<span style="color:var(--success-text)">●</span> Conectado${quien ? ` como <strong>${escapeHtml(quien)}</strong>` : ''} · última sincronización: ${escapeHtml(fmt(cfg.lastSync))}`
+    ? `<span style="color:var(--success-text)">●</span> Conectado${quien ? ` como <strong>${escapeHtml(quien)}</strong>` : ''} · última sincronización: ${escapeHtml(fmt(cfg.lastSync))}${_mpResumenMesHtml() ? `<div style="margin-top:4px">${_mpResumenMesHtml()}</div>` : ''}`
     : `<span style="color:var(--text-muted)">○ Sin conectar</span>`;
   const card = document.getElementById('subirMpCard');
   if (card) {
     card.style.display = cfg.token ? '' : 'none';
     const cta = cuentas.find(c => c.id === cfg.appCuentaId);
     const info = document.getElementById('subirMpInfo');
-    if (info) info.innerHTML = `${quien ? `<strong>${escapeHtml(quien)}</strong> · ` : ''}lo que entra se registra en <strong>${escapeHtml(cta ? cta.nombre : '—')}</strong> · última sincronización: ${escapeHtml(fmt(cfg.lastSync))}`;
+    if (info) info.innerHTML = `${quien ? `<strong>${escapeHtml(quien)}</strong> · ` : ''}lo que entra se registra en <strong>${escapeHtml(cta ? cta.nombre : '—')}</strong> · última sincronización: ${escapeHtml(fmt(cfg.lastSync))}${_mpResumenMesHtml() ? `<br>${_mpResumenMesHtml()}` : ''}`;
   }
 }
 // Movimientos del informe → formato de cartola (positivo = entra plata).
@@ -10831,7 +10893,7 @@ function _mpMovsNuevos(r) {
     fecha: m.fecha,
     descripcion: (`Mercado Pago · ${m.descripcion}` + (m.comision ? ` (bruto ${clp(m.bruto)}, comisión ${clp(Math.abs(m.comision))})` : '')).slice(0, 250),
     monto: Math.round(m.monto),
-    _raw: { mp_id: m.id, tipo: m.tipo, source_id: m.source_id, metodo: m.metodoTipo }
+    _raw: { mp_id: m.id, tipo: m.tipo, clase: m.clase || null, source_id: m.source_id, metodo: m.metodoTipo, detalle: m.detalle || '', canal: m.canal || '' }
   })).sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
 }
 // Primera vez: 90 días. Después: desde la última sync menos 7 días (el
@@ -11114,13 +11176,15 @@ function _reaplicarMapeoCartola() {
   const r = Conciliacion.reparsearConMapeo(st._filas, mapeo);
   if (r.error) { toast(r.error, 'error'); return; }
   const matches = Conciliacion.matchearMovimientos(r.movimientos, state);
-  st.items = matches.map(m => ({
-    mov: m.mov,
-    candidatos: m.candidatos,
-    decision: m.candidatos.length > 0
-      ? { tipo: 'match', candidato: m.candidatos[0] }
-      : { tipo: 'crear', categoria: _sugerirCatConc(m.mov) }
-  }));
+  st.items = matches.map(m => {
+    let decision;
+    if (m.candidatos.length > 0) decision = { tipo: 'match', candidato: m.candidatos[0] };
+    else {
+      const otra = _detectarTraspasoConc(m.mov, st.account_id);
+      decision = otra ? { tipo: 'traspaso', otra } : { tipo: 'crear', categoria: _sugerirCatConc(m.mov) };
+    }
+    return { mov: m.mov, candidatos: m.candidatos, decision };
+  });
   _renderMapeoColumnas();
   _renderConciliacionPaso2();
 }
@@ -11372,6 +11436,7 @@ function _renderConciliacionPaso2() {
   const nMatch = items.filter(i => i.decision.tipo === 'match').length;
   const nNuevo = items.filter(i => i.decision.tipo === 'crear').length;
   const nIgnorar = items.filter(i => i.decision.tipo === 'ignorar').length;
+  const nTraspaso = items.filter(i => i.decision.tipo === 'traspaso').length;
 
   // Rango de fechas detectado en la cartola — útil para que el usuario sepa
   // qué período está importando.
@@ -11386,7 +11451,8 @@ function _renderConciliacionPaso2() {
     <span style="font-size:12px; color:var(--text-muted)">
       Cruzados: <strong style="color:#15803d">${nMatch}</strong> ·
       Crear nuevo: <strong style="color:#b45309">${nNuevo}</strong> ·
-      Ignorar: <strong style="color:#6b7280">${nIgnorar}</strong>
+      Ignorar: <strong style="color:#6b7280">${nIgnorar}</strong>${nTraspaso ? ` ·
+      Traspasos entre mis cuentas: <strong style="color:var(--primary-text)">${nTraspaso}</strong>` : ''}
     </span>
   `;
 
@@ -11394,7 +11460,7 @@ function _renderConciliacionPaso2() {
   const filas = items.map((it, idx) => {
     const m = it.mov;
     const d = it.decision;
-    const barra = d.tipo === 'match' ? 'var(--success)' : (d.tipo === 'crear' ? 'var(--warning, #f59e0b)' : 'var(--text-muted)');
+    const barra = d.tipo === 'match' ? 'var(--success)' : (d.tipo === 'crear' ? 'var(--warning, #f59e0b)' : (d.tipo === 'traspaso' ? 'var(--primary)' : 'var(--text-muted)'));
     const fechaFmt = fmtFechaCorta.format(new Date(m.fecha + 'T12:00:00')).replace(/,?\s*\d{4}/, '');
     const montoColor = m.monto >= 0 ? 'var(--success)' : 'var(--danger)';
     const candidatosOpts = it.candidatos.map((c, ci) => {
@@ -11407,9 +11473,17 @@ function _renderConciliacionPaso2() {
       const selected = d.tipo === 'match' && d.candidato === c ? 'selected' : '';
       return `<option value="match:${ci}" ${selected}>${lbl}</option>`;
     }).join('');
+    // Traspaso entre cuentas propias (no es ingreso ni gasto): una opción por
+    // cada otra cuenta. Sugerido solo cuando el abono viene de Mercado Pago.
+    const traspasoOpts = (state.config.cuentas || []).filter(c => c.id !== _conciliacionStaging.account_id).map(c =>
+      `<option value="traspaso:${escapeHtml(c.id)}" ${d.tipo === 'traspaso' && d.otra === c.id ? 'selected' : ''}>Traspaso ${m.monto >= 0 ? 'desde' : 'hacia'} ${escapeHtml(c.nombre)} (entre mis cuentas)</option>`
+    ).join('');
+    const esMP = !!(m._raw && m._raw.mp_id);
     const catCell = (d.tipo === 'crear' && m.monto < 0)
       ? `<select onchange="setCategoriaConciliacion(${idx}, this.value)" title="Categoría detectada — corrígela si está mal" style="width:100%; font-size:11px; padding:3px 4px">${_opcionesCategoriaConc(d.categoria)}</select>${d.categoria ? '<span style="font-size:9px; color:var(--success); white-space:nowrap"> ● auto</span>' : ''}`
-      : '<span style="color:var(--text-muted)">—</span>';
+      : (d.tipo === 'crear' && m.monto >= 0 && (esMP || esPerfilPersonal()))
+        ? `<select onchange="setCategoriaConciliacion(${idx}, this.value)" title="¿De dónde viene esta plata?" style="width:100%; font-size:11px; padding:3px 4px">${_opcionesTipoIngresoConc(d.categoria)}</select>${(esMP && d.categoria) ? '<span style="font-size:9px; color:var(--success); white-space:nowrap"> ● auto</span>' : ''}`
+        : '<span style="color:var(--text-muted)">—</span>';
     return `<tr style="border-bottom:1px solid var(--border)">
       <td style="padding:5px 4px 5px 8px; border-left:3px solid ${barra}; white-space:nowrap; font-size:11px">${fechaFmt}</td>
       <td style="padding:5px 6px; font-size:11px; color:var(--text-muted); max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" title="${escapeHtml(m.descripcion)}">${escapeHtml(m.descripcion.slice(0, 70))}</td>
@@ -11418,6 +11492,7 @@ function _renderConciliacionPaso2() {
         ${candidatosOpts}
         <option value="crear" ${d.tipo === 'crear' ? 'selected' : ''}>Crear ${m.monto >= 0 ? 'ingreso' : 'gasto'} nuevo</option>
         <option value="ignorar" ${d.tipo === 'ignorar' ? 'selected' : ''}>Ignorar</option>
+        ${traspasoOpts}
       </select></td>
       <td style="padding:5px 6px; min-width:150px">${catCell}</td>
     </tr>`;
@@ -11438,9 +11513,70 @@ function _renderConciliacionPaso2() {
 // híbrido (aprendido + reglas base). Para abonos no aplica (ventas no tienen
 // categoría). Devuelve string o null.
 function _sugerirCatConc(mov) {
-  if (!mov || mov.monto >= 0 || !window.Categorizador) return null;
+  if (!mov) return null;
+  if (mov.monto >= 0) return _sugerirTipoIngresoConc(mov);
+  if (!window.Categorizador) return null;
   const s = window.Categorizador.sugerir(mov.descripcion, mov.monto, state);
   return (s && s.categoria) || null;
+}
+
+// Tipos de ingreso (perfil personal y Mercado Pago): de dónde entra la plata.
+// Se guarda en venta.tipo_ingreso; null = sin clasificar.
+const TIPOS_INGRESO = {
+  sueldo: 'Sueldo / honorarios',
+  emprendimiento: 'Pago de emprendimiento',
+  transferencia: 'Transferencia recibida',
+  otro: 'Otro ingreso'
+};
+function tipoIngresoLabel(k) { return (k && TIPOS_INGRESO[k]) || ''; }
+function _opcionesTipoIngresoConc(sel) {
+  const cur = sel || '';
+  return `<option value="" ${cur === '' ? 'selected' : ''}>Sin clasificar</option>` +
+    Object.keys(TIPOS_INGRESO).map(k => `<option value="${k}" ${k === cur ? 'selected' : ''}>${escapeHtml(TIPOS_INGRESO[k])}</option>`).join('');
+}
+// Para un abono: Mercado Pago ya viene clasificado por el informe (pago vs
+// transferencia). Para bancos/cartola no se adivina: lo eliges en la revisión.
+function _sugerirTipoIngresoConc(mov) {
+  const raw = mov && mov._raw;
+  if (!raw || !raw.mp_id) return null;
+  if (raw.clase === 'transferencia') return 'transferencia';
+  if (raw.clase === 'otro') return 'otro';
+  return 'emprendimiento';
+}
+// Traspaso entre cuentas propias: un abono en el banco que viene de Mercado
+// Pago es un retiro MP → banco, no un ingreso (la plata ya entró por MP).
+// Devuelve el id de la cuenta de origen o null.
+function _detectarTraspasoConc(mov, account_id) {
+  if (!mov || !(mov.monto > 0)) return null;
+  const raw = mov._raw || {};
+  if (raw.mp_id) return null;
+  const mp = _mpCfg();
+  if (!mp.token || !mp.appCuentaId || mp.appCuentaId === account_id) return null;
+  if (!(state.config.cuentas || []).some(c => c.id === mp.appCuentaId)) return null;
+  return /MERCADO ?PAGO|MERCADOPAGO|MERPAGO|MPAGO/i.test(String(mov.descripcion || '')) ? mp.appCuentaId : null;
+}
+// Registra un traspaso (state.transferencias) a partir de un movimiento de
+// cartola/banco y lo deja en el lote para poder retirarlo después.
+function _crearTraspasoDesdeMov(mov, account_id, otraId, lote) {
+  const monto = Math.abs(Math.round(mov.monto));
+  if (!monto || !otraId || otraId === account_id) return null;
+  const t = {
+    id: uid(),
+    fecha: mov.fecha,
+    monto,
+    cuenta_origen: mov.monto > 0 ? otraId : account_id,
+    cuenta_destino: mov.monto > 0 ? account_id : otraId,
+    nota: String(mov.descripcion || '').slice(0, 120),
+    lote: lote || null
+  };
+  _transferencias().push(t);
+  if (!Array.isArray(state.conciliaciones)) state.conciliaciones = [];
+  state.conciliaciones.push({
+    id: uid(), ref_type: 'transferencia', ref_id: t.id, account_id,
+    cartola_fecha: mov.fecha, cartola_descripcion: mov.descripcion, cartola_monto: mov.monto,
+    auto_creado: true, lote: lote || null, created_at: new Date().toISOString()
+  });
+  return t;
 }
 
 // <option>s del selector de categoría en la revisión de cartola.
@@ -11468,6 +11604,7 @@ function cambiarDecisionConciliacion(idx, valor) {
   if (!it) return;
   if (valor === 'crear') it.decision = { tipo: 'crear', categoria: _sugerirCatConc(it.mov) };
   else if (valor === 'ignorar') it.decision = { tipo: 'ignorar' };
+  else if (valor.startsWith('traspaso:')) it.decision = { tipo: 'traspaso', otra: valor.slice('traspaso:'.length) };
   else if (valor.startsWith('match:')) {
     const ci = Number(valor.split(':')[1]);
     it.decision = { tipo: 'match', candidato: it.candidatos[ci] };
@@ -11484,11 +11621,14 @@ function confirmarConciliacion() {
     if (it.decision.tipo === 'match') {
       Conciliacion.aplicarMatch(state, it.mov, it.decision.candidato, account_id, lote);
       aplicados++;
+    } else if (it.decision.tipo === 'traspaso') {
+      if (_crearTraspasoDesdeMov(it.mov, account_id, it.decision.otra, lote)) creados++;
     } else if (it.decision.tipo === 'crear') {
       const cat = it.decision.categoria || null;
       Conciliacion.crearDesdeMovimiento(state, it.mov, account_id, cat, lote);
-      // Aprende solo lo que el usuario fijó/confirmó explícitamente.
-      if (it.decision.categoriaManual && cat && window.Categorizador) {
+      // Aprende solo lo que el usuario fijó/confirmó explícitamente, y solo
+      // para gastos (el tipo de ingreso no es una categoría del categorizador).
+      if (it.mov.monto < 0 && it.decision.categoriaManual && cat && window.Categorizador) {
         window.Categorizador.aprender(it.mov.descripcion, cat, state);
       }
       creados++;
@@ -11533,6 +11673,7 @@ function confirmarConciliacion() {
   if (fintocInfo && typeof renderFintocBancos === 'function') renderFintocBancos();
   if (mpInfo && typeof renderMercadoPagoCfg === 'function') renderMercadoPagoCfg();
   renderCuentas();
+  if (document.getElementById('view-ventas')?.classList.contains('active')) renderVentas();
   if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
 }
 
@@ -11557,6 +11698,10 @@ function retirarLoteCartola(lote) {
         const n = (state.ventasManuales || []).length;
         state.ventasManuales = (state.ventasManuales || []).filter(v => v.id !== c.ref_id);
         if ((state.ventasManuales || []).length < n) borrados++;
+      } else if (c.ref_type === 'transferencia') {
+        const n = (state.transferencias || []).length;
+        state.transferencias = (state.transferencias || []).filter(t => t.id !== c.ref_id);
+        if ((state.transferencias || []).length < n) borrados++;
       }
     } else {
       descruzados++; // solo se elimina la conciliación (el original queda)
@@ -12180,6 +12325,7 @@ function generarIngresosRecurrentes(soloRecId) {
         cliente: rec.cliente || '',
         account_id: rec.account_id || state.config.cuenta_default_id,
         metodo: rec.metodo || 'Transferencia',
+        tipo_ingreso: rec.tipo_ingreso || null,
         recurring_id: rec.id,
         created_at: new Date().toISOString()
       });

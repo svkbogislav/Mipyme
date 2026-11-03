@@ -111,15 +111,28 @@
       });
     });
 
-    // Sumar ventas (Shopify + manuales) a la cuenta de depósito.
-    // Usa ventasPorMes() del caller — combina aggregates históricos con
-    // detallados recientes + ventas manuales.
-    if (cuentaId === getCuentaDepositoVentasId(state)) {
+    // Sumar ventas Shopify a la cuenta de depósito y cada venta/ingreso
+    // manual a SU cuenta (la que eligió el usuario; sin cuenta → depósito).
+    // ventasPorMes() del caller trae Shopify + manuales juntos, así que a la
+    // cuenta de depósito se le resta la parte manual y se vuelve a sumar
+    // ingreso por ingreso según su account_id.
+    const depositoId = getCuentaDepositoVentasId(state);
+    const manualesPorMes = {};
+    (state.ventasManuales || []).forEach(v => {
+      const ym = String(v.fecha || '').slice(0, 7);
+      if (!ym) return;
+      manualesPorMes[ym] = (manualesPorMes[ym] || 0) + Number(v.monto || 0);
+    });
+    if (cuentaId === depositoId) {
       Object.entries(ventasPorMes || {}).forEach(([ym, monto]) => {
         // Excluye meses futuros: esas ventas aún no entran a la caja actual.
-        if (ym >= desdeYM && ym <= hoyYM) saldo += Number(monto || 0);
+        if (ym >= desdeYM && ym <= hoyYM) saldo += Number(monto || 0) - (manualesPorMes[ym] || 0);
       });
     }
+    (state.ventasManuales || []).forEach(v => {
+      const accId = v.account_id || depositoId;
+      if (accId === cuentaId && incluirEnSaldo(v.fecha)) saldo += Number(v.monto || 0);
+    });
 
     // Transferencias internas: la cuenta origen baja y la destino sube. NO
     // afectan ventas/gastos (no entran al P&L), solo mueven plata. Respetan
