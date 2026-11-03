@@ -1343,7 +1343,7 @@
       <div class="card dash-widget half" data-widget-key="chartDiario" id="cardChartDiario">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px">
             <div>
-              <h3 style="margin:0">Ventas por día</h3>
+              <h3 style="margin:0" id="chartDiarioTitulo">Ventas por día</h3>
               <div style="font-size:12px; color:var(--text-muted); margin-top:2px">Pulso diario de ingresos</div>
             </div>
             <select id="selDiarioPeriod" style="width:auto; min-width:130px; font-size:12px; padding:4px 8px" onchange="actualizarConfigDashboard('diarioPeriod', this.value)">
@@ -1868,7 +1868,7 @@
       <div class="grid-2-eq" style="margin-bottom:14px">
         <div class="card">
           <h3>🏦 Cartola del banco</h3>
-          <div class="card-sub">Sube el Excel o CSV que descargas de tu banco. La app cruza cada movimiento con tus ventas/gastos y te pregunta qué hacer con los que no encuentra.</div>
+          <div class="card-sub">Sube el Excel o CSV que descargas de tu banco. La app cruza cada movimiento con tus ingresos y gastos y te pregunta qué hacer con los que no encuentra.</div>
           <!-- Drop zone: el usuario puede arrastrar la cartola acá mismo
                sin tener que abrir el modal antes. Al soltar el archivo se
                abre el modal con el archivo ya parseado. -->
@@ -2172,6 +2172,7 @@
           <div class="kpi"><div class="kpi-label">Flujo neto (12 meses)</div><div class="kpi-value" id="cfNeto">$0</div></div>
           <div class="kpi"><div class="kpi-label">Saldo proyectado</div><div class="kpi-value" id="cfSaldo">$0</div></div>
         </div>
+        <div id="cfOrigenes" style="font-size:12px; color:var(--text-muted); margin-top:8px; display:none"></div>
       </div>
 
       <div class="card full" data-widget-key="cf-chart" style="margin-bottom:14px">
@@ -2200,7 +2201,7 @@
              separador de miles (Forms.bindCLPInputs) mientras el usuario escribe. -->
         <div style="display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px; margin-top:14px; margin-bottom:10px">
           <div>
-            <label>Ventas base por semana</label>
+            <label id="proyVentasLbl">Ventas base por semana</label>
             <input id="proyVentasSemana" type="text" inputmode="numeric" data-clp="true" oninput="renderProyeccion12s()" />
             <div style="font-size:11px; color:var(--text-muted); margin-top:4px" id="proyVentasSub"></div>
           </div>
@@ -2315,8 +2316,8 @@
 
       <!-- VENTA MÍNIMA -->
       <div class="card" id="presVentaCard" style="margin-bottom:14px">
-        <h3 style="margin:0 0 4px">¿Cuánto necesitas vender?</h3>
-        <div class="card-sub" style="margin-bottom:14px">El piso de ventas para no perder plata</div>
+        <h3 style="margin:0 0 4px" id="presVentaTitulo">¿Cuánto necesitas vender?</h3>
+        <div class="card-sub" style="margin-bottom:14px" id="presVentaSub">El piso de ventas para no perder plata</div>
         <div class="kpi-grid" style="margin-bottom:12px">
           <div class="kpi"><div class="kpi-label">Solo para cubrir los fijos</div><div class="kpi-value" id="presVentaFijos">$0</div><div class="kpi-delta" id="presVentaFijosDia" style="color:var(--text-muted)"></div></div>
           <div class="kpi"><div class="kpi-label">Fijos + gasto variable típico</div><div class="kpi-value" id="presVentaTotal">$0</div><div class="kpi-delta" id="presVentaTotalDia" style="color:var(--text-muted)"></div></div>
@@ -2673,7 +2674,7 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             Configurar
           </button>
-          <button class="btn" onclick="abrirModalConciliacion()" title="Sube tu cartola bancaria y la app la cruza con tus ventas y gastos">
+          <button class="btn" onclick="abrirModalConciliacion()" title="Sube tu cartola bancaria y la app la cruza con tus ingresos y gastos">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
             Subir cartola del banco
           </button>
@@ -2927,7 +2928,7 @@
         <summary>
           <svg class="cs-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           <span class="cs-title">Reportes para el contador</span>
-          <span class="cs-hint">Gastos, ventas y resumen de ganancias del mes</span>
+          <span class="cs-hint">Gastos, ingresos y resumen de ganancias del mes</span>
         </summary>
         <div class="cs-body">
 
@@ -3392,7 +3393,7 @@
 
       <div class="card" style="margin-bottom:14px">
         <h3>Respaldo</h3>
-        <div class="card-sub">Exporta todos tus datos (gastos, ventas, configuración) para guardarlos o moverlos a otro computador.</div>
+        <div class="card-sub">Exporta todos tus datos (gastos, ingresos, configuración) para guardarlos o moverlos a otro computador.</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap">
           <button class="btn" onclick="exportarBackup()">Exportar respaldo (.json)</button>
           <button class="btn" onclick="document.getElementById('backupFile').click()">Importar respaldo</button>
@@ -3413,7 +3414,7 @@
 
       <div class="card" style="margin-bottom:14px; border-color:#fecaca">
         <h3 style="color:#b91c1c">Borrar todos los datos</h3>
-        <div class="card-sub">Elimina TODO lo guardado en este navegador para el negocio activo: gastos, ventas, recurrentes, cuentas, configuración. No se puede deshacer (excepto si tienes un respaldo previo).</div>
+        <div class="card-sub">Elimina TODO lo guardado en este navegador para el negocio activo: gastos, ingresos, recurrentes, cuentas, configuración. No se puede deshacer (excepto si tienes un respaldo previo).</div>
         <button class="btn danger" style="margin-top:10px" onclick="resetearTodo()">Borrar todos los datos</button>
       </div>
 
@@ -4352,7 +4353,7 @@
 <div class="modal-overlay" id="modalConciliacion" onclick="if(event.target===this) cerrarModalConciliacion()">
   <div class="modal" style="max-width:780px; max-height:90vh; overflow-y:auto">
     <h3>Subir cartola del banco</h3>
-    <div class="card-sub" style="margin-bottom:14px">Sube el archivo CSV que descargas de tu banco. La app va a cruzar los movimientos con tus ventas y gastos, y te muestra lo que encontró para que confirmes.</div>
+    <div class="card-sub" style="margin-bottom:14px">Sube el archivo CSV que descargas de tu banco. La app va a cruzar los movimientos con tus ingresos y gastos, y te muestra lo que encontró para que confirmes.</div>
 
     <!-- Paso 1: archivo + cuenta -->
     <div id="concStep1">
@@ -4935,18 +4936,22 @@ const CONFIG_POR_VISTA = {
   },
   ventas: {
     titulo: 'Configurar Ventas',
+    tituloPersonal: 'Configurar Ingresos',
     subtitulo: 'Qué pedidos se muestran y cómo se ordenan en la lista.',
+    subtituloPersonal: 'Qué ingresos se muestran y cómo se ordenan en la lista.',
     campos: [
       {
         key: 'ventas_canal_visible',
         tipo: 'select',
         label: 'Mostrar pedidos de',
+        labelPersonal: 'Mostrar ingresos de',
         hint: 'Filtra la tabla de ventas por canal de origen.',
+        hintPersonal: 'Filtra la lista de ingresos según de dónde vienen.',
         defecto: 'todos',
         opciones: [
-          { value: 'todos', label: 'Todos los canales' },
+          { value: 'todos', label: 'Todos los canales', labelPersonal: 'Todos' },
           { value: 'shopify', label: 'Solo Shopify' },
-          { value: 'manual', label: 'Solo ventas manuales' }
+          { value: 'manual', label: 'Solo ventas manuales', labelPersonal: 'Solo los registrados a mano o por cartola / Mercado Pago' }
         ]
       },
       {
@@ -4980,8 +4985,8 @@ function abrirConfigVista(viewKey) {
     return irAConfiguracion();
   }
   _configVistaActual = viewKey;
-  document.getElementById('configVistaTitulo').textContent = cfg.titulo;
-  document.getElementById('configVistaSubtitulo').textContent = cfg.subtitulo || '';
+  document.getElementById('configVistaTitulo').textContent = _tp(cfg, 'titulo');
+  document.getElementById('configVistaSubtitulo').textContent = _tp(cfg, 'subtitulo') || '';
   const body = document.getElementById('configVistaBody');
   body.innerHTML = cfg.campos.map(c => {
     const valor = (state.config[c.key] !== undefined && state.config[c.key] !== null)
@@ -4991,26 +4996,26 @@ function abrirConfigVista(viewKey) {
       return `<div style="display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius:9px; margin-bottom:10px">
         <input type="checkbox" id="cfgv_${c.key}" ${valor ? 'checked' : ''} style="width:auto; margin-top:2px" />
         <div style="flex:1">
-          <label for="cfgv_${c.key}" style="font-weight:500; color:var(--text); cursor:pointer">${escapeHtml(c.label)}</label>
-          ${c.hint ? `<div style="font-size:11px; color:var(--text-muted); margin-top:3px">${escapeHtml(c.hint)}</div>` : ''}
+          <label for="cfgv_${c.key}" style="font-weight:500; color:var(--text); cursor:pointer">${escapeHtml(_tp(c, 'label'))}</label>
+          ${c.hint ? `<div style="font-size:11px; color:var(--text-muted); margin-top:3px">${escapeHtml(_tp(c, 'hint'))}</div>` : ''}
         </div>
       </div>`;
     }
     if (c.tipo === 'select') {
       const options = c.opciones.map(o =>
-        `<option value="${escapeHtml(o.value)}" ${String(o.value) === String(valor) ? 'selected' : ''}>${escapeHtml(o.label)}</option>`
+        `<option value="${escapeHtml(o.value)}" ${String(o.value) === String(valor) ? 'selected' : ''}>${escapeHtml(_tp(o, 'label'))}</option>`
       ).join('');
       return `<div style="margin-bottom:14px">
-        <label>${escapeHtml(c.label)}</label>
+        <label>${escapeHtml(_tp(c, 'label'))}</label>
         <select id="cfgv_${c.key}">${options}</select>
-        ${c.hint ? `<div style="font-size:11px; color:var(--text-muted); margin-top:4px">${escapeHtml(c.hint)}</div>` : ''}
+        ${c.hint ? `<div style="font-size:11px; color:var(--text-muted); margin-top:4px">${escapeHtml(_tp(c, 'hint'))}</div>` : ''}
       </div>`;
     }
     if (c.tipo === 'textarea') {
       return `<div style="margin-bottom:14px">
-        <label>${escapeHtml(c.label)}</label>
+        <label>${escapeHtml(_tp(c, 'label'))}</label>
         <textarea id="cfgv_${c.key}" rows="5" style="font-family:inherit; resize:vertical">${escapeHtml(String(valor))}</textarea>
-        ${c.hint ? `<div style="font-size:11px; color:var(--text-muted); margin-top:4px">${escapeHtml(c.hint)}</div>` : ''}
+        ${c.hint ? `<div style="font-size:11px; color:var(--text-muted); margin-top:4px">${escapeHtml(_tp(c, 'hint'))}</div>` : ''}
       </div>`;
     }
     // number / text
@@ -5018,9 +5023,9 @@ function abrirConfigVista(viewKey) {
       ? `type="number" step="${c.step || 1}" ${c.min !== undefined ? `min="${c.min}"` : ''} ${c.max !== undefined ? `max="${c.max}"` : ''}`
       : 'type="text"';
     return `<div style="margin-bottom:14px">
-      <label>${escapeHtml(c.label)}</label>
+      <label>${escapeHtml(_tp(c, 'label'))}</label>
       <input id="cfgv_${c.key}" ${attrs} value="${escapeHtml(String(valor))}" />
-      ${c.hint ? `<div style="font-size:11px; color:var(--text-muted); margin-top:4px">${escapeHtml(c.hint)}</div>` : ''}
+      ${c.hint ? `<div style="font-size:11px; color:var(--text-muted); margin-top:4px">${escapeHtml(_tp(c, 'hint'))}</div>` : ''}
     </div>`;
   }).join('');
   document.getElementById('modalConfigVista').classList.add('show');
@@ -5693,11 +5698,11 @@ function aplicarConfigDashboardUI() {
 const DASHBOARD_WIDGETS = [
   { key: 'runway',          label: 'Cuánto te alcanza',  width: 'full', desc: 'Días de caja al ritmo de gasto actual' },
   { key: 'salud',           label: 'Tu salud financiera', width: 'full', desc: 'Diagnóstico y qué hacer ahora (modo personal)' },
-  { key: 'kpis',            label: 'KPIs',              width: 'full', desc: '4 tarjetas: ingresos, costos, neto, ventas' },
+  { key: 'kpis',            label: 'KPIs',              width: 'full', desc: '4 tarjetas: ingresos, gastos, neto, cantidad' },
   { key: 'chartMensual',    label: 'Flujo de caja',     width: 'full', desc: 'Ingresos / Gastos / Ganancia por mes' },
   { key: 'accountBalance',  label: 'Saldo por cuenta',  width: 'half', desc: 'Saldo actual de cada cuenta' },
   { key: 'chartCategorias', label: 'Gastos por categoría', width: 'half', desc: 'Donut con leyenda y %' },
-  { key: 'chartDiario',     label: 'Ventas por día',    width: 'half', desc: 'Pulso diario de ingresos' },
+  { key: 'chartDiario',     label: 'Ventas por día',    labelPersonal: 'Ingresos por día', width: 'half', desc: 'Pulso diario de ingresos' },
   { key: 'topProductos',    label: 'Top productos',     width: 'half', desc: 'Más vendidos en el período' }
 ];
 const DEFAULT_WIDGET_ORDER = DASHBOARD_WIDGETS.map(w => w.key);
@@ -5924,7 +5929,7 @@ function renderListaPersonalizarWidgets() {
         <span class="grip" title="Arrastra para reordenar este widget" aria-label="Arrastrar">${gripSVG}</span>
         <input type="checkbox" ${checked} onchange="togglearWidget('${k}', this.checked)" />
         <span class="label">
-          <strong>${escapeHtml(meta.label)}</strong>
+          <strong>${escapeHtml(_tp(meta, 'label'))}</strong>
           <div style="font-size:11px; color:var(--text-muted); margin-top:1px">${escapeHtml(meta.desc)}</div>
         </span>
         <span class="width-badge">${meta.width === 'full' ? 'ancho completo' : '½ ancho'}</span>
@@ -6741,7 +6746,7 @@ function renderChartDiario(periodo) {
 
   const canvas = document.getElementById('chartDiario');
   charts.diario?.destroy();
-  toggleEmpty(canvas, labels.length === 0, 'Sin ventas detalladas en este período (la API de Shopify limita a últimos 60 días)');
+  toggleEmpty(canvas, labels.length === 0, esPerfilPersonal() ? 'Sin ingresos en este período' : 'Sin ventas detalladas en este período (la API de Shopify limita a últimos 60 días)');
   if (labels.length === 0) return;
 
   // Construir options extendiendo akLineOpts con título de eje X y tooltip enriquecido
@@ -6948,12 +6953,14 @@ function renderVentasTabla() {
     if (sinShopify && sinManuales) {
       wrap.innerHTML = `
         <div class="empty">
-          <h4>Aún no hay ventas registradas</h4>
-          <p style="margin:6px 0 12px 0">Registra tu primera venta a mano (efectivo, transferencia, lo que sea) o conecta Shopify si vendes online.</p>
-          <button class="btn primary" onclick="abrirModalVentaManual()">+ Registrar venta a mano</button>
+          <h4>${esPerfilPersonal() ? 'Aún no hay ingresos registrados' : 'Aún no hay ventas registradas'}</h4>
+          <p style="margin:6px 0 12px 0">${esPerfilPersonal() ? 'Registra tu primer ingreso (sueldo, transferencia, lo que sea) o conecta tu banco o Mercado Pago en Configuración.' : 'Registra tu primera venta a mano (efectivo, transferencia, lo que sea) o conecta Shopify si vendes online.'}</p>
+          <button class="btn primary" onclick="abrirModalVentaManual()">${esPerfilPersonal() ? '+ Registrar ingreso' : '+ Registrar venta a mano'}</button>
         </div>`;
     } else {
-      wrap.innerHTML = '<div class="empty"><h4>Sin pedidos</h4>No hay ventas válidas que mostrar. Si tienes pedidos test, cancelados o sin pagar en Shopify, están excluidos del análisis (ver banner arriba si aplica).</div>';
+      wrap.innerHTML = esPerfilPersonal()
+        ? '<div class="empty"><h4>Sin ingresos</h4>No hay ingresos que mostrar en este período.</div>'
+        : '<div class="empty"><h4>Sin pedidos</h4>No hay ventas válidas que mostrar. Si tienes pedidos test, cancelados o sin pagar en Shopify, están excluidos del análisis (ver banner arriba si aplica).</div>';
     }
     return;
   }
@@ -6986,7 +6993,7 @@ function renderVentasTabla() {
     const granN = dias.reduce((s, d) => s + mapa[d].n, 0);
     const granTotal = dias.reduce((s, d) => s + mapa[d].total, 0);
     wrap.innerHTML = `<table>
-      <thead><tr><th>Fecha</th><th class="num">N° de ventas</th><th class="num">Total del día</th><th class="num">Ticket prom.</th></tr></thead>
+      <thead><tr><th>Fecha</th><th class="num">N° de ${_nIng(2)}</th><th class="num">Total del día</th><th class="num">${esPerfilPersonal() ? 'Promedio' : 'Ticket prom.'}</th></tr></thead>
       <tbody>
         ${dias.map(d => {
           const r = mapa[d];
@@ -7150,7 +7157,7 @@ function guardarVentaManual() {
   // convertirlo en otra (la UI ya esconde el toggle, pero por si acaso).
   if (id) {
     const v = state.ventasManuales.find(x => x.id === id);
-    if (!v) { toast('No encontré esta venta', 'error'); return; }
+    if (!v) { toast(esPerfilPersonal() ? 'No encontré este ingreso' : 'No encontré esta venta', 'error'); return; }
     if (esRecurrente && v.recurring_id) {
       toast('Este ingreso ya es parte de una serie', 'error');
       return;
@@ -7709,6 +7716,37 @@ function renderCashflow() {
   document.getElementById('cfNeto').className = 'kpi-value ' + (totNeto >= 0 ? 'num-pos' : 'num-neg');
   document.getElementById('cfSaldo').textContent = clp(filas[filas.length - 1]?.saldo || 0);
 
+  // De dónde entró la plata cada mes (Mercado Pago / banco / a mano / Shopify),
+  // para ver por ejemplo cuánto llegó vía Mercado Pago sin salir de esta vista.
+  const origenPorMes = {};
+  (state.ventasManuales || []).forEach(v => {
+    const ym = String(v.fecha || '').slice(0, 7);
+    if (!ym) return;
+    const o = v.origen === 'mercadopago' ? 'Mercado Pago' : ((v.origen === 'banco' || v.origen === 'cartola') ? 'Banco' : 'A mano');
+    origenPorMes[ym] = origenPorMes[ym] || {};
+    origenPorMes[ym][o] = (origenPorMes[ym][o] || 0) + Number(v.monto || 0);
+  });
+  const origenesDe = (f) => {
+    const o = Object.assign({}, origenPorMes[f.mes] || {});
+    const manual = Object.values(o).reduce((s, x) => s + x, 0);
+    if (!esPerfilPersonal() && f.ent - manual > 0.5) o['Shopify'] = f.ent - manual;
+    return Object.entries(o).filter(([, m]) => m > 0);
+  };
+  const soloAMano = (partes) => !partes.length || (partes.length === 1 && partes[0][0] === 'A mano');
+  const desgloseEntradas = (f) => {
+    const partes = origenesDe(f);
+    if (soloAMano(partes)) return '';
+    return `<div style="font-size:11px; color:var(--text-muted); font-weight:400; margin-top:2px">${partes.map(([k, m]) => `${k} ${clp(m)}`).join(' · ')}</div>`;
+  };
+  const totalOrigenes = {};
+  filas.forEach(f => origenesDe(f).forEach(([k, m]) => { totalOrigenes[k] = (totalOrigenes[k] || 0) + m; }));
+  const partesTot = Object.entries(totalOrigenes).filter(([, m]) => m > 0).sort((a, b) => b[1] - a[1]);
+  const cfOrig = document.getElementById('cfOrigenes');
+  if (cfOrig) {
+    cfOrig.style.display = soloAMano(partesTot) ? 'none' : '';
+    cfOrig.innerHTML = soloAMano(partesTot) ? '' : `De dónde entró (12 meses): ${partesTot.map(([k, m]) => `<strong>${k}</strong> ${clp(m)}`).join(' · ')}`;
+  }
+
   // Tabla
   const t = document.getElementById('tablaCashflow');
   t.innerHTML = `
@@ -7718,7 +7756,7 @@ function renderCashflow() {
     <tbody>
       ${filas.map(f => `<tr>
         <td>${fmtMes.format(new Date(f.mes + '-02')).replace(/^./, c => c.toUpperCase())}</td>
-        <td class="num num-pos">${clp(f.ent)}</td>
+        <td class="num num-pos">${clp(f.ent)}${desgloseEntradas(f)}</td>
         <td class="num num-neg">${clp(f.sal)}</td>
         <td class="num ${f.neto >= 0 ? 'num-pos' : 'num-neg'}">${clp(f.neto)}</td>
         <td class="num"><strong>${clp(f.saldo)}</strong></td>
@@ -8915,11 +8953,11 @@ function exportarReporteVentas() {
   const periodo = _periodoReporteSeleccionado();
   const csv = Reportes.csvVentas(state, shopify, getTestPatterns(), periodo);
   if (!csv.trim()) {
-    toast('No hay ventas en el período seleccionado', 'error');
+    toast(`No hay ${_nIng(2)} en el período seleccionado`, 'error');
     return;
   }
-  _descargarArchivo(`ventas-${_slugPeriodo(periodo)}.csv`, csv, 'text/csv;charset=utf-8');
-  toast('Ventas exportadas', 'success');
+  _descargarArchivo(`${_nIng(2)}-${_slugPeriodo(periodo)}.csv`, csv, 'text/csv;charset=utf-8');
+  toast(esPerfilPersonal() ? 'Ingresos exportados' : 'Ventas exportadas', 'success');
 }
 
 async function abrirReportePnL() {
@@ -9258,7 +9296,7 @@ function renderMasterDashboard() {
         <div style="width:36px; height:36px; border-radius:9px; background:${color}; color:white; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0">${inicials}</div>
         <div style="flex:1; min-width:0">
           <div style="font-weight:600; font-size:14px">${escapeHtml(b.nombre)}</div>
-          <div style="font-size:11px; color:var(--text-muted); margin-top:2px">${m.numVentas} venta${m.numVentas===1?'':'s'} · ${m.numGastos} gasto${m.numGastos===1?'':'s'} en el período</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:2px">${m.numVentas} ingreso${m.numVentas===1?'':'s'} · ${m.numGastos} gasto${m.numGastos===1?'':'s'} en el período</div>
         </div>
         <div style="display:grid; grid-template-columns:repeat(4, minmax(110px, 1fr)); gap:18px; align-items:center">
           <div>
@@ -9319,6 +9357,17 @@ function renderMasterDashboard() {
 function esPerfilPersonal() {
   return !!(state && state.config && state.config.perfil === 'personal');
 }
+// "venta(s)" en pyme, "ingreso(s)" en perfil personal.
+function _nIng(n) {
+  const p = esPerfilPersonal();
+  return n === 1 ? (p ? 'ingreso' : 'venta') : (p ? 'ingresos' : 'ventas');
+}
+// Texto según perfil: usa <campo>Personal si existe y el perfil es personal.
+function _tp(obj, campo) {
+  if (!obj) return '';
+  const alt = obj[campo + 'Personal'];
+  return (esPerfilPersonal() && alt !== undefined) ? alt : obj[campo];
+}
 
 // Aplica el "Modo Personal": oculta lo de empresa (vía body[data-perfil]
 // + CSS) y relabela textos clave. Idempotente; se llama en init y en
@@ -9360,6 +9409,10 @@ function aplicarPerfilUI() {
   setTxt('kpiCostosLbl', personal ? 'Gastos'           : 'Costos / Gastos');
   setTxt('kpiNetoLbl',   personal ? 'Ahorro / Sobrante' : 'Resultado neto');
   setTxt('kpiPedidosLbl', personal ? 'N° de ingresos'   : 'N° de ventas');
+  setTxt('chartDiarioTitulo', personal ? 'Ingresos por día' : 'Ventas por día');
+  setTxt('proyVentasLbl', personal ? 'Ingresos base por semana' : 'Ventas base por semana');
+  setTxt('presVentaTitulo', personal ? '¿Cuánto necesitas que entre al mes?' : '¿Cuánto necesitas vender?');
+  setTxt('presVentaSub', personal ? 'Lo mínimo que debe entrar para no quedar en rojo' : 'El piso de ventas para no perder plata');
   setTxt('cfgSecSub', personal ? 'Tu perfil, conexiones, respaldo y datos' : 'Tu negocio, conexiones, reportes y datos');
   setTxt('cfgSecTitle', personal ? 'Tu perfil' : 'Tu negocio');
   setTxt('cfgEmpresaH3', personal ? 'Perfil' : 'Empresa');
@@ -11411,7 +11464,7 @@ function confirmarImportarFacturasXML() {
   });
   saveState();
   cerrarModalFacturasXML();
-  toast(`Importado: ${nG} gasto(s)${nV ? `, ${nV} venta(s)` : ''}`, 'success');
+  toast(`Importado: ${nG} gasto(s)${nV ? `, ${nV} ${_nIng(nV)}` : ''}`, 'success');
   if (typeof renderActivo === 'function') renderActivo();
   if (typeof renderDashboard === 'function' && document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
   if (typeof renderGastos === 'function') try { renderGastos(); } catch {}
@@ -11466,7 +11519,7 @@ function _renderConciliacionPaso2() {
     const candidatosOpts = it.candidatos.map((c, ci) => {
       const ref = c.ref;
       const lbl = c.tipo === 'venta'
-        ? `Cruzar con venta · ${clp(ref.monto)}`
+        ? `Cruzar con ${_nIng(1)} · ${clp(ref.monto)}`
         : c.tipo === 'gasto'
           ? `Cruzar con gasto · ${clp(ref.monto)} · ${escapeHtml((ref.proveedor || ref.descripcion || '').slice(0, 20))}`
           : `Cruzar con cobro · ${clp(c.refPago ? c.refPago.monto : ref.monto_total)}`;
@@ -12210,7 +12263,7 @@ function eliminarContacto() {
   const id = document.getElementById('contactoId').value;
   const tipo = document.getElementById('contactoTipo').value;
   if (!id) return;
-  if (!confirm('¿Eliminar este contacto? Los gastos/ventas asociados conservan el nombre como string.')) return;
+  if (!confirm('¿Eliminar este contacto? Los gastos e ingresos asociados conservan el nombre.')) return;
   state.config[tipo] = (state.config[tipo] || []).filter(c => c.id !== id);
   saveState();
   cerrarModalContacto();

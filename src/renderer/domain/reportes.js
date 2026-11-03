@@ -176,7 +176,7 @@
   <table>
     <thead><tr><th>Concepto</th><th class="num">Monto</th></tr></thead>
     <tbody>
-      <tr><td>Ventas totales (Shopify + manuales)</td><td class="num">${fmtCLP(totalIngresos)}</td></tr>
+      <tr><td>${(state && state.config && state.config.perfil === 'personal') ? 'Ingresos totales' : 'Ventas totales (Shopify + manuales)'}</td><td class="num">${fmtCLP(totalIngresos)}</td></tr>
     </tbody>
     <tfoot><tr><td>Total ingresos</td><td class="num">${fmtCLP(totalIngresos)}</td></tr></tfoot>
   </table>
