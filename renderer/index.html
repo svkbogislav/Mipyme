@@ -6815,6 +6815,7 @@ function _agruparCuentas(detalles) {
 }
 // "según el banco · hace 2 h" para cuentas conectadas.
 function _saldoBancoNota(c) {
+  if ((c.saldo_banco === undefined || c.saldo_banco === null) && c.saldo_estimado) return 'Mínimo estimado · escribe el saldo real en Configuración → Mercado Pago';
   if (c.saldo_banco === undefined || c.saldo_banco === null) return '';
   const quien = c.saldo_banco_origen === 'mercadopago' ? 'Mercado Pago' : 'el banco';
   if (!c.saldo_banco_at) return `Saldo según ${quien}`;
@@ -6841,7 +6842,7 @@ function renderAccountBalance() {
       </div>
       ${gr.cuentas.map(c => `
       <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0 6px 14px; border-bottom:1px solid var(--border)">
-        <div style="font-size:12px; color:var(--text-muted)">${escapeHtml(c.nombre.replace(new RegExp('^' + gr.nombre.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*·\\s*'), ''))}${c.saldo_banco_at ? ` <span title="${escapeHtml(_saldoBancoNota(c))}">·</span>` : ''}</div>
+        <div style="font-size:12px; color:var(--text-muted)">${escapeHtml(c.nombre.replace(new RegExp('^' + gr.nombre.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*·\\s*'), ''))}${c.saldo_banco_at ? ` <span title="${escapeHtml(_saldoBancoNota(c))}">·</span>` : ''}${c.saldo_estimado && c.saldo_banco === undefined ? `<div style="font-size:10px; color:var(--warning-text, var(--text-muted))">mínimo estimado · ajusta el saldo real en Configuración</div>` : ''}</div>
         <div style="font-size:13px; color:${c.saldo < 0 ? 'var(--danger)' : 'var(--text)'}">${clp(c.saldo)}</div>
       </div>`).join('')}`).join('');
     return;
@@ -11212,7 +11213,7 @@ function renderMercadoPagoCfg() {
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
           <input id="mpSaldoReal" type="text" inputmode="numeric" data-clp="true" placeholder="Lo que muestra la app de Mercado Pago hoy" style="max-width:260px" />
           <button class="btn sm" onclick="_mpAjustarSaldo()">Ajustar saldo</button>
-          <span style="font-size:11px; color:var(--text-muted)">Hoy la app calcula ${clp(calcularSaldoCuenta(cta.id))} con los movimientos leídos. Si no calza con tu app de Mercado Pago, escribe el saldo real y se corrige.</span>
+          <span style="font-size:11px; color:var(--text-muted)">${cta.saldo_estimado ? `Hoy muestra ${clp(calcularSaldoCuenta(cta.id))}, que es el mínimo posible según los movimientos leídos (Mercado Pago no entrega el saldo a esta aplicación).` : `Hoy la app calcula ${clp(calcularSaldoCuenta(cta.id))} con los movimientos leídos.`} Escribe el saldo que ves en tu app de Mercado Pago y queda exacto.</span>
         </div>`;
       if (window.Forms && Forms.bindCLPInputs) Forms.bindCLPInputs();
     }
@@ -11356,6 +11357,7 @@ async function sincronizarMercadoPago(silencioso) {
     delete cfg.pendienteInforme;
     cfg.ultimo = _mpResumenSync(r, nuevos.length, ahoraISO);
     _mpAplicarSaldoReal(r.saldoMP, appCuentaId, ahoraISO);
+    _mpEstimarPiso(appCuentaId);
     // Retiros: el informe de actividades de MP dice a qué banco fue cada uno.
     // Si no está disponible, siguen como hasta ahora (sin cuenta de destino).
     await _mpLigarDestinoRetiros(nuevos, cfg, appCuentaId);
@@ -12066,6 +12068,30 @@ function _mpAplicarSaldoReal(saldoMP, cuentaId, at) {
     delete cta.saldo_banco; delete cta.saldo_banco_at; delete cta.saldo_detalle; delete cta.saldo_banco_origen;
   }
 }
+// Mercado Pago no puede quedar en negativo. Si la app solo conoce los
+// movimientos desde cierta fecha (sin saldo de partida), el saldo calculado
+// puede bajar de cero: se fija el saldo inicial en el mínimo que lo evita y
+// se marca como estimado hasta que el usuario escriba el saldo real.
+function _mpEstimarPiso(cuentaId) {
+  const cta = (state.config.cuentas || []).find(c => c.id === cuentaId);
+  if (!cta || cta.saldo_banco !== undefined || cta.saldo_ajustado_manual) return false;
+  const desdeYM = cta.saldo_inicial_mes || state.config.mesInicial || '0000-00';
+  const hoy = new Date(); const hoyYMD = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+  const vale = (f) => { const d = String(f || '').slice(0, 10); return d && d <= hoyYMD && d.slice(0, 7) >= desdeYM; };
+  const movs = [];
+  (state.gastos || []).forEach(g => { if (g.auto_estimado === 'iva') return; if ((g.account_id || state.config.cuenta_default_id) === cuentaId && vale(g.fecha)) movs.push([g.fecha, -Number(g.monto || 0)]); });
+  (state.ventasManuales || []).forEach(v => { if (v.account_id === cuentaId && vale(v.fecha)) movs.push([v.fecha, Number(v.monto || 0)]); });
+  (state.cobros || []).forEach(c => (c.pagos || []).forEach(p => { if ((p.account_id || state.config.cuenta_default_id) === cuentaId && vale(p.fecha)) movs.push([p.fecha, Number(p.monto || 0)]); }));
+  (state.transferencias || []).forEach(t => { if (!vale(t.fecha)) return; if (t.cuenta_origen === cuentaId) movs.push([t.fecha, -Number(t.monto || 0)]); if (t.cuenta_destino === cuentaId) movs.push([t.fecha, Number(t.monto || 0)]); });
+  movs.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  let run = Number(cta.saldo_inicial || 0), min = run;
+  movs.forEach(m => { run += m[1]; if (run < min) min = run; });
+  if (min >= 0) return false;
+  cta.saldo_inicial = Number(cta.saldo_inicial || 0) - min;
+  cta.saldo_estimado = true;
+  cta.saldo_estimado_at = new Date().toISOString();
+  return true;
+}
 // Ajuste manual: el usuario escribe el saldo que ve en la app de Mercado
 // Pago y el saldo inicial de la cuenta se corrige para que calce.
 function _mpAjustarSaldo() {
@@ -12078,6 +12104,7 @@ function _mpAjustarSaldo() {
   delete cta.saldo_banco; delete cta.saldo_banco_at; delete cta.saldo_banco_origen; delete cta.saldo_detalle;
   const actual = calcularSaldoCuenta(cta.id);
   cta.saldo_inicial = Number(cta.saldo_inicial || 0) + (valor - actual);
+  cta.saldo_ajustado_manual = true; delete cta.saldo_estimado; delete cta.saldo_estimado_at;
   saveState();
   if (inp) inp.value = '';
   toast(`Saldo de ${cta.nombre} ajustado a ${clp(valor)}`, 'success');
@@ -18104,9 +18131,10 @@ function init() {
   // pero la app no conoce el saldo con que partió), se pide el saldo real una vez.
   try {
     const mpCta = (state.config.cuentas || []).find(c => c.id === _mpCfg().appCuentaId);
-    if (mpCta && mpCta.saldo_banco === undefined && !state.config._mpAvisoSaldoV1 && calcularSaldoCuenta(mpCta.id) < 0) {
-      state.config._mpAvisoSaldoV1 = true; saveState();
-      setTimeout(() => toast('El saldo de Mercado Pago no calza con la realidad: escribe el saldo real en Configuración → Mercado Pago → "Ajustar saldo".', 'error'), 2500);
+    if (mpCta && _mpEstimarPiso(mpCta.id)) saveState();
+    if (mpCta && mpCta.saldo_estimado && !state.config._mpAvisoSaldoV2) {
+      state.config._mpAvisoSaldoV2 = true; saveState();
+      setTimeout(() => toast('El saldo de Mercado Pago es un mínimo estimado. Escribe el saldo real en Configuración → Mercado Pago → "Ajustar saldo" para dejarlo exacto.', ''), 2500);
     }
   } catch (e) { console.error(e); }
   asegurarCuentaDefault();
