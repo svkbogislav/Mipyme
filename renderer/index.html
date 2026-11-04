@@ -2827,6 +2827,10 @@
             <label id="cfgNombreLbl">Nombre del negocio</label>
             <input id="cfgNombre" />
           </div>
+          <div style="flex:1">
+            <label>Tu nombre como aparece en el banco <span style="font-weight:400; color:var(--text-muted)">— para reconocer traspasos entre tus cuentas</span></label>
+            <input id="cfgTitular" placeholder="Ej: Sebastián Pérez" autocomplete="off" />
+          </div>
           <div style="flex:1" data-empresa-only>
             <label>RUT del negocio <span style="font-weight:400; color:var(--text-muted)">— para clasificar facturas (venta tuya vs gasto)</span></label>
             <input id="cfgRUT" placeholder="76.123.456-7" autocomplete="off" oninput="_formatearInputRUT(this)" />
@@ -8084,6 +8088,7 @@ window.quitarGiro = quitarGiro;
    ================================================================= */
 function renderConfig() {
   document.getElementById('cfgNombre').value = state.config.nombre || '';
+  { const t = document.getElementById('cfgTitular'); if (t) t.value = state.config.titular || ''; }
   { const e = document.getElementById('cfgRUT'); if (e) e.value = state.config.rut || ''; }
   renderGirosWidget('cfgGirosWidget');
   Forms.setearMontoCLP(document.getElementById('cfgSaldoInicial'), state.config.saldoInicial);
@@ -8730,6 +8735,7 @@ function quitarCategoria(cat) {
 
 function guardarConfigManual() {
   state.config.nombre = document.getElementById('cfgNombre').value.trim() || 'Mi negocio';
+  { const t = document.getElementById('cfgTitular'); if (t) state.config.titular = t.value.trim(); }
   { const e = document.getElementById('cfgRUT'); if (e) state.config.rut = e.value.trim(); }
   state.config.saldoInicial = Forms.parsearCLP(document.getElementById('cfgSaldoInicial').value);
   state.config.mesInicial = document.getElementById('cfgMesInicial').value;
@@ -10714,6 +10720,8 @@ function _decisionInicialConc(m, account_id) {
   const otra = _detectarTraspasoConc(m.mov, account_id);
   // Si el retiro de MP ya quedó como traspaso a este banco, el abono no se cuenta de nuevo.
   if (otra) return _traspasoYaRegistrado(m.mov, otra, account_id) ? { tipo: 'ignorar', motivo: 'traspaso' } : { tipo: 'traspaso', otra };
+  const propio = _detectarTraspasoPropio(m.mov, account_id);
+  if (propio) return { tipo: 'traspaso', otra: propio.otra, gastoDup: propio.gastoDup, ventaDup: propio.ventaDup, auto: true };
   const cuota = Conciliacion.detectarCuotaDeuda(m.mov, state);
   if (cuota && cuota.claro) return { tipo: 'cuota', deudaId: cuota.deuda.id, auto: true };
   return { tipo: 'crear', categoria: _sugerirCatConc(m.mov) };
@@ -10826,7 +10834,7 @@ async function agregarLinkFintoc() {
   const link = {
     id: uid(), token, label, created_at: new Date().toISOString(),
     cuentas: (r.accounts || []).map(a => ({
-      accId: a.id, nombre: a.name, oficial: a.official_name, numero: a.number, tipo: a.type,
+      accId: a.id, nombre: a.name, oficial: a.official_name, numero: a.number, tipo: a.type, titular: a.holder_name || '',
       moneda: a.currency, saldo: a.balance, appCuentaId: _fintocSugerirAppCuenta(label, a), lastSync: null
     }))
   };
@@ -10886,6 +10894,7 @@ function _fintocAplicarSaldos(l, accounts, at) {
     const c = (l.cuentas || []).find(x => x.accId === a.id);
     if (!c) return;
     c.saldo = a.balance;
+    if (a.holder_name) c.titular = a.holder_name;
     const app = (state.config.cuentas || []).find(x => x.id === c.appCuentaId);
     if (app && app.tipo === 'banco') { app.saldo_banco = Number(a.balance) || 0; app.saldo_banco_at = at; }
   });
@@ -11049,6 +11058,8 @@ async function sincronizarFintocTodo(silencioso) {
           } else {
             const otra = _detectarTraspasoConc(m.mov, appCuentaId);
             if (otra) { if (!_traspasoYaRegistrado(m.mov, otra, appCuentaId) && _crearTraspasoDesdeMov(m.mov, appCuentaId, otra, lote)) cr++; return; }
+            const propio = _detectarTraspasoPropio(m.mov, appCuentaId);
+            if (propio) { if (_aplicarTraspasoConc(m.mov, appCuentaId, { tipo: 'traspaso', otra: propio.otra, gastoDup: propio.gastoDup, ventaDup: propio.ventaDup }, lote)) cr++; return; }
             // Cuota de un crédito de "Mis deudas": solo si es clara (glosa +
             // monto). Si hay duda, queda como gasto normal (como siempre).
             const cuota = Conciliacion.detectarCuotaDeuda(m.mov, state);
@@ -11070,6 +11081,7 @@ async function sincronizarFintocTodo(silencioso) {
     const keys = Object.keys(vistos);
     if (keys.length > 8000) keys.slice(0, keys.length - 8000).forEach(k => { delete vistos[k]; });
     cfg.lastAutoSync = ahoraISO;
+    try { conciliarCuentasPropias(); } catch (e) { console.error(e); }
     saveState();
     if (total > 0) {
       toast(`Bancos sincronizados: ${total} movimiento${total === 1 ? '' : 's'} nuevo${total === 1 ? '' : 's'} (${porBanco.join(' · ')})${cuotas ? ` · ${_txtCuotas(cuotas)} en Mis deudas` : ''}${porClasificar ? ` · ${porClasificar} por clasificar en Gastos` : ''}`, 'success');
@@ -11357,6 +11369,7 @@ async function sincronizarMercadoPago(silencioso) {
     delete cfg.pendienteInforme;
     cfg.ultimo = _mpResumenSync(r, nuevos.length, ahoraISO);
     _mpAplicarSaldoReal(r.saldoMP, appCuentaId, ahoraISO);
+    try { conciliarCuentasPropias(); } catch (e) { console.error(e); }
     _mpEstimarPiso(appCuentaId);
     // Retiros: el informe de actividades de MP dice a qué banco fue cada uno.
     // Si no está disponible, siguen como hasta ahora (sin cuenta de destino).
@@ -11925,7 +11938,9 @@ function _renderConciliacionPaso2() {
     // Cuota de un crédito: una opción por deuda pendiente (solo en cargos).
     const cuotaOpts = m.monto < 0 ? _opcionesCuotaConc(d) : '';
     const esRetiroMP = !!(m._raw && m._raw.retiro);
-    const catCell = (d.tipo === 'traspaso' && (esRetiroMP || d.ventaDup))
+    const catCell = (d.tipo === 'traspaso' && (d.gastoDup || (d.ventaDup && !esRetiroMP)))
+      ? `<span style="font-size:11px">${d.gastoDup ? 'Entre tus cuentas: reemplaza el cargo de la otra cuenta' : 'Entre tus cuentas: reemplaza el ingreso de la otra cuenta'}</span><span style="font-size:9px; color:var(--success); white-space:nowrap"> ● auto</span>`
+      : (d.tipo === 'traspaso' && (esRetiroMP || d.ventaDup))
       ? _celdaTraspasoRetiroMP(d)
       : (d.tipo === 'ignorar' && (esRetiroMP || d.motivo === 'traspaso'))
       ? `<span style="font-size:11px; color:var(--text-muted)">${d.motivo === 'traspaso' ? 'Ya registrado como traspaso' : (d.motivo === 'transito' ? 'Ya en camino a tu banco' : 'Retiro a tu banco: sale de Mercado Pago ahora y se liga al abono cuando llegue')}</span>`
@@ -12031,6 +12046,105 @@ function _traspasoYaRegistrado(mov, otra, account_id) {
   return _transferencias().some(t => t.cuenta_origen === origen && t.cuenta_destino === destino
     && Math.abs(Number(t.monto) - monto) <= tol && Math.abs(_diasEntre(t.fecha, mov.fecha)) <= 5);
 }
+// ─── Traspasos entre cuentas propias (banco ↔ banco, banco ↔ Mercado Pago) ───
+// Nombres con los que el usuario aparece en sus bancos: titular de las cuentas
+// Fintoc, el nombre que escribió en Configuración y la cuenta de Mercado Pago.
+function _nombresPropios() {
+  const out = [];
+  const norm = (t) => String(t || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const add = (t) => { const n = norm(t); if (n && n.split(' ').filter(w => w.length >= 3).length >= 2) out.push(n); };
+  (((state.config.fintoc || {}).links) || []).forEach(l => (l.cuentas || []).forEach(c => add(c.titular)));
+  add(state.config.titular);
+  const mpc = (state.config.mercadopago || {}).cuenta || {};
+  add(mpc.nombre); add(mpc.nickname);
+  return [...new Set(out)];
+}
+// ¿El texto menciona al propio usuario? El banco suele truncar ("TRASPASO
+// A:SEBASTIAN BOGISLAV VON"), así que basta el primer nombre + otra palabra.
+function _esNombrePropio(texto) {
+  const t = String(texto || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (!t) return false;
+  return _nombresPropios().some(nombre => {
+    const ws = nombre.split(' ').filter(w => w.length >= 3);
+    if (ws.length < 2) return false;
+    return t.includes(ws[0]) && ws.slice(1).some(w => t.includes(w));
+  });
+}
+// Para un movimiento de banco/MP, ¿es la otra punta de un traspaso entre
+// cuentas propias? Devuelve { otra, gastoDup | ventaDup } o null.
+//   abono en B  ↔ cargo igual en otra cuenta A (≤3 días) que parece transferencia
+//   cargo en A  ↔ ingreso igual en otra cuenta B (≤3 días) que parece abono por transferencia
+function _detectarTraspasoPropio(mov, account_id) {
+  if (!mov || !mov.fecha) return null;
+  const monto = Math.abs(Math.round(mov.monto));
+  if (!monto) return null;
+  const cuentas = state.config.cuentas || [];
+  const texto = String(mov.descripcion || '') + ' ' + String((mov._raw && mov._raw.contraparte) || '');
+  const propio = _esNombrePropio(texto);
+  const D = (f) => Math.abs(_diasEntre(mov.fecha, f));
+  const esTransf = (t) => /TRANSF|TRASPASO|TEF\b/i.test(String(t || ''));
+  const sinGlosa = (t) => !/[A-Za-z]{3}/.test(String(t || ''));
+  if (mov.monto > 0) {
+    const g = (state.gastos || []).find(x => x.account_id && x.account_id !== account_id && cuentas.some(c => c.id === x.account_id)
+      && !x.auto_estimado && !x.deuda_id && Math.abs(Number(x.monto) - monto) <= 1 && D(x.fecha) <= 3
+      && (propio || _esNombrePropio(x.descripcion) || x.categoria === 'Transferencias a personas' || esTransf(x.descripcion))
+      && (propio || _esNombrePropio(x.descripcion) || D(x.fecha) <= 1));
+    return g ? { otra: g.account_id, gastoDup: g.id } : null;
+  }
+  if (!propio && !esTransf(texto)) return null;
+  const v = (state.ventasManuales || []).find(x => x.account_id && x.account_id !== account_id && cuentas.some(c => c.id === x.account_id)
+    && (x.origen !== 'mercadopago' || x.tipo_ingreso === 'transferencia') && Math.abs(Number(x.monto) - monto) <= 1 && D(x.fecha) <= 3
+    && (propio || _esNombrePropio(x.descripcion) || sinGlosa(x.descripcion) || esTransf(x.descripcion))
+    && (propio || _esNombrePropio(x.descripcion) || D(x.fecha) <= 1));
+  return v ? { otra: v.account_id, ventaDup: v.id } : null;
+}
+// Pasada sobre lo ya registrado: cierra retiros de MP "en camino" con el
+// abono que ya está en el banco, y convierte en traspaso los pares
+// cargo/abono entre cuentas propias. Devuelve cuántos arregló.
+function conciliarCuentasPropias() {
+  const cuentas = state.config.cuentas || [];
+  const esCta = (id) => cuentas.some(c => c.id === id);
+  const mpId = _mpCfg().appCuentaId;
+  const rx = /MERCADO ?PAGO|MERCADOPAGO|MERPAGO|MPAGO/i;
+  const sinGlosa = (t) => !/[A-Za-z]{3}/.test(String(t || ''));
+  let retiros = 0, propios = 0;
+  const usadas = new Set();
+  // 1) retiros en camino ↔ abonos bancarios (el abono llega el mismo día o hasta 6 después; a veces 1-2 antes)
+  _mpRetiros().filter(r => !r.usado && r.transferencia_id).sort((a, b) => a.fecha.localeCompare(b.fecha)).forEach(r => {
+    const t = _transferencias().find(x => x.id === r.transferencia_id && x.cuenta_destino === MP_TRANSITO);
+    if (!t) return;
+    const cands = (state.ventasManuales || []).filter(v => !usadas.has(v.id) && v.account_id && v.account_id !== mpId && esCta(v.account_id)
+      && v.origen !== 'mercadopago' && Math.abs(Number(v.monto) - r.monto) <= 1 && (() => { const d = _diasEntre(r.fecha, v.fecha); return d >= -2 && d <= 6; })()
+      && (sinGlosa(v.descripcion) || rx.test(v.descripcion || '')));
+    if (!cands.length) return;
+    const v = cands.sort((a, b) => Math.abs(_diasEntre(r.fecha, a.fecha)) - Math.abs(_diasEntre(r.fecha, b.fecha)))[0];
+    usadas.add(v.id);
+    t.cuenta_destino = v.account_id; t.nota = String(v.descripcion || '').slice(0, 120) || 'Retiro de Mercado Pago';
+    r.usado = true;
+    (state.conciliaciones || []).forEach(c => { if (c.ref_type === 'venta' && c.ref_id === v.id) { c.ref_type = 'transferencia'; c.ref_id = t.id; c.completa_transito = true; } });
+    state.ventasManuales = (state.ventasManuales || []).filter(x => x.id !== v.id);
+    retiros++;
+  });
+  // 2) cargo en A ↔ ingreso en B (cuentas propias)
+  (state.gastos || []).slice().forEach(g => {
+    if (!g.account_id || !esCta(g.account_id) || g.auto_estimado || g.deuda_id) return;
+    const det = _detectarTraspasoPropio({ fecha: g.fecha, monto: -Math.abs(Number(g.monto || 0)), descripcion: g.descripcion || g.proveedor || '' }, g.account_id);
+    if (!det || !det.ventaDup || usadas.has(det.ventaDup)) return;
+    const v = (state.ventasManuales || []).find(x => x.id === det.ventaDup);
+    if (!v) return;
+    usadas.add(v.id);
+    const t = { id: uid(), fecha: g.fecha, monto: Math.abs(Math.round(Number(g.monto || 0))), cuenta_origen: g.account_id, cuenta_destino: v.account_id, nota: String(g.descripcion || 'Traspaso entre mis cuentas').slice(0, 120), lote: null };
+    _transferencias().push(t);
+    (state.conciliaciones || []).forEach(c => {
+      if ((c.ref_type === 'gasto' && c.ref_id === g.id) || (c.ref_type === 'venta' && c.ref_id === v.id)) { c.ref_type = 'transferencia'; c.ref_id = t.id; }
+    });
+    state.gastos = (state.gastos || []).filter(x => x.id !== g.id);
+    state.ventasManuales = (state.ventasManuales || []).filter(x => x.id !== v.id);
+    propios++;
+  });
+  if (retiros || propios) { saveState(); console.log(`[traspasos] retiros MP cerrados: ${retiros} · traspasos entre cuentas propias: ${propios}`); }
+  return { retiros, propios };
+}
 // Retiros de Mercado Pago ya leídos que todavía no tienen su abono en el
 // banco. Cuando el abono llega (por Fintoc o cartola) se reconoce como
 // traspaso MP → banco aunque venga sin glosa.
@@ -12115,6 +12229,18 @@ function _mpAjustarSaldo() {
 // Retiros en espera que quedaron sin traspaso en tránsito (versiones
 // anteriores): se crea ahora para que el saldo de Mercado Pago no los
 // cuente como plata que sigue ahí. Una vez por perfil.
+// "Cargo por Compra en Comercio Nac." (BICE) quedaba como comisión por la
+// regla CARGO POR: pasa a Compras. Una vez por perfil.
+function migrarComprasV3() {
+  if (state.config._catsV3 || !esPerfilPersonal()) return;
+  let n = 0;
+  (state.gastos || []).forEach(g => {
+    if (g.categoria === 'Comisiones e intereses bancarios' && /COMPRA/i.test(g.descripcion || '')) { g.categoria = 'Compras (tiendas y online)'; n++; }
+  });
+  state.config._catsV3 = true;
+  saveState();
+  if (n) console.log('[migración] compras recategorizadas: ' + n);
+}
 function migrarMpTransitoV1() {
   if (state.config._mpTransitoV1) return;
   const mpId = _mpCfg().appCuentaId;
@@ -12180,6 +12306,11 @@ function _aplicarTraspasoConc(mov, account_id, decision, lote) {
   if (t && decision.ventaDup) {
     state.ventasManuales = (state.ventasManuales || []).filter(v => v.id !== decision.ventaDup);
     state.conciliaciones = (state.conciliaciones || []).filter(c => !(c.ref_type === 'venta' && c.ref_id === decision.ventaDup));
+  }
+  if (t && decision.gastoDup) {
+    // La otra punta ya estaba registrada como gasto en la otra cuenta: se reemplaza por el traspaso.
+    state.gastos = (state.gastos || []).filter(g => g.id !== decision.gastoDup);
+    state.conciliaciones = (state.conciliaciones || []).filter(c => !(c.ref_type === 'gasto' && c.ref_id === decision.gastoDup));
   }
   return t;
 }
@@ -18127,6 +18258,8 @@ function init() {
   migrarSuscripcionesV1();
   migrarCuentasBancoV1();
   migrarMpTransitoV1();
+  migrarComprasV3();
+  if (!state.config._conciliarPropiosV1) { try { conciliarCuentasPropias(); } catch (e) { console.error(e); } state.config._conciliarPropiosV1 = true; saveState(); }
   // Si el saldo calculado de Mercado Pago quedó negativo (los retiros salen
   // pero la app no conoce el saldo con que partió), se pide el saldo real una vez.
   try {

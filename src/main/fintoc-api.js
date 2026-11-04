@@ -154,6 +154,7 @@ async function accounts(args) {
         id: a.id,
         name: a.name || a.official_name || 'Cuenta',
         official_name: a.official_name || '',
+        holder_name: a.holder_name || '',
         number: a.number || '',
         type: a.type || '',
         currency: a.currency || 'CLP',
