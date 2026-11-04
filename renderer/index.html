@@ -3062,6 +3062,7 @@
             <div style="font-size:11px; color:var(--text-muted); margin-top:4px">Crea una cuenta llamada "Mercado Pago" en Cuentas para verla separada de tus bancos.</div>
           </div>
         </div>
+        <div id="mpSaldoBox" style="margin-top:12px"></div>
 
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px">
           <div style="display:flex; flex-direction:column; gap:6px">
@@ -6815,10 +6816,11 @@ function _agruparCuentas(detalles) {
 // "según el banco · hace 2 h" para cuentas conectadas.
 function _saldoBancoNota(c) {
   if (c.saldo_banco === undefined || c.saldo_banco === null) return '';
-  if (!c.saldo_banco_at) return 'Saldo según el banco';
+  const quien = c.saldo_banco_origen === 'mercadopago' ? 'Mercado Pago' : 'el banco';
+  if (!c.saldo_banco_at) return `Saldo según ${quien}`;
   const min = Math.max(0, Math.round((Date.now() - new Date(c.saldo_banco_at).getTime()) / 60000));
   const hace = min < 60 ? `hace ${min} min` : (min < 48 * 60 ? `hace ${Math.round(min / 60)} h` : `hace ${Math.round(min / 1440)} días`);
-  return `Saldo según el banco · ${hace}`;
+  return `Saldo según ${quien} · ${hace}`;
 }
 function renderAccountBalance() {
   const wrap = document.getElementById('accountBalanceList');
@@ -11198,6 +11200,23 @@ function renderMercadoPagoCfg() {
   if (resumen) resumen.innerHTML = cfg.token
     ? `<span style="color:var(--success-text)">●</span> Conectado${quien ? ` como <strong>${escapeHtml(quien)}</strong>` : ''} · última sincronización: ${escapeHtml(fmt(cfg.lastSync))}${_mpResumenMesHtml() ? `<div style="margin-top:4px">${_mpResumenMesHtml()}</div>` : ''}${_mpUltimoHtml(cfg)}`
     : `<span style="color:var(--text-muted)">○ Sin conectar</span>`;
+  const saldoBox = document.getElementById('mpSaldoBox');
+  if (saldoBox) {
+    const cta = cuentas.find(c => c.id === cfg.appCuentaId);
+    if (!cfg.token || !cta) saldoBox.innerHTML = '';
+    else if (cta.saldo_banco_origen === 'mercadopago' && cta.saldo_banco !== undefined) {
+      const det = cta.saldo_detalle || {};
+      saldoBox.innerHTML = `<div style="font-size:12px"><strong>Saldo según Mercado Pago:</strong> ${clp(cta.saldo_banco)}${det.disponible !== null && det.disponible !== undefined ? ` <span style="color:var(--text-muted)">(disponible ${clp(det.disponible)}${det.a_liberar ? ` · a liberar ${clp(det.a_liberar)}` : ''})</span>` : ''} <span style="color:var(--text-muted)">· ${escapeHtml(_saldoBancoNota(cta).replace('Saldo según Mercado Pago · ', ''))}</span></div>`;
+    } else {
+      saldoBox.innerHTML = `<label>Saldo actual en Mercado Pago (CLP)</label>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+          <input id="mpSaldoReal" type="text" inputmode="numeric" data-clp="true" placeholder="Lo que muestra la app de Mercado Pago hoy" style="max-width:260px" />
+          <button class="btn sm" onclick="_mpAjustarSaldo()">Ajustar saldo</button>
+          <span style="font-size:11px; color:var(--text-muted)">Hoy la app calcula ${clp(calcularSaldoCuenta(cta.id))} con los movimientos leídos. Si no calza con tu app de Mercado Pago, escribe el saldo real y se corrige.</span>
+        </div>`;
+      if (window.Forms && Forms.bindCLPInputs) Forms.bindCLPInputs();
+    }
+  }
   const card = document.getElementById('subirMpCard');
   if (card) {
     card.style.display = cfg.token ? '' : 'none';
@@ -11336,6 +11355,7 @@ async function sincronizarMercadoPago(silencioso) {
     const nuevos = _mpMovsNuevos(r);
     delete cfg.pendienteInforme;
     cfg.ultimo = _mpResumenSync(r, nuevos.length, ahoraISO);
+    _mpAplicarSaldoReal(r.saldoMP, appCuentaId, ahoraISO);
     // Retiros: el informe de actividades de MP dice a qué banco fue cada uno.
     // Si no está disponible, siguen como hasta ahora (sin cuenta de destino).
     await _mpLigarDestinoRetiros(nuevos, cfg, appCuentaId);
@@ -11377,7 +11397,7 @@ async function sincronizarMercadoPago(silencioso) {
       if (m.mov._raw && m.mov._raw.retiro) {
         const dec = _mpRetiroDecision(m.mov, appCuentaId);
         if (dec.tipo === 'traspaso') { if (_aplicarTraspasoConc(m.mov, appCuentaId, dec, lote)) cr++; }
-        else _registrarRetiroMP(m.mov);
+        else _registrarRetiroMP(m.mov, lote);
         return;
       }
       if (m.candidatos && m.candidatos.length) {
@@ -11906,7 +11926,7 @@ function _renderConciliacionPaso2() {
     const catCell = (d.tipo === 'traspaso' && (esRetiroMP || d.ventaDup))
       ? _celdaTraspasoRetiroMP(d)
       : (d.tipo === 'ignorar' && (esRetiroMP || d.motivo === 'traspaso'))
-      ? `<span style="font-size:11px; color:var(--text-muted)">${d.motivo === 'traspaso' ? 'Ya registrado como traspaso' : 'Retiro a tu banco: se reconoce cuando llegue el abono'}</span>`
+      ? `<span style="font-size:11px; color:var(--text-muted)">${d.motivo === 'traspaso' ? 'Ya registrado como traspaso' : (d.motivo === 'transito' ? 'Ya en camino a tu banco' : 'Retiro a tu banco: sale de Mercado Pago ahora y se liga al abono cuando llegue')}</span>`
       : d.tipo === 'cuota'
       ? _celdaCuotaConc(m, d)
       : (d.tipo === 'crear' && m.monto < 0)
@@ -12016,13 +12036,72 @@ function _mpRetiros() {
   if (!Array.isArray(state.mpRetiros)) state.mpRetiros = [];
   return state.mpRetiros;
 }
-function _registrarRetiroMP(mov) {
+// Destino provisorio de un retiro cuyo abono aún no aparece en el banco: la
+// plata ya salió de Mercado Pago, así que el saldo de MP baja igual.
+const MP_TRANSITO = '__transito__';
+function _registrarRetiroMP(mov, lote) {
   const lista = _mpRetiros();
   const id = mov._raw && mov._raw.mp_id;
   if (id && lista.some(r => r.mp_id === id)) return;
-  lista.push({ mp_id: id || null, fecha: String(mov.fecha || '').slice(0, 10), monto: Math.abs(Math.round(mov.monto)), usado: false, destino: (mov._raw && mov._raw.destino) || null });
+  const entrada = { mp_id: id || null, fecha: String(mov.fecha || '').slice(0, 10), monto: Math.abs(Math.round(mov.monto)), usado: false, destino: (mov._raw && mov._raw.destino) || null, transferencia_id: null };
+  const mpId = _mpCfg().appCuentaId;
+  if (mpId) {
+    const t = _crearTraspasoDesdeMov(mov, mpId, MP_TRANSITO, lote);
+    if (t) { t.mp_retiro = id || null; t.nota = 'Retiro de Mercado Pago en camino a tu banco'; entrada.transferencia_id = t.id; }
+  }
+  lista.push(entrada);
   const limite = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10);
   state.mpRetiros = lista.filter(r => r.fecha >= limite).slice(-500);
+}
+// Saldo real que informa Mercado Pago (disponible + a liberar) → manda sobre
+// el calculado, igual que el saldo según el banco en las cuentas Fintoc.
+function _mpAplicarSaldoReal(saldoMP, cuentaId, at) {
+  const cta = (state.config.cuentas || []).find(c => c.id === cuentaId);
+  if (!cta) return;
+  if (saldoMP && saldoMP.ok && typeof saldoMP.total === 'number') {
+    cta.saldo_banco = saldoMP.total; cta.saldo_banco_at = at || new Date().toISOString();
+    cta.saldo_detalle = { disponible: saldoMP.disponible, a_liberar: saldoMP.a_liberar };
+    cta.saldo_banco_origen = 'mercadopago';
+  } else if (cta.saldo_banco_origen === 'mercadopago') {
+    delete cta.saldo_banco; delete cta.saldo_banco_at; delete cta.saldo_detalle; delete cta.saldo_banco_origen;
+  }
+}
+// Ajuste manual: el usuario escribe el saldo que ve en la app de Mercado
+// Pago y el saldo inicial de la cuenta se corrige para que calce.
+function _mpAjustarSaldo() {
+  const cfg = _mpCfg();
+  const cta = (state.config.cuentas || []).find(c => c.id === cfg.appCuentaId);
+  if (!cta) { toast('Elige primero la cuenta de Mercado Pago', 'error'); return; }
+  const inp = document.getElementById('mpSaldoReal');
+  if (inp && !String(inp.value || '').trim()) { toast('Escribe el saldo que muestra Mercado Pago', 'error'); return; }
+  const valor = Forms.parsearCLP(inp ? inp.value : '');
+  delete cta.saldo_banco; delete cta.saldo_banco_at; delete cta.saldo_banco_origen; delete cta.saldo_detalle;
+  const actual = calcularSaldoCuenta(cta.id);
+  cta.saldo_inicial = Number(cta.saldo_inicial || 0) + (valor - actual);
+  saveState();
+  if (inp) inp.value = '';
+  toast(`Saldo de ${cta.nombre} ajustado a ${clp(valor)}`, 'success');
+  renderMercadoPagoCfg();
+  if (document.getElementById('view-cuentas')?.classList.contains('active')) renderCuentas();
+  if (document.getElementById('view-dashboard')?.classList.contains('active')) renderDashboard();
+}
+// Retiros en espera que quedaron sin traspaso en tránsito (versiones
+// anteriores): se crea ahora para que el saldo de Mercado Pago no los
+// cuente como plata que sigue ahí. Una vez por perfil.
+function migrarMpTransitoV1() {
+  if (state.config._mpTransitoV1) return;
+  const mpId = _mpCfg().appCuentaId;
+  let n = 0;
+  if (mpId) {
+    _mpRetiros().forEach(r => {
+      if (r.usado || r.transferencia_id || !r.monto || !r.fecha) return;
+      const t = { id: uid(), fecha: r.fecha, monto: r.monto, cuenta_origen: mpId, cuenta_destino: MP_TRANSITO, nota: 'Retiro de Mercado Pago en camino a tu banco', lote: null, mp_retiro: r.mp_id || null };
+      _transferencias().push(t); r.transferencia_id = t.id; n++;
+    });
+  }
+  state.config._mpTransitoV1 = true;
+  saveState();
+  if (n) console.log('[migración] retiros de Mercado Pago en tránsito: ' + n);
 }
 function _diasEntre(a, b) {
   return Math.round((new Date(String(b).slice(0, 10) + 'T12:00:00') - new Date(String(a).slice(0, 10) + 'T12:00:00')) / 86400000);
@@ -12044,9 +12123,8 @@ function _mpRetiroDecision(mov, mpCuentaId) {
   const monto = Math.abs(Math.round(mov.monto));
   const tol = Math.max(1, Math.round(monto * 0.01));
   const dentro = (f, desde, hasta) => { const d = _diasEntre(mov.fecha, f); return d >= desde && d <= hasta; };
-  if (_transferencias().some(t => t.cuenta_origen === mpCuentaId && Math.abs(Number(t.monto) - monto) <= tol && dentro(t.fecha, -1, 4))) {
-    return { tipo: 'ignorar', motivo: 'traspaso' };
-  }
+  const existente = _transferencias().find(t => t.cuenta_origen === mpCuentaId && Math.abs(Number(t.monto) - monto) <= tol && dentro(t.fecha, -1, 4));
+  if (existente) return { tipo: 'ignorar', motivo: existente.cuenta_destino === MP_TRANSITO ? 'transito' : 'traspaso' };
   const destino = _mpDestinoValido(mov, mpCuentaId);
   const rx = /MERCADO ?PAGO|MERCADOPAGO|MERPAGO|MPAGO/i;
   const dup = (state.ventasManuales || []).find(v => {
@@ -12083,6 +12161,24 @@ function _aplicarTraspasoConc(mov, account_id, decision, lote) {
 function _crearTraspasoDesdeMov(mov, account_id, otraId, lote) {
   const monto = Math.abs(Math.round(mov.monto));
   if (!monto || !otraId || otraId === account_id) return null;
+  // Abono en el banco de un retiro de MP que ya está "en camino": se completa
+  // ese traspaso (destino = este banco) en vez de crear uno nuevo.
+  if (mov.monto > 0 && otraId === _mpCfg().appCuentaId) {
+    const r = _mpRetiroQueCalza(mov, account_id);
+    const enCamino = r && r.transferencia_id ? _transferencias().find(x => x.id === r.transferencia_id && x.cuenta_destino === MP_TRANSITO) : null;
+    if (enCamino) {
+      enCamino.cuenta_destino = account_id;
+      enCamino.nota = String(mov.descripcion || 'Retiro de Mercado Pago').slice(0, 120);
+      r.usado = true;
+      if (!Array.isArray(state.conciliaciones)) state.conciliaciones = [];
+      state.conciliaciones.push({
+        id: uid(), ref_type: 'transferencia', ref_id: enCamino.id, account_id,
+        cartola_fecha: mov.fecha, cartola_descripcion: mov.descripcion, cartola_monto: mov.monto,
+        auto_creado: true, completa_transito: true, lote: lote || null, created_at: new Date().toISOString()
+      });
+      return enCamino;
+    }
+  }
   const t = {
     id: uid(),
     fecha: mov.fecha,
@@ -12190,7 +12286,7 @@ function confirmarConciliacion() {
     } else if (it.decision.tipo === 'traspaso') {
       if (_aplicarTraspasoConc(it.mov, account_id, it.decision, lote)) creados++;
     } else if (it.decision.tipo === 'ignorar' && it.mov._raw && it.mov._raw.retiro) {
-      _registrarRetiroMP(it.mov); // para reconocer el abono cuando llegue al banco
+      _registrarRetiroMP(it.mov, lote); // queda "en camino" y se completa cuando llegue el abono
     } else if (it.decision.tipo === 'cuota') {
       // Pago a la deuda + un solo gasto ligado (no se duplica el gasto).
       const dd = (state.deudas || []).find(x => x.id === it.decision.deudaId);
@@ -12282,8 +12378,14 @@ function retirarLoteCartola(lote) {
         if ((state.ventasManuales || []).length < n) borrados++;
       } else if (c.ref_type === 'transferencia') {
         const n = (state.transferencias || []).length;
-        state.transferencias = (state.transferencias || []).filter(t => t.id !== c.ref_id);
-        if ((state.transferencias || []).length < n) borrados++;
+        if (c.completa_transito) {
+          // Era el abono de un retiro de MP: el traspaso vuelve a "en camino".
+          const t = (state.transferencias || []).find(x => x.id === c.ref_id);
+          if (t) { t.cuenta_destino = MP_TRANSITO; t.nota = 'Retiro de Mercado Pago en camino a tu banco'; const r = _mpRetiros().find(x => x.transferencia_id === t.id); if (r) r.usado = false; borrados++; }
+        } else {
+          state.transferencias = (state.transferencias || []).filter(t => t.id !== c.ref_id);
+          if ((state.transferencias || []).length < n) borrados++;
+        }
       } else if (c.ref_type === 'deuda_pago') {
         // Cuota de crédito: se quita el pago de la deuda y su gasto ligado
         if (Conciliacion.deshacerCuotaDeuda(state, c)) { borrados++; hayDeudas = true; }
@@ -12640,6 +12742,7 @@ function _renderTablaTransferencias() {
   if (!list.length) { card.style.display = 'none'; return; }
   card.style.display = '';
   const nombreCta = (cid) => {
+    if (cid === MP_TRANSITO) return 'En camino a tu banco';
     const c = (state.config.cuentas || []).find(x => x.id === cid);
     return c ? c.nombre : '—';
   };
@@ -17996,6 +18099,16 @@ function init() {
   migrarCategoriasPersonalV2();
   migrarSuscripcionesV1();
   migrarCuentasBancoV1();
+  migrarMpTransitoV1();
+  // Si el saldo calculado de Mercado Pago quedó negativo (los retiros salen
+  // pero la app no conoce el saldo con que partió), se pide el saldo real una vez.
+  try {
+    const mpCta = (state.config.cuentas || []).find(c => c.id === _mpCfg().appCuentaId);
+    if (mpCta && mpCta.saldo_banco === undefined && !state.config._mpAvisoSaldoV1 && calcularSaldoCuenta(mpCta.id) < 0) {
+      state.config._mpAvisoSaldoV1 = true; saveState();
+      setTimeout(() => toast('El saldo de Mercado Pago no calza con la realidad: escribe el saldo real en Configuración → Mercado Pago → "Ajustar saldo".', 'error'), 2500);
+    }
+  } catch (e) { console.error(e); }
   asegurarCuentaDefault();
   generarGastosRecurrentes();
   generarCobrosRecurrentes();

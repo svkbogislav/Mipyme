@@ -467,6 +467,28 @@ function normalizar(rows, { incluirRetiros = false } = {}) {
   return out;
 }
 
+// ---------- Saldo de la cuenta ----------
+// Saldo real de la cuenta de Mercado Pago (disponible + a liberar). Usa el
+// endpoint de cuenta del usuario; si no está disponible para esta cuenta,
+// la app sigue con el saldo calculado a partir de los movimientos.
+async function saldo(token) {
+  try {
+    const me = await request('GET', '/users/me', token);
+    if (!ok2xx(me) || !me.json || !me.json.id) return { ok: false, error: mensajeError(me), status: me.status };
+    const r = await request('GET', `/users/${encodeURIComponent(me.json.id)}/mercadopago_account/balance`, token);
+    if (!ok2xx(r) || !r.json || typeof r.json !== 'object') return { ok: false, error: mensajeError(r), status: r.status };
+    const j = r.json;
+    const n = (v) => (v === undefined || v === null || v === '' || isNaN(Number(v))) ? null : Number(v);
+    const disponible = n(j.available_balance), aLiberar = n(j.unavailable_balance), total = n(j.total_amount);
+    const suma = (disponible !== null || aLiberar !== null) ? (disponible || 0) + (aLiberar || 0) : null;
+    const saldoTotal = total !== null ? total : suma;
+    if (saldoTotal === null) return { ok: false, error: 'Mercado Pago no informó el saldo.' };
+    return { ok: true, total: Math.round(saldoTotal), disponible: disponible === null ? null : Math.round(disponible), a_liberar: aLiberar === null ? null : Math.round(aLiberar), moneda: j.currency_id || 'CLP' };
+  } catch (e) {
+    return { ok: false, error: 'No pude conectar con Mercado Pago: ' + (e.message || 'error de red') };
+  }
+}
+
 // ---------- Diagnóstico local ----------
 // Deja en userData (args.diagDir) un resumen de la última sincronización y
 // el último informe crudo, para poder revisar qué devolvió MP cuando algo no
@@ -525,10 +547,12 @@ async function sync(args) {
       if (faltan.length) return fin({ ok: false, error: 'El informe no trae las columnas esperadas.', detalle: 'Encabezados: ' + headers.slice(0, 12).join(', '), _csv: csvs.join('\n') });
       rowsTodas.push(...rows);
     }
-    if (!rowsTodas.length) return fin({ ok: true, movements: [], file_name, vacio: true, since, until, informes: tramos.length, _csv: csvs.join('\n') });
+    if (!rowsTodas.length) { const saldoMP = await saldo(token); return fin({ ok: true, movements: [], file_name, vacio: true, since, until, informes: tramos.length, saldoMP, _csv: csvs.join('\n') }); }
     const movements = normalizar(rowsTodas, { incluirRetiros: !!(args && args.incluirRetiros) })
       .filter(m => m.fecha >= since && m.fecha <= until);
-    return fin({ ok: true, movements, file_name, filas: rowsTodas.length, since, until, informes: tramos.length, _csv: csvs.join('\n') });
+    const saldoMP = await saldo(token);
+    diag.saldo = saldoMP.ok ? { total: saldoMP.total, disponible: saldoMP.disponible, a_liberar: saldoMP.a_liberar } : { error: saldoMP.error || null, status: saldoMP.status || null };
+    return fin({ ok: true, movements, file_name, filas: rowsTodas.length, since, until, informes: tramos.length, saldoMP, _csv: csvs.join('\n') });
   } catch (e) {
     return fin({ ok: false, error: 'No pude conectar con Mercado Pago: ' + (e.message || 'error de red') });
   }
@@ -600,8 +624,9 @@ async function asegurarConfigRetiros(token) {
     if (!ok2xx(r)) r = await request('POST', `${RETIROS_BASE}/config`, token, { structure, notifiers: [] });
     if (!ok2xx(r)) r = await request('POST', `${RETIROS_BASE}/config`, token, { structure });
   }
-  if (!ok2xx(r)) return { ok: false, error: errorRetiros(r, 'preparar el informe de retiros en Mercado Pago'), status: r.status, detalle: detalleMP(r) };
-  return { ok: true, creado: !actual };
+  const cuerpo = (x) => x ? { status: x.status, body: String(x.raw || (x.json ? JSON.stringify(x.json) : '') || '').slice(0, 1200) } : null;
+  if (!ok2xx(r)) return { ok: false, error: errorRetiros(r, 'preparar el informe de retiros en Mercado Pago'), status: r.status, detalle: detalleMP(r), raw: { get: cuerpo(g), post: cuerpo(r), columns } };
+  return { ok: true, creado: !actual, raw: { get: cuerpo(g), post: cuerpo(r) } };
 }
 
 // Lista de informes: lista directa o {results|statements|data|items:[…]}.
@@ -829,7 +854,7 @@ async function retiros(args) {
   };
   try {
     const cfg = await asegurarConfigRetiros(token);
-    diag.config = { ok: cfg.ok, creado: !!cfg.creado, status: cfg.status || null };
+    diag.config = { ok: cfg.ok, creado: !!cfg.creado, status: cfg.status || null, raw: cfg.raw || null };
     if (!cfg.ok) return fin(cfg);
     const gte = `${since}T00:00:00-04:00`;
     let lte = `${until}T23:59:59-04:00`;
@@ -869,4 +894,4 @@ async function retiros(args) {
   }
 }
 
-module.exports = { test, sync, retiros, parseCSV, normalizar, normalizarRetiros, clasificar, num, limpiarToken, ventanas, MAX_DIAS_INFORME, cercaDia, elegirListo, elegirPendiente, elegirInformeRetiros, leerZip, extraerCSVDescarga, RETIROS_COLUMNAS };
+module.exports = { test, sync, saldo, retiros, parseCSV, normalizar, normalizarRetiros, clasificar, num, limpiarToken, ventanas, MAX_DIAS_INFORME, cercaDia, elegirListo, elegirPendiente, elegirInformeRetiros, leerZip, extraerCSVDescarga, RETIROS_COLUMNAS };
