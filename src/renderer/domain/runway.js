@@ -49,7 +49,10 @@
 
     // Deuda CxP pendiente: la restamos de caja para tener "caja neta de obligaciones".
     // Cobros CxC pendientes: los sumamos como entradas comprometidas.
-    const deudaPendiente = (state.deudas || []).reduce((s, d) => s + Deudas.saldoPendiente(d), 0);
+    // Las tarjetas de crédito (cuentas tipo tarjeta con saldo negativo) también son deuda.
+    const deudaTarjetas = ((state.config && state.config.cuentas) || []).filter(c => c.tipo === 'tarjeta')
+      .reduce((s, c) => s + Math.max(0, -Cuentas.calcularSaldoCuenta(state, c.id, vpm)), 0);
+    const deudaPendiente = (state.deudas || []).reduce((s, d) => s + Deudas.saldoPendiente(d), 0) + deudaTarjetas;
     const cobrosPendientes = (state.cobros || []).reduce((s, c) => s + Cobros.saldoPendiente(c), 0);
     const cajaNeta = cajaLiquida - deudaPendiente + cobrosPendientes;
 
