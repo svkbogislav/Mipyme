@@ -14098,6 +14098,7 @@ function _creditosDetectados() {
   const rx = /PRESTAMO|PRÉSTAMO|CREDITO|CRÉDITO|LINEA DE CRED|LÍNEA DE CRÉD|HIPOTEC|DIVIDENDO|AMORTIZACION/i;
   const deudas = state.deudas || [];
   return CargosRegulares.detectar(state).filter(c => {
+    if (c.monto < 5000 || /IMPUESTO|INTERES|COMISION/i.test(String(c.glosa || '') + ' ' + String(c.nombre || ''))) return false;
     const parece = c.categoria === 'Deudas / Créditos' || rx.test(c.glosa || '') || rx.test(c.nombre || '');
     if (!parece) return false;
     // Ya hay una deuda con esa cuota → está cubierto
@@ -14124,20 +14125,33 @@ function _renderDeudasExtra() {
       <td style="text-align:right"><button class="btn sm ghost" onclick="editarCuenta('${t.id}')">Editar</button></td>
     </tr>`).join('')}</tbody></table></div>` : ''}
   </div>`;
+  const creditosReg = (state.deudas || []).filter(d => Number(d.cuota_mensual) > 0 && saldoPendienteDeuda(d) > 0);
+  html += `<div class="card" style="margin-bottom:14px">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap">
+      <div><h3 style="margin:0">🏦 Créditos de consumo y préstamos</h3><div class="card-sub" style="margin-top:2px">${creditosReg.length ? `Debes <strong>${clp(creditosReg.reduce((a, d) => a + saldoPendienteDeuda(d), 0))}</strong> en ${creditosReg.length} crédito${creditosReg.length === 1 ? '' : 's'} · cuotas por ${clp(creditosReg.reduce((a, d) => a + Number(d.cuota_mensual || 0), 0))}/mes. Las cuotas que pasan por tu banco se descuentan solas.` : 'Regístralos con lo que debes hoy y la cuota mensual. Las cuotas que pasan por tu banco se descuentan solas.'}</div></div>
+      <button class="btn sm primary" onclick="abrirModalCredito()">+ Agregar crédito</button>
+    </div>`;
   if (creditos.length) {
-    html += `<div class="card" style="margin-bottom:14px">
-      <h3 style="margin:0">Cuotas de crédito en tus movimientos</h3>
-      <div class="card-sub" style="margin-top:2px">Cargos que se repiten cada mes y parecen cuotas de un crédito sin registrar. Regístralos para ver cuánto debes y cuándo terminas de pagar.</div>
-      <div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Cargo</th><th class="num">Cuota</th><th>Día</th><th>Visto</th><th></th></tr></thead><tbody>${creditos.map((c, i) => `<tr>
+    html += `
+      <div style="font-size:12px; font-weight:600; margin-top:12px">Cuotas que encontramos en tus movimientos y aún no están registradas</div>
+      <div class="table-wrap" style="margin-top:6px"><table><thead><tr><th>Cargo</th><th class="num">Cuota</th><th>Día</th><th>Visto</th><th></th></tr></thead><tbody>${creditos.map((c, i) => `<tr>
         <td><strong>${escapeHtml(c.nombre)}</strong></td>
         <td class="num">${clp(c.monto)}</td>
         <td>${c.diaMes}</td>
         <td style="color:var(--text-muted)">${c.veces}× en ${c.meses} meses</td>
         <td style="text-align:right"><button class="btn sm primary" onclick="_crearDeudaDesdeCargo(${i})">Registrar como ${personal ? 'crédito' : 'deuda'}</button></td>
-      </tr>`).join('')}</tbody></table></div>
-    </div>`;
+      </tr>`).join('')}</tbody></table></div>`;
   }
+  html += `</div>`;
   box.innerHTML = html;
+}
+// Crédito de consumo o préstamo bancario: el mismo modal de deuda, con la
+// cuota a la vista porque es lo que permite descontar los pagos solos.
+function abrirModalCredito() {
+  abrirModalDeuda();
+  document.getElementById('modalDeudaTitulo').textContent = 'Nuevo crédito';
+  document.getElementById('deudaDescripcion').value = 'Crédito de consumo';
+  toast('Pon el banco, lo que debes hoy y la cuota mensual. La tasa es opcional.', '');
 }
 // Abre el modal de deuda con la cuota detectada ya puesta; falta el saldo total.
 function _crearDeudaDesdeCargo(i) {
