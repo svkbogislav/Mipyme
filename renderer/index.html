@@ -3549,6 +3549,18 @@
   </div>
 </div>
 
+<!-- ===== MODAL MOVIMIENTOS DEL DÍA (click en una barra del flujo de caja) ===== -->
+<div class="modal-overlay" id="modalDiaMov" onclick="if(event.target===this) cerrarMovimientosDia()">
+  <div class="modal" style="max-width:640px; max-height:86vh; overflow-y:auto">
+    <h3 id="diaMovTitulo" style="margin-bottom:4px">Movimientos del día</h3>
+    <div id="diaMovResumen" style="font-size:13px; color:var(--text-muted); margin-bottom:12px"></div>
+    <div id="diaMovLista"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="cerrarMovimientosDia()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== MODAL CUENTA BANCARIA ===== -->
 <div class="modal-overlay" id="modalCuenta" onclick="if(event.target===this) cerrarModalCuenta()">
   <div class="modal">
@@ -6308,6 +6320,15 @@ function buildCashFlowChartConfig(labels, dataIn, dataOut, dataProfit, opts = {}
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
+      // Vista por días: click en un día → sus movimientos.
+      onClick: opts.fullDates ? (evt, els, chart) => {
+        const pts = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
+        if (pts && pts.length) abrirMovimientosDia(opts.fullDates[pts[0].index]);
+      } : undefined,
+      onHover: opts.fullDates ? (evt, els) => {
+        const t = evt && evt.native && evt.native.target;
+        if (t) t.style.cursor = els && els.length ? 'pointer' : 'default';
+      } : undefined,
       plugins: {
         legend: { display: false }, // leyenda custom arriba
         tooltip: {
@@ -6408,6 +6429,48 @@ function buildCashFlowChartConfig(labels, dataIn, dataOut, dataProfit, opts = {}
 }
 
 // Modo "single-month": mismo formato (bars+line) pero por día del mes
+// ─── Movimientos de un día (desde el gráfico de flujo de caja) ───
+function abrirMovimientosDia(ymd) {
+  if (!ymd) return;
+  const cuentas = state.config.cuentas || [];
+  const nombre = (id) => id === '__transito__' ? 'En camino a tu banco' : ((cuentas.find(c => c.id === id) || {}).nombre || '');
+  const delDia = (f) => String(f || '').slice(0, 10) === ymd;
+  const ingresos = (state.ventasManuales || []).filter(v => delDia(v.fecha)).map(v => ({
+    id: v.id, monto: Number(v.monto || 0), texto: v.descripcion || v.concepto || v.cliente || 'Ingreso',
+    etiqueta: tipoIngresoLabel(v.tipo_ingreso) || v.metodo || '', cuenta: nombre(v.account_id), editar: `editarVentaManual('${v.id}')`
+  }));
+  if (!esPerfilPersonal()) {
+    (shopify.orders || []).filter(o => delDia(o.created_at || o.fecha) && !o.cancelled_at).forEach(o => ingresos.push({
+      monto: Number(o.total_price ?? o.total ?? 0), texto: `Pedido ${o.name || o.order_number || ''}`.trim(), etiqueta: 'Shopify', cuenta: '', editar: ''
+    }));
+  }
+  const gastos = (state.gastos || []).filter(g => delDia(g.fecha)).map(g => ({
+    id: g.id, monto: Number(g.monto || 0), texto: g.descripcion || g.proveedor || 'Gasto',
+    etiqueta: g.categoria || '', cuenta: nombre(g.account_id), editar: `editarGasto('${g.id}')`
+  }));
+  const traspasos = (state.transferencias || []).filter(t => delDia(t.fecha)).map(t => ({
+    monto: Number(t.monto || 0), texto: `${nombre(t.cuenta_origen) || '—'} → ${nombre(t.cuenta_destino) || '—'}`, etiqueta: 'Entre tus cuentas', cuenta: '', editar: ''
+  }));
+  const entro = ingresos.reduce((a, x) => a + x.monto, 0), salio = gastos.reduce((a, x) => a + x.monto, 0);
+  const fecha = new Date(ymd + 'T12:00:00');
+  document.getElementById('diaMovTitulo').textContent = `Movimientos del ${fecha.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}`;
+  document.getElementById('diaMovResumen').innerHTML = (ingresos.length || gastos.length)
+    ? `Entró <strong style="color:var(--success)">${clp(entro)}</strong> · salió <strong style="color:var(--danger)">${clp(salio)}</strong> · neto <strong>${clp(entro - salio)}</strong>`
+    : '';
+  const fila = (x, signo) => `<div ${x.editar ? `onclick="cerrarMovimientosDia(); ${x.editar}" style="cursor:pointer;` : 'style="'} display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--border)">
+      <div style="min-width:0">
+        <div style="font-size:13px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap" title="${escapeHtml(x.texto)}">${escapeHtml(x.texto)}</div>
+        <div style="font-size:11px; color:var(--text-muted)">${[x.etiqueta, x.cuenta].filter(Boolean).map(escapeHtml).join(' · ')}</div>
+      </div>
+      <div style="font-size:13px; font-weight:600; white-space:nowrap; color:${signo > 0 ? 'var(--success)' : (signo < 0 ? 'var(--danger)' : 'var(--text-muted)')}">${signo > 0 ? '+' : (signo < 0 ? '−' : '')}${clp(Math.abs(x.monto))}</div>
+    </div>`;
+  const seccion = (titulo, lista, signo) => lista.length ? `<div style="margin-bottom:14px"><div style="font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em">${titulo} (${lista.length})</div>${lista.sort((a, b) => Math.abs(b.monto) - Math.abs(a.monto)).map(x => fila(x, x.monto < 0 && signo > 0 ? -1 : signo)).join('')}</div>` : '';
+  const html = seccion(esPerfilPersonal() ? 'Ingresos' : 'Ventas e ingresos', ingresos, 1) + seccion('Gastos', gastos, -1) + seccion('Traspasos (no cuentan como ingreso ni gasto)', traspasos, 0);
+  document.getElementById('diaMovLista').innerHTML = html || '<div class="empty" style="padding:16px"><h4>Sin movimientos este día</h4></div>';
+  document.getElementById('modalDiaMov').classList.add('show');
+}
+function cerrarMovimientosDia() { document.getElementById('modalDiaMov').classList.remove('show'); }
+
 function renderChartMensualDiario(ym, yoy) {
   const [y, m] = ym.split('-').map(Number);
   const ultimoDia = new Date(y, m, 0).getDate();
