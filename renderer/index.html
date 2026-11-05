@@ -1281,7 +1281,7 @@
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap; margin-bottom:14px">
             <div>
               <h3 style="margin:0; font-size:18px; font-weight:600">Flujo de caja</h3>
-              <div style="font-size:13px; color:var(--text-muted); margin-top:4px">La plata que entra y sale de tu negocio cada mes</div>
+              <div id="chartMensualSub" style="font-size:13px; color:var(--text-muted); margin-top:4px">La plata que entra y sale de tu negocio cada mes</div>
             </div>
             <div style="display:flex; gap:6px; align-items:center">
               <select id="selMensualPeriod" style="width:auto; min-width:130px; font-size:12px; padding:4px 8px" onchange="actualizarConfigDashboard('mensualPeriod', this.value)">
@@ -5329,7 +5329,7 @@ function renderDashboard() {
   document.getElementById('kpiNeto').textContent = clp(neto);
   document.getElementById('kpiPedidos').textContent = fmtNum.format(numPedidos);
   document.getElementById('kpiMargen').innerHTML = ingresos > 0
-    ? `<span class="${neto >= 0 ? 'up' : 'down'}">Margen ${fmtPct.format(margen)}</span>` : '';
+    ? `<span class="${neto >= 0 ? 'up' : 'down'}">${esPerfilPersonal() ? (neto >= 0 ? 'Te sobró el' : 'Te faltó el') : 'Margen'} ${fmtPct.format(Math.abs(margen))}${esPerfilPersonal() ? ' de lo que entró' : ''}</span>` : '';
   document.getElementById('kpiTicket').textContent = numPedidos ? `${esPerfilPersonal() ? 'Promedio' : 'Ticket prom'}: ${clp(ticket)}` : '';
 
   // Subtítulo
@@ -5414,8 +5414,14 @@ function _saludDatos() {
   });
 
   const pat = (typeof _patrimonioActual === 'function') ? _patrimonioActual() : { neto: 0, inversiones: 0 };
+  // La foto del mes en curso se refresca acá (antes solo al visitar Patrimonio,
+  // y quedaba vieja). Se compara contra la última foto de un mes ANTERIOR.
+  if (typeof _snapshotPatrimonio === 'function') { try { _snapshotPatrimonio(pat); } catch (e) { console.error(e); } }
   const snaps = state.config.patrimonioSnaps || [];
-  const prevNeto = snaps.length >= 2 ? snaps[snaps.length - 2].neto : null;
+  const ymActual = nuevoMesActualYM();
+  const prevSnap = snaps.filter(sn => sn && sn.ym && sn.ym < ymActual).sort((a, b) => a.ym.localeCompare(b.ym)).pop() || null;
+  const prevNeto = prevSnap ? prevSnap.neto : null;
+  const prevYm = prevSnap ? prevSnap.ym : null;
 
   // Deuda prioritaria: mayor tasa; empate → menor saldo (se liquida antes)
   const deudaPrioritaria = deudas.slice().sort((a, b) =>
@@ -5423,7 +5429,7 @@ function _saludDatos() {
 
   return {
     ingresoMes, gastoMes, caja, deudas, deudaTotal, cuotas, fijos, sobres, libre, gastadoVar, ciclo,
-    topCat, topCatMonto, pat, prevNeto, deudaPrioritaria,
+    topCat, topCatMonto, pat, prevNeto, prevYm, deudaPrioritaria,
     metas: (typeof _metas === 'function') ? _metas() : [],
   };
 }
@@ -5483,7 +5489,9 @@ function renderSaludFinanciera() {
     const delta = d.pat.neto - d.prevNeto;
     const nivel = delta > 0 ? 'ok' : (delta === 0 ? 'warn' : 'bad');
     const pts = delta > 0 ? 20 : (delta === 0 ? 12 : 6);
-    ind.push({ label: 'Patrimonio neto', valor: clp(d.pat.neto), nivel, detalle: `${delta >= 0 ? '+' : ''}${clp(delta)} vs mes pasado`, pts });
+    const mesAnt = (() => { const d0 = new Date(); d0.setDate(1); d0.setMonth(d0.getMonth() - 1); return `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}`; })();
+    const contra = d.prevYm === mesAnt ? 'vs mes pasado' : `vs ${fmtMes.format(new Date(d.prevYm + '-02'))}`;
+    ind.push({ label: 'Patrimonio neto', valor: clp(d.pat.neto), nivel, detalle: `${delta >= 0 ? '+' : ''}${clp(delta)} ${contra}`, pts });
   } else ind.push({ label: 'Patrimonio neto', valor: clp(d.pat.neto), nivel: 'na', detalle: 'primera foto — compara el próximo mes', pts: null });
 
   // Puntaje: promedio de los indicadores con datos
@@ -9615,6 +9623,7 @@ function aplicarPerfilUI() {
   setTxt('presVentaTitulo', personal ? '¿Cuánto necesitas que entre al mes?' : '¿Cuánto necesitas vender?');
   setTxt('presVentaSub', personal ? 'Lo mínimo que debe entrar para no quedar en rojo' : 'El piso de ventas para no perder plata');
   setTxt('btnExportVentasTxt', personal ? 'Ingresos (CSV / Excel)' : 'Ventas (CSV / Excel)');
+  setTxt('chartMensualSub', personal ? 'La plata que entra y sale de tus cuentas' : 'La plata que entra y sale de tu negocio cada mes');
   const repSub = document.getElementById('reportesCardSub');
   if (repSub) repSub.innerHTML = personal
     ? 'Exporta tus gastos e ingresos del mes, o imprime el <strong>resumen del mes</strong> (lo que entró, lo que salió y lo que te quedó).'
@@ -10720,6 +10729,7 @@ function _decisionInicialConc(m, account_id) {
   const otra = _detectarTraspasoConc(m.mov, account_id);
   // Si el retiro de MP ya quedó como traspaso a este banco, el abono no se cuenta de nuevo.
   if (otra) return _traspasoYaRegistrado(m.mov, otra, account_id) ? { tipo: 'ignorar', motivo: 'traspaso' } : { tipo: 'traspaso', otra };
+  if (_esGiroLinea(m.mov)) return { tipo: 'ignorar', motivo: 'linea' };
   const propio = _detectarTraspasoPropio(m.mov, account_id);
   if (propio) return { tipo: 'traspaso', otra: propio.otra, gastoDup: propio.gastoDup, ventaDup: propio.ventaDup, auto: true };
   const cuota = Conciliacion.detectarCuotaDeuda(m.mov, state);
@@ -11058,6 +11068,7 @@ async function sincronizarFintocTodo(silencioso) {
           } else {
             const otra = _detectarTraspasoConc(m.mov, appCuentaId);
             if (otra) { if (!_traspasoYaRegistrado(m.mov, otra, appCuentaId) && _crearTraspasoDesdeMov(m.mov, appCuentaId, otra, lote)) cr++; return; }
+            if (_esGiroLinea(m.mov)) return; // plata prestada: no es ingreso
             const propio = _detectarTraspasoPropio(m.mov, appCuentaId);
             if (propio) { if (_aplicarTraspasoConc(m.mov, appCuentaId, { tipo: 'traspaso', otra: propio.otra, gastoDup: propio.gastoDup, ventaDup: propio.ventaDup }, lote)) cr++; return; }
             // Cuota de un crédito de "Mis deudas": solo si es clara (glosa +
@@ -11942,6 +11953,8 @@ function _renderConciliacionPaso2() {
       ? `<span style="font-size:11px">${d.gastoDup ? 'Entre tus cuentas: reemplaza el cargo de la otra cuenta' : 'Entre tus cuentas: reemplaza el ingreso de la otra cuenta'}</span><span style="font-size:9px; color:var(--success); white-space:nowrap"> ● auto</span>`
       : (d.tipo === 'traspaso' && (esRetiroMP || d.ventaDup))
       ? _celdaTraspasoRetiroMP(d)
+      : (d.tipo === 'ignorar' && d.motivo === 'linea')
+      ? '<span style="font-size:11px; color:var(--text-muted)">Giro de tu línea de crédito: es deuda, no ingreso</span><span style="font-size:9px; color:var(--success); white-space:nowrap"> ● auto</span>'
       : (d.tipo === 'ignorar' && (esRetiroMP || d.motivo === 'traspaso'))
       ? `<span style="font-size:11px; color:var(--text-muted)">${d.motivo === 'traspaso' ? 'Ya registrado como traspaso' : (d.motivo === 'transito' ? 'Ya en camino a tu banco' : 'Retiro a tu banco: sale de Mercado Pago ahora y se liga al abono cuando llegue')}</span>`
       : d.tipo === 'cuota'
@@ -12046,6 +12059,24 @@ function _traspasoYaRegistrado(mov, otra, account_id) {
   return _transferencias().some(t => t.cuenta_origen === origen && t.cuenta_destino === destino
     && Math.abs(Number(t.monto) - monto) <= tol && Math.abs(_diasEntre(t.fecha, mov.fecha)) <= 5);
 }
+// Giro desde la línea de crédito al banco: plata prestada, no ingreso. La
+// línea se paga después (eso sí sale como "Deudas / Créditos").
+const RE_GIRO_LINEA = /DESDE L[IÍ]NEA|L[IÍ]NEA DE CR[EÉ]D|\bL\.? ?CR[EÉ]D|CTACTE-L\.CRED|L\.CRED-C\.VISTA|GIRO L[IÍ]NEA|USO L[IÍ]NEA DE CR[EÉ]DITO/i;
+function _esGiroLinea(mov) {
+  return !!(mov && mov.monto > 0 && RE_GIRO_LINEA.test(String(mov.descripcion || '')));
+}
+// Giros de línea que quedaron como ingreso en versiones anteriores: se quitan. Una vez.
+function migrarGirosLineaV1() {
+  if (state.config._girosLineaV1) return;
+  const ids = new Set((state.ventasManuales || []).filter(v => v.origen !== 'mercadopago' && RE_GIRO_LINEA.test(String(v.descripcion || v.concepto || ''))).map(v => v.id));
+  if (ids.size) {
+    state.ventasManuales = (state.ventasManuales || []).filter(v => !ids.has(v.id));
+    state.conciliaciones = (state.conciliaciones || []).filter(c => !(c.ref_type === 'venta' && ids.has(c.ref_id)));
+    console.log('[migración] giros de línea de crédito quitados de ingresos: ' + ids.size);
+  }
+  state.config._girosLineaV1 = true;
+  saveState();
+}
 // ─── Traspasos entre cuentas propias (banco ↔ banco, banco ↔ Mercado Pago) ───
 // Nombres con los que el usuario aparece en sus bancos: titular de las cuentas
 // Fintoc, el nombre que escribió en Configuración y la cuenta de Mercado Pago.
@@ -12084,18 +12115,26 @@ function _detectarTraspasoPropio(mov, account_id) {
   const D = (f) => Math.abs(_diasEntre(mov.fecha, f));
   const esTransf = (t) => /TRANSF|TRASPASO|TEF\b/i.test(String(t || ''));
   const sinGlosa = (t) => !/[A-Za-z]{3}/.test(String(t || ''));
+  // Pagos de tarjeta, cuotas y línea de crédito nunca son traspasos entre cuentas propias.
+  const RE_DEUDA = /T\.? ?CR[EÉ]DITO|TARJ|PAGO ?TC|PR[EÉ]STAMO|PRESTAMO|L[IÍ]NEA|CUOTA|AMORTIZACI/i;
+  const esDeuda = (x) => RE_DEUDA.test(String(x || ''));
+  const catDeuda = (c) => c === 'Pago tarjeta de crédito' || c === 'Deudas / Créditos';
   if (mov.monto > 0) {
+    if (_esGiroLinea(mov)) return null;
+    // Evidencia: el abono o el cargo llevan tu nombre; o el abono no trae glosa
+    // y el cargo es una transferencia a persona del mismo día (±1).
     const g = (state.gastos || []).find(x => x.account_id && x.account_id !== account_id && cuentas.some(c => c.id === x.account_id)
-      && !x.auto_estimado && !x.deuda_id && Math.abs(Number(x.monto) - monto) <= 1 && D(x.fecha) <= 3
-      && (propio || _esNombrePropio(x.descripcion) || x.categoria === 'Transferencias a personas' || esTransf(x.descripcion))
-      && (propio || _esNombrePropio(x.descripcion) || D(x.fecha) <= 1));
+      && !x.auto_estimado && !x.deuda_id && !catDeuda(x.categoria) && !esDeuda(x.descripcion)
+      && Math.abs(Number(x.monto) - monto) <= 1 && D(x.fecha) <= 3
+      && (propio || _esNombrePropio(x.descripcion) || (sinGlosa(texto) && x.categoria === 'Transferencias a personas' && D(x.fecha) <= 1)));
     return g ? { otra: g.account_id, gastoDup: g.id } : null;
   }
+  if (esDeuda(texto) || catDeuda(mov.categoria)) return null;
   if (!propio && !esTransf(texto)) return null;
   const v = (state.ventasManuales || []).find(x => x.account_id && x.account_id !== account_id && cuentas.some(c => c.id === x.account_id)
     && (x.origen !== 'mercadopago' || x.tipo_ingreso === 'transferencia') && Math.abs(Number(x.monto) - monto) <= 1 && D(x.fecha) <= 3
-    && (propio || _esNombrePropio(x.descripcion) || sinGlosa(x.descripcion) || esTransf(x.descripcion))
-    && (propio || _esNombrePropio(x.descripcion) || D(x.fecha) <= 1));
+    && !_esGiroLinea(x)
+    && (propio || _esNombrePropio(x.descripcion) || (sinGlosa(x.descripcion) && D(x.fecha) <= 1)));
   return v ? { otra: v.account_id, ventaDup: v.id } : null;
 }
 // Pasada sobre lo ya registrado: cierra retiros de MP "en camino" con el
@@ -12115,7 +12154,7 @@ function conciliarCuentasPropias() {
     if (!t) return;
     const cands = (state.ventasManuales || []).filter(v => !usadas.has(v.id) && v.account_id && v.account_id !== mpId && esCta(v.account_id)
       && v.origen !== 'mercadopago' && Math.abs(Number(v.monto) - r.monto) <= 1 && (() => { const d = _diasEntre(r.fecha, v.fecha); return d >= -2 && d <= 6; })()
-      && (sinGlosa(v.descripcion) || rx.test(v.descripcion || '')));
+      && (sinGlosa(v.descripcion) || rx.test(v.descripcion || '') || _esNombrePropio(v.descripcion)));
     if (!cands.length) return;
     const v = cands.sort((a, b) => Math.abs(_diasEntre(r.fecha, a.fecha)) - Math.abs(_diasEntre(r.fecha, b.fecha)))[0];
     usadas.add(v.id);
@@ -12128,7 +12167,7 @@ function conciliarCuentasPropias() {
   // 2) cargo en A ↔ ingreso en B (cuentas propias)
   (state.gastos || []).slice().forEach(g => {
     if (!g.account_id || !esCta(g.account_id) || g.auto_estimado || g.deuda_id) return;
-    const det = _detectarTraspasoPropio({ fecha: g.fecha, monto: -Math.abs(Number(g.monto || 0)), descripcion: g.descripcion || g.proveedor || '' }, g.account_id);
+    const det = _detectarTraspasoPropio({ fecha: g.fecha, monto: -Math.abs(Number(g.monto || 0)), descripcion: g.descripcion || g.proveedor || '', categoria: g.categoria }, g.account_id);
     if (!det || !det.ventaDup || usadas.has(det.ventaDup)) return;
     const v = (state.ventasManuales || []).find(x => x.id === det.ventaDup);
     if (!v) return;
@@ -12232,14 +12271,43 @@ function _mpAjustarSaldo() {
 // "Cargo por Compra en Comercio Nac." (BICE) quedaba como comisión por la
 // regla CARGO POR: pasa a Compras. Una vez por perfil.
 function migrarComprasV3() {
-  if (state.config._catsV3 || !esPerfilPersonal()) return;
+  if (state.config._catsV3 && state.config._catsV4) return;
+  if (!esPerfilPersonal()) { state.config._catsV3 = true; state.config._catsV4 = true; return; }
   let n = 0;
   (state.gastos || []).forEach(g => {
     if (g.categoria === 'Comisiones e intereses bancarios' && /COMPRA/i.test(g.descripcion || '')) { g.categoria = 'Compras (tiendas y online)'; n++; }
+    if (g.categoria === 'Comisiones e intereses bancarios' && /DEVOLUCI[OÓ]N A CLIENTE/i.test(g.descripcion || '')) { g.categoria = 'Otros'; n++; }
   });
-  state.config._catsV3 = true;
+  state.config._catsV3 = true; state.config._catsV4 = true;
   saveState();
   if (n) console.log('[migración] compras recategorizadas: ' + n);
+}
+// Un retiro "en camino" cuyo traspaso MP → banco ya existe por otra vía
+// (cartola del banco) descontaba dos veces: se quita el tránsito. Una vez.
+function migrarMpTransitoV2() {
+  if (state.config._mpTransitoV2) return;
+  const mpId = _mpCfg().appCuentaId;
+  let n = 0;
+  if (mpId) {
+    const retiros = _mpRetiros();
+    retiros.forEach(r => {
+      if (!r.transferencia_id) return;
+      const t = _transferencias().find(x => x.id === r.transferencia_id);
+      if (!t || t.cuenta_destino !== MP_TRANSITO) return;
+      const tol = Math.max(1, Math.round(r.monto * 0.01));
+      // Un traspaso ya ligado a otro retiro no cuenta (dos retiros iguales en días seguidos).
+      const ligados = new Set(retiros.filter(o => o !== r && o.transferencia_id).map(o => o.transferencia_id));
+      const yaHecho = _transferencias().find(x => x.id !== t.id && !ligados.has(x.id) && x.cuenta_origen === mpId && x.cuenta_destino !== MP_TRANSITO
+        && Math.abs(Number(x.monto) - r.monto) <= tol && (() => { const d = _diasEntre(r.fecha, x.fecha); return d >= -1 && d <= 6; })());
+      if (!yaHecho) return;
+      state.transferencias = _transferencias().filter(x => x.id !== t.id);
+      state.conciliaciones = (state.conciliaciones || []).filter(c => !(c.ref_type === 'transferencia' && c.ref_id === t.id));
+      r.transferencia_id = yaHecho.id; r.usado = true; n++;
+    });
+  }
+  state.config._mpTransitoV2 = true;
+  saveState();
+  if (n) console.log('[migración] retiros descontados dos veces corregidos: ' + n);
 }
 function migrarMpTransitoV1() {
   if (state.config._mpTransitoV1) return;
@@ -12248,6 +12316,11 @@ function migrarMpTransitoV1() {
   if (mpId) {
     _mpRetiros().forEach(r => {
       if (r.usado || r.transferencia_id || !r.monto || !r.fecha) return;
+      // Si el traspaso MP → banco ya existe (lo creó la cartola del banco), no se duplica.
+      const tol = Math.max(1, Math.round(r.monto * 0.01));
+      const ligados = new Set(_mpRetiros().filter(o => o !== r && o.transferencia_id).map(o => o.transferencia_id));
+      const ya = _transferencias().find(x => !ligados.has(x.id) && x.cuenta_origen === mpId && x.cuenta_destino !== MP_TRANSITO && Math.abs(Number(x.monto) - r.monto) <= tol && (() => { const d = _diasEntre(r.fecha, x.fecha); return d >= -1 && d <= 6; })());
+      if (ya) { r.transferencia_id = ya.id; r.usado = true; return; }
       const t = { id: uid(), fecha: r.fecha, monto: r.monto, cuenta_origen: mpId, cuenta_destino: MP_TRANSITO, nota: 'Retiro de Mercado Pago en camino a tu banco', lote: null, mp_retiro: r.mp_id || null };
       _transferencias().push(t); r.transferencia_id = t.id; n++;
     });
@@ -12285,7 +12358,8 @@ function _mpRetiroDecision(mov, mpCuentaId) {
     if (destino && v.account_id !== destino) return false; // MP ya dijo a qué banco fue
     const glosa = String(v.descripcion || v.concepto || '');
     const diff = Math.abs(Number(v.monto) - monto);
-    return rx.test(glosa) ? diff <= tol : (!/[A-Za-z]{3}/.test(glosa) && diff === 0);
+    // Con glosa de Mercado Pago o a tu propio nombre basta el monto (±1 %); sin glosa, monto exacto.
+    return (rx.test(glosa) || _esNombrePropio(glosa)) ? diff <= tol : (!/[A-Za-z]{3}/.test(glosa) && diff === 0);
   });
   if (dup) return { tipo: 'traspaso', otra: dup.account_id, ventaDup: dup.id, auto: true };
   if (destino) return { tipo: 'traspaso', otra: destino, auto: true, destino: true };
@@ -17571,7 +17645,11 @@ function ingresoPromedio(meses) {
   const vpm = ventasPorMes();
   const ymHoy = nuevoMesActualYM();
   // Excluir mes actual si está incompleto (sin ventas)
-  const mesesConVentas = Object.keys(vpm).filter(m => vpm[m] > 0).sort();
+  let mesesConVentas = Object.keys(vpm).filter(m => vpm[m] > 0).sort();
+  // El mes en curso está incompleto: pesaría como un mes entero. Se excluye
+  // mientras haya al menos un mes completo con datos.
+  const completos = mesesConVentas.filter(m => m < ymHoy);
+  if (completos.length) mesesConVentas = completos;
   if (mesesConVentas.length === 0) return 0;
   const slice = mesesConVentas.slice(-meses);
   const total = slice.reduce((s, m) => s + vpm[m], 0);
@@ -17592,7 +17670,10 @@ function gastoPromedio(meses, categoria, opts) {
     if (!ym) return;
     map[ym] = (map[ym] || 0) + Number(g.monto || 0);
   });
-  const mesesConGasto = Object.keys(map).sort();
+  let mesesConGasto = Object.keys(map).sort();
+  const ymHoyG = nuevoMesActualYM();
+  const completosG = mesesConGasto.filter(m => m < ymHoyG);
+  if (completosG.length) mesesConGasto = completosG;
   if (mesesConGasto.length === 0) return 0;
   const slice = mesesConGasto.slice(-meses);
   const total = slice.reduce((s, m) => s + map[m], 0);
@@ -18258,8 +18339,10 @@ function init() {
   migrarSuscripcionesV1();
   migrarCuentasBancoV1();
   migrarMpTransitoV1();
+  migrarMpTransitoV2();
+  migrarGirosLineaV1();
   migrarComprasV3();
-  if (!state.config._conciliarPropiosV1) { try { conciliarCuentasPropias(); } catch (e) { console.error(e); } state.config._conciliarPropiosV1 = true; saveState(); }
+  if (!state.config._conciliarPropiosV2) { try { conciliarCuentasPropias(); } catch (e) { console.error(e); } state.config._conciliarPropiosV1 = true; state.config._conciliarPropiosV2 = true; saveState(); }
   // Si el saldo calculado de Mercado Pago quedó negativo (los retiros salen
   // pero la app no conoce el saldo con que partió), se pide el saldo real una vez.
   try {

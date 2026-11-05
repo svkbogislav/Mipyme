@@ -117,9 +117,9 @@
       texto = `<strong>✓ Saludable:</strong> generas ${clp(-r.quemaNetaDiaria * 30)}/mes y tu caja líquida positiva crece sola. Posición neta consolidada: ${clp(posNeta)}.`;
     } else if (r.status === 'critico') {
       const breakeven = (r.gastosPeriodo / r.diasMuestra) * 30;
-      texto = `<strong style="color:#b91c1c">🚨 Acción urgente:</strong> tu caja se agota en ${fmtNum.format(r.runway)} días al ritmo actual. Necesitas <strong>vender ${clp(breakeven)}/mes</strong> para empatar gastos, o cortar gastos fijos. ${r.cobrosPendientes > 0 ? `Tienes ${clp(r.cobrosPendientes)} por cobrar — cobrarlos te da aire.` : ''}`;
+      texto = `<strong style="color:#b91c1c">🚨 Acción urgente:</strong> tu caja se agota en ${fmtNum.format(r.runway)} días al ritmo actual. ${(window.esPerfilPersonal && window.esPerfilPersonal()) ? `Necesitas que entren <strong>${clp(breakeven)}/mes</strong> para empatar gastos, o cortar gastos fijos.` : `Necesitas <strong>vender ${clp(breakeven)}/mes</strong> para empatar gastos, o cortar gastos fijos.`} ${r.cobrosPendientes > 0 ? `Tienes ${clp(r.cobrosPendientes)} por cobrar — cobrarlos te da aire.` : ''}`;
     } else if (r.status === 'alerta') {
-      texto = `Caja apretada: cubre ${fmtNum.format(r.runway)} días al ritmo actual. ${r.cobrosPendientes > 0 ? `Cobrar los ${clp(r.cobrosPendientes)} pendientes te da más días de caja. ` : ''}Reduce gastos no críticos o acelera ventas — el colchón es chico.`;
+      texto = `Caja apretada: cubre ${fmtNum.format(r.runway)} días al ritmo actual. ${r.cobrosPendientes > 0 ? `Cobrar los ${clp(r.cobrosPendientes)} pendientes te da más días de caja. ` : ''}Reduce gastos no críticos o ${(window.esPerfilPersonal && window.esPerfilPersonal()) ? 'sube tus ingresos' : 'acelera ventas'} — el colchón es chico.`;
     } else {
       texto = `Caja cubre ${(r.runway / 30.4).toFixed(1)} meses al ritmo actual. Saludable. Posición neta: ${clp(posNeta)}.`;
     }
