@@ -1359,7 +1359,7 @@
       </div><!-- /cardChartDiario -->
 
       <!-- Top productos (half-width) -->
-      <div class="card dash-widget half" data-widget-key="topProductos" id="cardTopProductos">
+      <div class="card dash-widget half" data-widget-key="topProductos" data-empresa-only id="cardTopProductos">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px">
             <div>
               <h3 style="margin:0">Top productos</h3>
@@ -5732,7 +5732,7 @@ const DASHBOARD_WIDGETS = [
   { key: 'accountBalance',  label: 'Saldo por cuenta',  width: 'half', desc: 'Saldo actual de cada cuenta' },
   { key: 'chartCategorias', label: 'Gastos por categoría', width: 'half', desc: 'Donut con leyenda y %' },
   { key: 'chartDiario',     label: 'Ventas por día',    labelPersonal: 'Ingresos por día', width: 'half', desc: 'Pulso diario de ingresos' },
-  { key: 'topProductos',    label: 'Top productos',     width: 'half', desc: 'Más vendidos en el período' }
+  { key: 'topProductos',    label: 'Top productos',     width: 'half', desc: 'Más vendidos en el período (solo negocio)', soloEmpresa: true }
 ];
 const DEFAULT_WIDGET_ORDER = DASHBOARD_WIDGETS.map(w => w.key);
 function getWidgetMeta(key) { return DASHBOARD_WIDGETS.find(w => w.key === key); }
@@ -5951,7 +5951,7 @@ function renderListaPersonalizarWidgets() {
   const gripSVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>`;
   wrap.innerHTML = orden.map(k => {
     const meta = getWidgetMeta(k);
-    if (!meta) return '';
+    if (!meta || (meta.soloEmpresa && esPerfilPersonal())) return '';
     const checked = w[k] !== false ? 'checked' : '';
     return `
       <div class="widget-toggle" data-key="${k}">
