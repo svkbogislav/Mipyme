@@ -3067,6 +3067,7 @@
           </div>
         </div>
         <div id="mpSaldoBox" style="margin-top:12px"></div>
+        <div id="mpDestinoBox"></div>
 
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px">
           <div style="display:flex; flex-direction:column; gap:6px">
@@ -3603,6 +3604,10 @@
     <label style="display:flex; align-items:flex-start; gap:6px; cursor:pointer; margin-top:6px">
       <input type="checkbox" id="cuentaExcluirTotal" style="width:auto; margin:3px 0 0" />
       <span>No sumar al total de caja líquida <span style="color:var(--text-muted); font-weight:400">— la cuenta aparece igual con su saldo, pero no infla el "Saldo total". Útil para cuentas que administras a nombre de terceros o que quieres ver aparte (ej. cuenta de los niños, fondo separado).</span></span>
+    </label>
+    <label style="display:flex; align-items:flex-start; gap:6px; cursor:pointer; margin-top:6px">
+      <input type="checkbox" id="cuentaOtraEntidad" style="width:auto; margin:3px 0 0" />
+      <span>Es de otra entidad <span style="color:var(--text-muted); font-weight:400">— por ejemplo la cuenta de tu negocio. No suma a tu plata: lo que le transfieres cuenta como "Aportes a tu negocio" y lo que te manda, como ingreso.</span></span>
     </label>
     <div style="margin-top:10px; padding:10px 12px; background:var(--warning-soft); border:1px solid var(--warning); border-radius:8px; font-size:12px; color:var(--warning-text)">
       <strong>⚠️ Importante:</strong> el saldo inicial se interpreta <strong>al primer día del mes que elijas abajo</strong>. Movimientos (gastos, ingresos, recurrentes) anteriores a esa fecha NO se restan ni suman al saldo actual. Si tu saldo $37.000 corresponde a mayo 2026, marca "mayo 2026" abajo — así los Shopify recurrentes generados desde 2023 no contaminan tu balance.
@@ -6807,6 +6812,7 @@ function renderChartDiario(periodo) {
 // Sin barras ni íconos — minimalista como en el screenshot.
 // Grupo al que pertenece una cuenta para mostrar saldos "por banco".
 function _grupoCuenta(c) {
+  if (c.otra_entidad) return 'Otras entidades';
   if (c.banco) return c.banco;
   if (c.tipo === 'mercadopago') return 'Mercado Pago';
   if (c.tipo === 'caja') return 'Efectivo';
@@ -6844,7 +6850,7 @@ function renderAccountBalance() {
     wrap.innerHTML = '<div class="empty"><h4>Sin cuentas</h4>Crea una en la sección Cuentas.</div>';
     return;
   }
-  const detalles = cuentas.map(c => ({ ...c, saldo: calcularSaldoCuenta(c.id) }));
+  const detalles = cuentas.filter(c => !c.otra_entidad).map(c => ({ ...c, saldo: calcularSaldoCuenta(c.id) }));
   const grupos = _agruparCuentas(detalles);
   if (grupos.length > 1 || (grupos[0] && grupos[0].cuentas.length > 1)) {
     wrap.innerHTML = grupos.map(gr => `
@@ -9812,7 +9818,7 @@ function _deudaTarjetasTotal() {
 }
 function _patrimonioActual() {
   // Las tarjetas de crédito son pasivo, no plata en cuentas.
-  const cuentas = (state.config.cuentas || []).filter(c => c.tipo !== 'tarjeta').reduce((s, c) => s + calcularSaldoCuenta(c.id), 0);
+  const cuentas = (state.config.cuentas || []).filter(c => c.tipo !== 'tarjeta' && !c.otra_entidad).reduce((s, c) => s + calcularSaldoCuenta(c.id), 0);
   const bienes = _bienes().reduce((s, b) => s + Number(b.valor || 0), 0);
   const inversiones = (typeof _invTotalCLP === 'function') ? _invTotalCLP() : 0;
   const deudas = (state.deudas || []).reduce((s, d) => s + Math.max(0, Number(saldoPendienteDeuda(d) || 0)), 0);
@@ -10879,7 +10885,7 @@ function _fintocAsegurarCuentas() {
     let app = cuentas.find(x => x.fintoc_acc === c.accId);
     if (!app) {
       const actual = cuentas.find(x => x.id === c.appCuentaId);
-      if (actual && actual.tipo === 'banco' && !actual.fintoc_acc && !usadas.has(actual.id)) {
+      if (actual && actual.tipo === 'banco' && !actual.fintoc_acc && !actual.otra_entidad && !usadas.has(actual.id)) {
         app = actual; app.fintoc_acc = c.accId; if (!app.banco) app.banco = l.label; cambios = true;
       }
     }
@@ -11093,6 +11099,7 @@ async function sincronizarFintocTodo(silencioso) {
     if (keys.length > 8000) keys.slice(0, keys.length - 8000).forEach(k => { delete vistos[k]; });
     cfg.lastAutoSync = ahoraISO;
     try { conciliarCuentasPropias(); } catch (e) { console.error(e); }
+    _mpAplicarDestinoRetiros();
     saveState();
     if (total > 0) {
       toast(`Bancos sincronizados: ${total} movimiento${total === 1 ? '' : 's'} nuevo${total === 1 ? '' : 's'} (${porBanco.join(' · ')})${cuotas ? ` · ${_txtCuotas(cuotas)} en Mis deudas` : ''}${porClasificar ? ` · ${porClasificar} por clasificar en Gastos` : ''}`, 'success');
@@ -11183,7 +11190,7 @@ function _mpSetCuenta(id) {
 // no, la default, si no, la primera.
 function _mpSugerirAppCuenta() {
   const cuentas = state.config.cuentas || [];
-  const hit = cuentas.find(c => /mercado\s*pago|\bmp\b/i.test(c.nombre || ''));
+  const hit = cuentas.find(c => !c.otra_entidad && /mercado\s*pago|\bmp\b/i.test(c.nombre || ''));
   return hit ? hit.id : (state.config.cuenta_default_id || (cuentas[0] && cuentas[0].id) || '');
 }
 // Lo que entró por Mercado Pago este mes, separado en pagos de
@@ -11224,6 +11231,8 @@ function renderMercadoPagoCfg() {
   if (resumen) resumen.innerHTML = cfg.token
     ? `<span style="color:var(--success-text)">●</span> Conectado${quien ? ` como <strong>${escapeHtml(quien)}</strong>` : ''} · última sincronización: ${escapeHtml(fmt(cfg.lastSync))}${_mpResumenMesHtml() ? `<div style="margin-top:4px">${_mpResumenMesHtml()}</div>` : ''}${_mpUltimoHtml(cfg)}`
     : `<span style="color:var(--text-muted)">○ Sin conectar</span>`;
+  const destinoBox = document.getElementById('mpDestinoBox');
+  if (destinoBox) destinoBox.innerHTML = cfg.token ? _mpDestinoRetirosHtml(cfg) : '';
   const saldoBox = document.getElementById('mpSaldoBox');
   if (saldoBox) {
     const cta = cuentas.find(c => c.id === cfg.appCuentaId);
@@ -11381,6 +11390,7 @@ async function sincronizarMercadoPago(silencioso) {
     cfg.ultimo = _mpResumenSync(r, nuevos.length, ahoraISO);
     _mpAplicarSaldoReal(r.saldoMP, appCuentaId, ahoraISO);
     try { conciliarCuentasPropias(); } catch (e) { console.error(e); }
+    _mpAplicarDestinoRetiros();
     _mpEstimarPiso(appCuentaId);
     // Retiros: el informe de actividades de MP dice a qué banco fue cada uno.
     // Si no está disponible, siguen como hasta ahora (sin cuenta de destino).
@@ -11942,14 +11952,19 @@ function _renderConciliacionPaso2() {
     }).join('');
     // Traspaso entre cuentas propias (no es ingreso ni gasto): una opción por
     // cada otra cuenta. Sugerido solo cuando el abono viene de Mercado Pago.
-    const traspasoOpts = (state.config.cuentas || []).filter(c => c.id !== _conciliacionStaging.account_id).map(c =>
+    const entidadOpts = _otrasEntidades().filter(c => c.id !== _conciliacionStaging.account_id).map(c =>
+      `<option value="entidad:${escapeHtml(c.id)}" ${d.tipo === 'entidad' && d.entidadId === c.id ? 'selected' : ''}>${m.monto < 0 ? 'Aporte a' : 'Desde'} ${escapeHtml(c.nombre)} (otra entidad)</option>`
+    ).join('');
+    const traspasoOpts = (state.config.cuentas || []).filter(c => c.id !== _conciliacionStaging.account_id && !c.otra_entidad).map(c =>
       `<option value="traspaso:${escapeHtml(c.id)}" ${d.tipo === 'traspaso' && d.otra === c.id ? 'selected' : ''}>Traspaso ${m.monto >= 0 ? 'desde' : 'hacia'} ${escapeHtml(c.nombre)} (entre mis cuentas)</option>`
     ).join('');
     const esMP = !!(m._raw && m._raw.mp_id);
     // Cuota de un crédito: una opción por deuda pendiente (solo en cargos).
     const cuotaOpts = m.monto < 0 ? _opcionesCuotaConc(d) : '';
     const esRetiroMP = !!(m._raw && m._raw.retiro);
-    const catCell = (d.tipo === 'traspaso' && (d.gastoDup || (d.ventaDup && !esRetiroMP)))
+    const catCell = d.tipo === 'entidad'
+      ? `<span style="font-size:11px">${m.monto < 0 ? 'Sale de tus finanzas: aporte a tu negocio' : 'Entra a tus finanzas desde tu negocio'}</span>`
+      : (d.tipo === 'traspaso' && (d.gastoDup || (d.ventaDup && !esRetiroMP)))
       ? `<span style="font-size:11px">${d.gastoDup ? 'Entre tus cuentas: reemplaza el cargo de la otra cuenta' : 'Entre tus cuentas: reemplaza el ingreso de la otra cuenta'}</span><span style="font-size:9px; color:var(--success); white-space:nowrap"> ● auto</span>`
       : (d.tipo === 'traspaso' && (esRetiroMP || d.ventaDup))
       ? _celdaTraspasoRetiroMP(d)
@@ -11974,6 +11989,7 @@ function _renderConciliacionPaso2() {
         <option value="ignorar" ${d.tipo === 'ignorar' ? 'selected' : ''}>Ignorar</option>
         ${cuotaOpts}
         ${traspasoOpts}
+        ${entidadOpts}
       </select></td>
       <td style="padding:5px 6px; min-width:150px">${catCell}</td>
     </tr>`;
@@ -12432,6 +12448,82 @@ function _crearTraspasoDesdeMov(mov, account_id, otraId, lote) {
   return t;
 }
 
+// ─── Otras entidades (p. ej. la cuenta de tu negocio) ───
+// Una cuenta marcada "otra_entidad" no es plata tuya: lo que le mandas sale
+// de tus finanzas como "Aportes a tu negocio" y lo que te manda entra como
+// ingreso. No suma a tu caja, patrimonio ni saldos.
+function _otrasEntidades() { return (state.config.cuentas || []).filter(c => c.otra_entidad); }
+function _aplicarEntidadConc(mov, account_id, entidadId, lote) {
+  const ent = (state.config.cuentas || []).find(c => c.id === entidadId && c.otra_entidad);
+  if (!ent || !mov || !mov.monto) return null;
+  if (!Array.isArray(state.config.categorias)) state.config.categorias = [];
+  if (mov.monto < 0 && !state.config.categorias.includes('Aportes a tu negocio')) state.config.categorias.push('Aportes a tu negocio');
+  const r = Conciliacion.crearDesdeMovimiento(state, mov, account_id, mov.monto < 0 ? 'Aportes a tu negocio' : 'emprendimiento', lote);
+  if (r && r.ref) {
+    r.ref.entidad_id = ent.id;
+    const glosa = mov.descripcion ? ` · ${String(mov.descripcion).slice(0, 80)}` : '';
+    if (mov.monto < 0) { r.ref.proveedor = ent.nombre; r.ref.descripcion = `Aporte a ${ent.nombre}${glosa}`; }
+    else { r.ref.concepto = r.ref.descripcion = `Desde ${ent.nombre}${glosa}`; }
+  }
+  // Retiro de MP recordado "en espera": queda cerrado con este aporte.
+  if (mov._raw && mov._raw.retiro && mov._raw.mp_id) {
+    const rr = _mpRetiros().find(x => x.mp_id === mov._raw.mp_id);
+    if (rr) { rr.usado = true; rr.aporte_id = r && r.ref ? r.ref.id : null; }
+  }
+  return r;
+}
+// Retiros de Mercado Pago "en camino" (sin abono en tus bancos) que llevan
+// más de diasMin días → aporte a la entidad elegida. Devuelve cuántos.
+function _mpRetirosAEntidad(entidadId, diasMin) {
+  const ent = (state.config.cuentas || []).find(c => c.id === entidadId && c.otra_entidad);
+  const mpId = _mpCfg().appCuentaId;
+  if (!ent || !mpId) return 0;
+  const h = new Date();
+  const hoy = `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}-${String(h.getDate()).padStart(2, '0')}`;
+  let n = 0;
+  _transferencias().filter(t => t.cuenta_origen === mpId && t.cuenta_destino === MP_TRANSITO).slice().forEach(t => {
+    if (diasMin && _diasEntre(t.fecha, hoy) < diasMin) return;
+    const r = _mpRetiros().find(x => x.transferencia_id === t.id);
+    state.transferencias = _transferencias().filter(x => x.id !== t.id);
+    state.conciliaciones = (state.conciliaciones || []).filter(c => !(c.ref_type === 'transferencia' && c.ref_id === t.id));
+    const mov = { fecha: t.fecha, monto: -Math.abs(Number(t.monto || 0)), descripcion: 'Retiro de Mercado Pago', _raw: { mp_id: (r && r.mp_id) || t.mp_retiro || null } };
+    const res = _aplicarEntidadConc(mov, mpId, ent.id, t.lote || null);
+    if (r) { r.usado = true; r.transferencia_id = null; r.aporte_id = res && res.ref ? res.ref.id : null; }
+    n++;
+  });
+  if (n) saveState();
+  return n;
+}
+function _mpAplicarDestinoRetiros() {
+  const d = _mpCfg().destinoRetiros;
+  if (!d) return 0;
+  try { return _mpRetirosAEntidad(d, 7); } catch (e) { console.error(e); return 0; }
+}
+function _mpSetDestinoRetiros(id) {
+  const cfg = _mpCfg();
+  cfg.destinoRetiros = id || '';
+  saveState();
+  if (id) {
+    const ent = (state.config.cuentas || []).find(c => c.id === id);
+    const n = _mpRetirosAEntidad(id, 7);
+    toast(n ? `${n} retiro${n === 1 ? '' : 's'} de Mercado Pago pasaron a aporte a ${ent ? ent.nombre : 'tu negocio'}` : 'Listo: los próximos retiros sin abono en tus bancos irán ahí', 'success');
+  }
+  renderMercadoPagoCfg();
+  try { refreshVistaActiva(); } catch (e) { console.error(e); }
+}
+function _mpDestinoRetirosHtml(cfg) {
+  const mpId = cfg.appCuentaId;
+  const enCamino = _transferencias().filter(t => t.cuenta_origen === mpId && t.cuenta_destino === MP_TRANSITO);
+  const ents = _otrasEntidades();
+  if (!enCamino.length && !ents.length) return '';
+  const tot = enCamino.reduce((a, t) => a + Number(t.monto || 0), 0);
+  const opts = `<option value="">Siguen esperando su abono en tus bancos</option>` + ents.map(e => `<option value="${escapeHtml(e.id)}" ${cfg.destinoRetiros === e.id ? 'selected' : ''}>Son aporte a ${escapeHtml(e.nombre)}</option>`).join('');
+  return `<div style="margin-top:12px">
+    <label>Retiros de Mercado Pago que no llegan a tus bancos</label>
+    ${ents.length ? `<select style="max-width:360px" onchange="_mpSetDestinoRetiros(this.value)">${opts}</select>` : ''}
+    <div style="font-size:11px; color:var(--text-muted); margin-top:4px">${enCamino.length ? `Hoy hay <strong>${enCamino.length}</strong> esperando (${clp(tot)}). ` : ''}${ents.length ? 'Con una opción elegida, los que llevan más de 7 días sin aparecer en tus bancos pasan a "Aportes a tu negocio".' : 'Si van a la cuenta de tu negocio (por ejemplo Tenpo), créala en Cuentas y marca "Es de otra entidad"; después elígela aquí.'}</div>
+  </div>`;
+}
 // ─── Cuotas de crédito en la revisión de cartola ───
 // Deudas de "Mis deudas" con saldo pendiente: cada una es una opción
 // "Cuota de <deuda>" para los cargos. La detección (glosa + monto) vive en
@@ -12499,6 +12591,7 @@ function cambiarDecisionConciliacion(idx, valor) {
   else if (valor === 'ignorar') it.decision = { tipo: 'ignorar' };
   else if (valor.startsWith('traspaso:')) it.decision = { tipo: 'traspaso', otra: valor.slice('traspaso:'.length) };
   else if (valor.startsWith('cuota:')) it.decision = { tipo: 'cuota', deudaId: valor.slice('cuota:'.length) };
+  else if (valor.startsWith('entidad:')) it.decision = { tipo: 'entidad', entidadId: valor.slice('entidad:'.length) };
   else if (valor.startsWith('match:')) {
     const ci = Number(valor.split(':')[1]);
     it.decision = { tipo: 'match', candidato: it.candidatos[ci] };
@@ -12515,6 +12608,8 @@ function confirmarConciliacion() {
     if (it.decision.tipo === 'match') {
       Conciliacion.aplicarMatch(state, it.mov, it.decision.candidato, account_id, lote);
       aplicados++;
+    } else if (it.decision.tipo === 'entidad') {
+      if (_aplicarEntidadConc(it.mov, account_id, it.decision.entidadId, lote)) creados++;
     } else if (it.decision.tipo === 'traspaso') {
       if (_aplicarTraspasoConc(it.mov, account_id, it.decision, lote)) creados++;
     } else if (it.decision.tipo === 'ignorar' && it.mov._raw && it.mov._raw.retiro) {
@@ -12672,7 +12767,7 @@ function renderCuentas() {
         <tr style="background:var(--bg-soft, transparent)">
           <td></td>
           <td colspan="4"><strong>${escapeHtml(gr.nombre)}</strong> <span style="font-size:11px; color:var(--text-muted)">${gr.cuentas.length} cuenta${gr.cuentas.length === 1 ? '' : 's'}</span></td>
-          <td class="num"><strong style="color:${gr.subtotal >= 0 ? 'var(--text)' : 'var(--danger)'}">${clp(gr.subtotal)}</strong></td>
+          <td class="num">${gr.nombre === 'Otras entidades' ? '' : `<strong style="color:${gr.subtotal >= 0 ? 'var(--text)' : 'var(--danger)'}">${clp(gr.subtotal)}</strong>`}</td>
           <td></td>
         </tr>
         ${gr.cuentas.map(c => {
@@ -12685,7 +12780,7 @@ function renderCuentas() {
             <td><span class="badge">${escapeHtml(c.tipo)}</span></td>
             <td class="num">${c.saldo_banco !== undefined && c.saldo_banco !== null ? '—' : clp(c.saldo_inicial)}</td>
             <td class="num">${fmtNum.format(movs)} mov.</td>
-            <td class="num"><strong style="color:${c.saldo >= 0 ? 'var(--success)' : 'var(--danger)'}">${clp(c.saldo)}</strong></td>
+            <td class="num">${c.otra_entidad ? '<span style="color:var(--text-muted); font-size:12px">no es tu plata</span>' : `<strong style="color:${c.saldo >= 0 ? 'var(--success)' : 'var(--danger)'}">${clp(c.saldo)}</strong>`}</td>
             <td style="text-align:right; white-space:nowrap">
               <button class="btn sm ghost" onclick="editarCuenta('${c.id}')">Editar</button>
             </td>
@@ -12812,6 +12907,7 @@ function abrirModalCuenta(tipo) {
   document.getElementById('cuentaDefault').checked = false;
   document.getElementById('cuentaDepositoVentas').checked = false;
   document.getElementById('cuentaExcluirTotal').checked = false;
+  document.getElementById('cuentaOtraEntidad').checked = false;
   document.getElementById('cuentaSaldoInicialMes').value = '';
   document.getElementById('btnEliminarCuenta').style.display = 'none';
   // En modo "nueva", el preview no aplica (no hay movimientos asignados todavía)
@@ -12835,6 +12931,7 @@ function editarCuenta(id) {
   document.getElementById('cuentaDefault').checked = id === state.config.cuenta_default_id;
   document.getElementById('cuentaDepositoVentas').checked = !!c.deposito_ventas;
   document.getElementById('cuentaExcluirTotal').checked = !!c.excluir_del_total;
+  document.getElementById('cuentaOtraEntidad').checked = !!c.otra_entidad;
   document.getElementById('cuentaSaldoInicialMes').value = c.saldo_inicial_mes || '';
   // Render preview en vivo + wireo recálculo en cada cambio relevante (idempotente)
   ['cuentaSaldo','cuentaSaldoInicialMes','cuentaDepositoVentas'].forEach(elId => {
@@ -12873,7 +12970,8 @@ function guardarCuenta() {
     saldo_inicial_mes: document.getElementById('cuentaSaldoInicialMes').value || null,
     color: document.getElementById('cuentaColor').value || '#4f46e5',
     deposito_ventas: depositoVentas,
-    excluir_del_total: !!document.getElementById('cuentaExcluirTotal').checked,
+    excluir_del_total: !!document.getElementById('cuentaExcluirTotal').checked || !!document.getElementById('cuentaOtraEntidad').checked,
+    otra_entidad: !!document.getElementById('cuentaOtraEntidad').checked,
     banco: document.getElementById('cuentaBanco').value.trim() || (existente && existente.banco) || null,
     cupo: tipo === 'tarjeta' ? (Forms.parsearCLP(document.getElementById('cuentaCupo').value) || null) : null
   });
@@ -18343,6 +18441,7 @@ function init() {
   migrarGirosLineaV1();
   migrarComprasV3();
   if (!state.config._conciliarPropiosV2) { try { conciliarCuentasPropias(); } catch (e) { console.error(e); } state.config._conciliarPropiosV1 = true; state.config._conciliarPropiosV2 = true; saveState(); }
+  _mpAplicarDestinoRetiros();
   // Si el saldo calculado de Mercado Pago quedó negativo (los retiros salen
   // pero la app no conoce el saldo con que partió), se pide el saldo real una vez.
   try {

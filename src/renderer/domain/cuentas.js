@@ -158,7 +158,7 @@
   // cuentas administradas a nombre de terceros o que quieres ver aparte).
   function calcularCajaLiquidaTotal(state, ventasPorMes) {
     return ((state && state.config && state.config.cuentas) || [])
-      .filter(c => TIPOS_LIQUIDOS.has(c.tipo) && !c.excluir_del_total)
+      .filter(c => TIPOS_LIQUIDOS.has(c.tipo) && !c.excluir_del_total && !c.otra_entidad)
       .reduce((s, c) => s + calcularSaldoCuenta(state, c.id, ventasPorMes), 0);
   }
 
