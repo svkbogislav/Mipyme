@@ -186,6 +186,7 @@
     ((state && state.ventasManuales) || []).forEach(v => {
       const ym = (v.fecha || '').slice(0, 7);
       if (!ym) return;
+      if (Number(v.monto) <= 0) return; // lo que pasó a tu negocio no es un ingreso más
       map[ym] = (map[ym] || 0) + 1;
     });
 

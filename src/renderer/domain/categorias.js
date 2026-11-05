@@ -107,7 +107,6 @@
       'Pago tarjeta de crédito',
       'Comisiones e intereses bancarios',
       'Transferencias a personas',
-      'Aportes a tu negocio',
       'Ahorro',
       'Otros'
     ]

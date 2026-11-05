@@ -3608,7 +3608,7 @@
     </label>
     <label style="display:flex; align-items:flex-start; gap:6px; cursor:pointer; margin-top:6px">
       <input type="checkbox" id="cuentaOtraEntidad" style="width:auto; margin:3px 0 0" />
-      <span>Es de otra entidad <span style="color:var(--text-muted); font-weight:400">— por ejemplo la cuenta de tu negocio. No suma a tu plata: lo que le transfieres cuenta como "Aportes a tu negocio" y lo que te manda, como ingreso.</span></span>
+      <span>Es de otra entidad <span style="color:var(--text-muted); font-weight:400">— por ejemplo la cuenta de tu negocio. No suma a tu plata: lo que le transfieres es plata del negocio (deja de contar como ingreso tuyo) y lo que te manda entra como ingreso.</span></span>
     </label>
     <div style="margin-top:10px; padding:10px 12px; background:var(--warning-soft); border:1px solid var(--warning); border-radius:8px; font-size:12px; color:var(--warning-text)">
       <strong>⚠️ Importante:</strong> el saldo inicial se interpreta <strong>al primer día del mes que elijas abajo</strong>. Movimientos (gastos, ingresos, recurrentes) anteriores a esa fecha NO se restan ni suman al saldo actual. Si tu saldo $37.000 corresponde a mayo 2026, marca "mayo 2026" abajo — así los Shopify recurrentes generados desde 2023 no contaminan tu balance.
@@ -11955,7 +11955,7 @@ function _renderConciliacionPaso2() {
     // Traspaso entre cuentas propias (no es ingreso ni gasto): una opción por
     // cada otra cuenta. Sugerido solo cuando el abono viene de Mercado Pago.
     const entidadOpts = _otrasEntidades().filter(c => c.id !== _conciliacionStaging.account_id).map(c =>
-      `<option value="entidad:${escapeHtml(c.id)}" ${d.tipo === 'entidad' && d.entidadId === c.id ? 'selected' : ''}>${m.monto < 0 ? 'Aporte a' : 'Desde'} ${escapeHtml(c.nombre)} (otra entidad)</option>`
+      `<option value="entidad:${escapeHtml(c.id)}" ${d.tipo === 'entidad' && d.entidadId === c.id ? 'selected' : ''}>${m.monto < 0 ? 'Pasa a' : 'Desde'} ${escapeHtml(c.nombre)} (tu negocio)</option>`
     ).join('');
     const traspasoOpts = (state.config.cuentas || []).filter(c => c.id !== _conciliacionStaging.account_id && !c.otra_entidad).map(c =>
       `<option value="traspaso:${escapeHtml(c.id)}" ${d.tipo === 'traspaso' && d.otra === c.id ? 'selected' : ''}>Traspaso ${m.monto >= 0 ? 'desde' : 'hacia'} ${escapeHtml(c.nombre)} (entre mis cuentas)</option>`
@@ -11965,7 +11965,7 @@ function _renderConciliacionPaso2() {
     const cuotaOpts = m.monto < 0 ? _opcionesCuotaConc(d) : '';
     const esRetiroMP = !!(m._raw && m._raw.retiro);
     const catCell = d.tipo === 'entidad'
-      ? `<span style="font-size:11px">${m.monto < 0 ? 'Sale de tus finanzas: aporte a tu negocio' : 'Entra a tus finanzas desde tu negocio'}</span>`
+      ? `<span style="font-size:11px">${m.monto < 0 ? 'Plata del negocio: no es ingreso ni gasto tuyo' : 'Entra a tus finanzas desde tu negocio'}</span>`
       : (d.tipo === 'traspaso' && (d.gastoDup || (d.ventaDup && !esRetiroMP)))
       ? `<span style="font-size:11px">${d.gastoDup ? 'Entre tus cuentas: reemplaza el cargo de la otra cuenta' : 'Entre tus cuentas: reemplaza el ingreso de la otra cuenta'}</span><span style="font-size:9px; color:var(--success); white-space:nowrap"> ● auto</span>`
       : (d.tipo === 'traspaso' && (esRetiroMP || d.ventaDup))
@@ -12035,13 +12035,14 @@ const TIPOS_INGRESO = {
   sueldo: 'Sueldo / honorarios',
   emprendimiento: 'Pago de emprendimiento',
   transferencia: 'Transferencia recibida',
-  otro: 'Otro ingreso'
+  otro: 'Otro ingreso',
+  negocio: 'Pasó a tu negocio'
 };
 function tipoIngresoLabel(k) { return (k && TIPOS_INGRESO[k]) || ''; }
 function _opcionesTipoIngresoConc(sel) {
   const cur = sel || '';
   return `<option value="" ${cur === '' ? 'selected' : ''}>Sin clasificar</option>` +
-    Object.keys(TIPOS_INGRESO).map(k => `<option value="${k}" ${k === cur ? 'selected' : ''}>${escapeHtml(TIPOS_INGRESO[k])}</option>`).join('');
+    Object.keys(TIPOS_INGRESO).filter(k => k !== 'negocio').map(k => `<option value="${k}" ${k === cur ? 'selected' : ''}>${escapeHtml(TIPOS_INGRESO[k])}</option>`).join('');
 }
 // Para un abono: Mercado Pago ya viene clasificado por el informe (pago vs
 // transferencia). Para bancos/cartola no se adivina: lo eliges en la revisión.
@@ -12458,14 +12459,28 @@ function _otrasEntidades() { return (state.config.cuentas || []).filter(c => c.o
 function _aplicarEntidadConc(mov, account_id, entidadId, lote) {
   const ent = (state.config.cuentas || []).find(c => c.id === entidadId && c.otra_entidad);
   if (!ent || !mov || !mov.monto) return null;
-  if (!Array.isArray(state.config.categorias)) state.config.categorias = [];
-  if (mov.monto < 0 && !state.config.categorias.includes('Aportes a tu negocio')) state.config.categorias.push('Aportes a tu negocio');
-  const r = Conciliacion.crearDesdeMovimiento(state, mov, account_id, mov.monto < 0 ? 'Aportes a tu negocio' : 'emprendimiento', lote);
-  if (r && r.ref) {
-    r.ref.entidad_id = ent.id;
-    const glosa = mov.descripcion ? ` · ${String(mov.descripcion).slice(0, 80)}` : '';
-    if (mov.monto < 0) { r.ref.proveedor = ent.nombre; r.ref.descripcion = `Aporte a ${ent.nombre}${glosa}`; }
-    else { r.ref.concepto = r.ref.descripcion = `Desde ${ent.nombre}${glosa}`; }
+  const glosa = mov.descripcion ? ` · ${String(mov.descripcion).slice(0, 80)}` : '';
+  let r;
+  if (mov.monto < 0) {
+    // Lo que pasa a la cuenta del negocio es plata del negocio que entró por
+    // tus cuentas (p. ej. pagos de clientes en tu Mercado Pago): no es gasto
+    // tuyo, y descuenta de tus ingresos. Se guarda como ingreso negativo.
+    const raw = mov._raw || {};
+    const v = {
+      id: window.uid ? window.uid() : uid(), fecha: mov.fecha, monto: -Math.abs(Math.round(mov.monto)),
+      canal: 'transferencia', concepto: `Pasó a ${ent.nombre}${glosa}`, descripcion: `Pasó a ${ent.nombre}${glosa}`, cliente: '',
+      metodo: raw.mp_id ? 'Mercado Pago' : 'Transferencia', origen: raw.mp_id ? 'mercadopago' : (raw.fintoc_id ? 'banco' : 'cartola'),
+      tipo_ingreso: 'negocio', account_id, entidad_id: ent.id, created_at: new Date().toISOString()
+    };
+    if (raw.mp_id) v.mp_id = raw.mp_id;
+    if (!Array.isArray(state.ventasManuales)) state.ventasManuales = [];
+    state.ventasManuales.push(v);
+    if (!Array.isArray(state.conciliaciones)) state.conciliaciones = [];
+    state.conciliaciones.push({ id: uid(), ref_type: 'venta', ref_id: v.id, account_id, cartola_fecha: mov.fecha, cartola_descripcion: mov.descripcion, cartola_monto: mov.monto, auto_creado: true, lote: lote || null, created_at: new Date().toISOString() });
+    r = { tipo: 'venta', ref: v };
+  } else {
+    r = Conciliacion.crearDesdeMovimiento(state, mov, account_id, 'emprendimiento', lote);
+    if (r && r.ref) { r.ref.entidad_id = ent.id; r.ref.concepto = r.ref.descripcion = `Desde ${ent.nombre}${glosa}`; }
   }
   // Retiro de MP recordado "en espera": queda cerrado con este aporte.
   if (mov._raw && mov._raw.retiro && mov._raw.mp_id) {
@@ -12496,6 +12511,33 @@ function _mpRetirosAEntidad(entidadId, diasMin) {
   if (n) saveState();
   return n;
 }
+// v1.0.173 registró lo enviado a la entidad como gasto "Aportes a tu
+// negocio". Era plata del negocio: pasa a ingreso negativo. Una vez.
+function migrarAportesNegocioV1() {
+  if (state.config._aportesNegocioV1) return;
+  let n = 0;
+  (state.gastos || []).filter(g => g.entidad_id && g.categoria === 'Aportes a tu negocio').forEach(g => {
+    const ent = (state.config.cuentas || []).find(c => c.id === g.entidad_id);
+    const nombre = ent ? ent.nombre : 'tu negocio';
+    const v = { id: uid(), fecha: g.fecha, monto: -Math.abs(Number(g.monto || 0)), canal: 'transferencia',
+      concepto: `Pasó a ${nombre}`, descripcion: String(g.descripcion || '').replace(/^Aporte a /, 'Pasó a ') || `Pasó a ${nombre}`, cliente: '',
+      metodo: g.metodo || 'Transferencia', origen: g.origen || (g.mp_id ? 'mercadopago' : null), tipo_ingreso: 'negocio',
+      account_id: g.account_id, entidad_id: g.entidad_id, created_at: new Date().toISOString() };
+    if (g.mp_id) v.mp_id = g.mp_id;
+    if (!Array.isArray(state.ventasManuales)) state.ventasManuales = [];
+    state.ventasManuales.push(v);
+    (state.conciliaciones || []).forEach(c => { if (c.ref_type === 'gasto' && c.ref_id === g.id) { c.ref_type = 'venta'; c.ref_id = v.id; } });
+    _mpRetiros().forEach(r => { if (r.aporte_id === g.id) r.aporte_id = v.id; });
+    state.gastos = (state.gastos || []).filter(x => x.id !== g.id);
+    n++;
+  });
+  if (Array.isArray(state.config.categorias) && !(state.gastos || []).some(g => g.categoria === 'Aportes a tu negocio')) {
+    state.config.categorias = state.config.categorias.filter(c => c !== 'Aportes a tu negocio');
+  }
+  state.config._aportesNegocioV1 = true;
+  saveState();
+  if (n) console.log('[migración] envíos a tu negocio pasados de gasto a ingreso negativo: ' + n);
+}
 function _mpAplicarDestinoRetiros() {
   const d = _mpCfg().destinoRetiros;
   if (!d) return 0;
@@ -12508,7 +12550,7 @@ function _mpSetDestinoRetiros(id) {
   if (id) {
     const ent = (state.config.cuentas || []).find(c => c.id === id);
     const n = _mpRetirosAEntidad(id, 7);
-    toast(n ? `${n} retiro${n === 1 ? '' : 's'} de Mercado Pago pasaron a aporte a ${ent ? ent.nombre : 'tu negocio'}` : 'Listo: los próximos retiros sin abono en tus bancos irán ahí', 'success');
+    toast(n ? `${n} retiro${n === 1 ? '' : 's'} de Mercado Pago quedaron como plata de ${ent ? ent.nombre : 'tu negocio'}` : 'Listo: los próximos retiros sin abono en tus bancos irán ahí', 'success');
   }
   renderMercadoPagoCfg();
   try { refreshVistaActiva(); } catch (e) { console.error(e); }
@@ -12519,11 +12561,11 @@ function _mpDestinoRetirosHtml(cfg) {
   const ents = _otrasEntidades();
   if (!enCamino.length && !ents.length) return '';
   const tot = enCamino.reduce((a, t) => a + Number(t.monto || 0), 0);
-  const opts = `<option value="">Siguen esperando su abono en tus bancos</option>` + ents.map(e => `<option value="${escapeHtml(e.id)}" ${cfg.destinoRetiros === e.id ? 'selected' : ''}>Son aporte a ${escapeHtml(e.nombre)}</option>`).join('');
+  const opts = `<option value="">Siguen esperando su abono en tus bancos</option>` + ents.map(e => `<option value="${escapeHtml(e.id)}" ${cfg.destinoRetiros === e.id ? 'selected' : ''}>Van a ${escapeHtml(e.nombre)} (tu negocio)</option>`).join('');
   return `<div style="margin-top:12px">
     <label>Retiros de Mercado Pago que no llegan a tus bancos</label>
     ${ents.length ? `<select style="max-width:360px" onchange="_mpSetDestinoRetiros(this.value)">${opts}</select>` : ''}
-    <div style="font-size:11px; color:var(--text-muted); margin-top:4px">${enCamino.length ? `Hoy hay <strong>${enCamino.length}</strong> esperando (${clp(tot)}). ` : ''}${ents.length ? 'Con una opción elegida, los que llevan más de 7 días sin aparecer en tus bancos pasan a "Aportes a tu negocio".' : 'Si van a la cuenta de tu negocio (por ejemplo Tenpo), créala en Cuentas y marca "Es de otra entidad"; después elígela aquí.'}</div>
+    <div style="font-size:11px; color:var(--text-muted); margin-top:4px">${enCamino.length ? `Hoy hay <strong>${enCamino.length}</strong> esperando (${clp(tot)}). ` : ''}${ents.length ? 'Con una opción elegida, los que llevan más de 7 días sin aparecer en tus bancos se cuentan como plata del negocio: no son ingreso ni gasto tuyo.' : 'Si van a la cuenta de tu negocio (por ejemplo Tenpo), créala en Cuentas y marca "Es de otra entidad"; después elígela aquí.'}</div>
   </div>`;
 }
 // ─── Cuotas de crédito en la revisión de cartola ───
@@ -18488,6 +18530,7 @@ function init() {
   migrarGirosLineaV1();
   migrarComprasV3();
   if (!state.config._conciliarPropiosV2) { try { conciliarCuentasPropias(); } catch (e) { console.error(e); } state.config._conciliarPropiosV1 = true; state.config._conciliarPropiosV2 = true; saveState(); }
+  migrarAportesNegocioV1();
   _mpAplicarDestinoRetiros();
   // Si el saldo calculado de Mercado Pago quedó negativo (los retiros salen
   // pero la app no conoce el saldo con que partió), se pide el saldo real una vez.
