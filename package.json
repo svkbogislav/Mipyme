@@ -1,6 +1,6 @@
 {
   "name": "mipyme",
-  "version": "1.0.172",
+  "version": "1.0.173",
   "description": "Mipyme — App de finanzas para PyMEs chilenas",
   "main": "main.js",
   "author": "Sebastián von Koeller",
