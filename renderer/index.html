@@ -4163,11 +4163,11 @@
     </div>
     <div class="row" style="margin-bottom:10px">
       <div>
-        <label>Fecha de emisión</label>
+        <label id="deudaFechaEmisionLbl">Fecha de emisión</label>
         <input id="deudaFechaEmision" type="date" />
       </div>
       <div>
-        <label>Fecha de vencimiento</label>
+        <label id="deudaFechaVencLbl">Fecha de vencimiento</label>
         <input id="deudaFechaVencimiento" type="date" />
       </div>
     </div>
@@ -4179,7 +4179,12 @@
     <div class="row" style="margin-bottom:10px" data-personal-only>
       <div>
         <label>Cuota mensual <span style="font-weight:400; color:var(--text-muted)">(opcional)</span></label>
-        <input id="deudaCuota" type="text" inputmode="numeric" data-clp="true" placeholder="0" />
+        <input id="deudaCuota" type="text" inputmode="numeric" data-clp="true" placeholder="0" onchange="_deudaDetectarDia(false)" onblur="_deudaDetectarDia(false)" />
+      </div>
+      <div>
+        <label>Día de pago <span style="font-weight:400; color:var(--text-muted)">(se detecta solo)</span></label>
+        <input id="deudaDiaPago" type="number" inputmode="numeric" min="1" max="31" placeholder="—" />
+        <div id="deudaDiaPagoHint" style="font-size:11px; color:var(--text-muted); margin-top:4px"></div>
       </div>
       <div>
         <label>Interés anual % <span style="font-weight:400; color:var(--text-muted)">(opcional, CAE)</span></label>
@@ -14220,6 +14225,41 @@ function _renderDeudasExtra() {
   html += `</div>`;
   box.innerHTML = html;
 }
+// En perfil personal las fechas del modal se explican como en un crédito.
+function _deudaEtiquetasFechas() {
+  const p = esPerfilPersonal();
+  const e = document.getElementById('deudaFechaEmisionLbl'); if (e) e.textContent = p ? 'Cuándo lo tomaste (opcional)' : 'Fecha de emisión';
+  const v = document.getElementById('deudaFechaVencLbl'); if (v) v.textContent = p ? 'Fecha de la última cuota (opcional)' : 'Fecha de vencimiento';
+}
+// Busca en tus movimientos el cargo mensual que calza con la cuota (±5 %) y
+// devuelve { dia, nombre } o null.
+function _detectarDiaPagoCuota(cuota) {
+  cuota = Number(cuota || 0);
+  if (!cuota || !window.CargosRegulares) return null;
+  const c = CargosRegulares.detectar(state).filter(x => Math.abs(x.monto - cuota) <= cuota * 0.05)
+    .sort((a, b) => Math.abs(a.monto - cuota) - Math.abs(b.monto - cuota))[0];
+  if (c) return { dia: c.diaMes, nombre: c.nombre };
+  // Una sola vez visto: el día del cargo más reciente con ese monto (±2 %).
+  const g = (state.gastos || []).filter(x => Math.abs(Number(x.monto) - cuota) <= cuota * 0.02 && x.fecha).sort((a, b) => b.fecha.localeCompare(a.fecha))[0];
+  return g ? { dia: Number(g.fecha.slice(8, 10)), nombre: g.descripcion || g.proveedor || '' } : null;
+}
+function _deudaDetectarDia(forzar) {
+  const inp = document.getElementById('deudaDiaPago');
+  const hint = document.getElementById('deudaDiaPagoHint');
+  if (!inp) return;
+  if (inp.value && !forzar) return;
+  const cuota = Forms.parsearCLP(document.getElementById('deudaCuota').value);
+  const det = _detectarDiaPagoCuota(cuota);
+  if (det && det.dia) {
+    inp.value = det.dia;
+    if (hint) hint.textContent = `Detectado en tus movimientos: día ${det.dia}${det.nombre ? ` (${String(det.nombre).slice(0, 30)})` : ''}`;
+  } else if (hint && cuota) hint.textContent = 'No lo encontré en tus movimientos; escríbelo si lo sabes.';
+}
+function _deudaDiaPagoForm(cuota) {
+  let dia = Number(document.getElementById('deudaDiaPago').value || 0);
+  if (!(dia >= 1 && dia <= 31) && cuota) { const det = _detectarDiaPagoCuota(cuota); dia = det ? det.dia : 0; }
+  return dia >= 1 && dia <= 31 ? dia : null;
+}
 // Crédito de consumo o préstamo bancario: el mismo modal de deuda, con la
 // cuota a la vista porque es lo que permite descontar los pagos solos.
 function abrirModalCredito() {
@@ -14236,8 +14276,10 @@ function _crearDeudaDesdeCargo(i) {
   document.getElementById('deudaAcreedor').value = c.nombre;
   document.getElementById('deudaDescripcion').value = `Cuota mensual detectada: ${String(c.glosa || c.nombre).slice(0, 60)}`;
   Forms.setearMontoCLP(document.getElementById('deudaCuota'), c.monto);
+  document.getElementById('deudaDiaPago').value = c.diaMes || '';
+  document.getElementById('deudaDiaPagoHint').textContent = c.diaMes ? `Detectado en tus movimientos: día ${c.diaMes}` : '';
   document.getElementById('deudaMonto').value = '';
-  toast('Pon cuánto debes en total; la cuota ya quedó. Los próximos pagos se descuentan solos.', '');
+  toast('Solo falta cuánto debes en total. La cuota y el día de pago ya quedaron.', '');
   setTimeout(() => document.getElementById('deudaMonto').focus(), 150);
 }
 function renderDeudas() {
@@ -14258,9 +14300,11 @@ function renderDeudas() {
   });
   const totalProximas = proximas.reduce((s, d) => s + saldoPendienteDeuda(d), 0);
   const conVencimiento = pendientes
-    .filter(d => d.fecha_vencimiento)
-    .sort((a, b) => a.fecha_vencimiento.localeCompare(b.fecha_vencimiento));
-  const proxima = conVencimiento[0];
+    .map(d => ({ d, f: Deudas.proximoPago(d, hoyStr) }))
+    .filter(x => x.f)
+    .sort((a, b) => a.f.localeCompare(b.f));
+  const proxima = conVencimiento.length ? conVencimiento[0].d : null;
+  const proximaFecha = conVencimiento.length ? conVencimiento[0].f : null;
 
   const deudaTarjetas = _deudaTarjetasTotal();
   document.getElementById('deudaTotalPendiente').textContent = clp(totalPendiente + deudaTarjetas);
@@ -14274,7 +14318,7 @@ function renderDeudas() {
   document.getElementById('deudaProximasSub').textContent = proximas.length ? `${proximas.length} en próximos 7 días` : '';
   if (proxima) {
     const dias = diasParaVencer(proxima, hoyStr);
-    document.getElementById('deudaProxFecha').textContent = fmtFechaCorta.format(new Date(proxima.fecha_vencimiento + 'T12:00:00'));
+    document.getElementById('deudaProxFecha').textContent = fmtFechaCorta.format(new Date(proximaFecha + 'T12:00:00'));
     document.getElementById('deudaProxAcreedor').innerHTML = `${escapeHtml(proxima.acreedor)} · ${dias < 0 ? `<span class="down">vencida hace ${-dias}d</span>` : `${dias === 0 ? 'hoy' : `en ${dias}d`}`}`;
   } else {
     document.getElementById('deudaProxFecha').textContent = '—';
@@ -14346,7 +14390,7 @@ function renderDeudas() {
         return `<tr style="${est === 'pagado' ? 'opacity:0.55' : ''}">
           <td><strong>${escapeHtml(d.acreedor || '—')}</strong></td>
           <td style="max-width:280px">${escapeHtml(d.descripcion || '')}${d.notas ? `<br><span style="font-size:11px; color:var(--text-muted)">${escapeHtml(d.notas)}</span>` : ''}</td>
-          <td>${d.fecha_vencimiento ? fmtFechaCorta.format(new Date(d.fecha_vencimiento + 'T12:00:00')) : '—'}</td>
+          <td>${(() => { const f = Deudas.proximoPago(d, hoyStr); return f ? fmtFechaCorta.format(new Date(f + 'T12:00:00')) + (d.dia_pago ? `<br><span style="font-size:10px; color:var(--text-muted)">día ${d.dia_pago} de cada mes</span>` : '') : '—'; })()}</td>
           <td class="num">${clp(d.monto_total)}</td>
           <td class="num num-pos">${pagado > 0 ? clp(pagado) : '—'}${(d.pagos || []).length > 1 ? `<br><span style="font-size:10px; color:var(--text-muted)">${d.pagos.length} pagos</span>` : ''}</td>
           <td class="num"><strong>${clp(saldo)}</strong></td>
@@ -14381,6 +14425,9 @@ function abrirModalDeuda() {
   document.getElementById('deudaNotas').value = '';
   document.getElementById('deudaCuota').value = '';
   document.getElementById('deudaTasa').value = '';
+  document.getElementById('deudaDiaPago').value = '';
+  document.getElementById('deudaDiaPagoHint').textContent = '';
+  _deudaEtiquetasFechas();
   document.getElementById('btnEliminarDeuda').style.display = 'none';
   document.getElementById('btnRegistrarPago').style.display = 'none';
   document.getElementById('deudaPagosWrap').style.display = 'none';
@@ -14402,6 +14449,9 @@ function editarDeuda(id) {
   document.getElementById('deudaNotas').value = d.notas || '';
   Forms.setearMontoCLP(document.getElementById('deudaCuota'), d.cuota_mensual || '');
   document.getElementById('deudaTasa').value = d.tasa_anual != null && d.tasa_anual !== '' ? d.tasa_anual : '';
+  document.getElementById('deudaDiaPago').value = d.dia_pago || '';
+  document.getElementById('deudaDiaPagoHint').textContent = '';
+  _deudaEtiquetasFechas();
   document.getElementById('btnEliminarDeuda').style.display = '';
   document.getElementById('btnRegistrarPago').style.display = saldoPendienteDeuda(d) > 0 ? '' : 'none';
   // Lista de pagos
@@ -14455,7 +14505,8 @@ function guardarDeuda() {
       descripcion: document.getElementById('deudaDescripcion').value.trim(),
       notas: document.getElementById('deudaNotas').value.trim(),
       cuota_mensual,
-      tasa_anual
+      tasa_anual,
+      dia_pago: _deudaDiaPagoForm(cuota_mensual)
     };
   } else {
     state.deudas.push({
@@ -14468,6 +14519,7 @@ function guardarDeuda() {
       notas: document.getElementById('deudaNotas').value.trim(),
       cuota_mensual,
       tasa_anual,
+      dia_pago: _deudaDiaPagoForm(cuota_mensual),
       pagos: [],
       created_at: new Date().toISOString()
     });

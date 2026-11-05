@@ -633,6 +633,7 @@
   // Día del mes en que se paga la cuota: el del vencimiento o, si no hay,
   // el de la emisión. null si la deuda no tiene fechas.
   function _diaPagoDeuda(d) {
+    if (d && Number(d.dia_pago) >= 1 && Number(d.dia_pago) <= 31) return Number(d.dia_pago);
     const f = (d && (d.fecha_vencimiento || d.fecha_emision)) || '';
     const dia = Number(String(f).slice(8, 10));
     return dia >= 1 && dia <= 31 ? dia : null;
