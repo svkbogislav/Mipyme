@@ -2142,7 +2142,7 @@
             </select>
           </div>
         </div>
-        <div class="table-wrap"><table id="tablaDeudas"></table></div>
+        <div class="table-wrap" id="deudasTablaWrap"><table id="tablaDeudas"></table></div>
       </div>
     </section>
 
@@ -14381,7 +14381,9 @@ function renderDeudas() {
     });
   }
 
-  const wrap = document.querySelector('#view-deudas .table-wrap');
+  // Por id: la vista tiene otras tablas arriba (tarjetas, créditos, plan) y
+  // el primer .table-wrap ya no es la lista de deudas.
+  const wrap = document.getElementById('deudasTablaWrap');
   if (deudas.length === 0) {
     if (totalSinFiltrar === 0) {
       wrap.innerHTML = '<div class="empty"><h4>Sin deudas registradas</h4>Click en "Nueva deuda" para registrar lo que debes (créditos bancarios, facturas pendientes, préstamos personales, etc).</div>';
