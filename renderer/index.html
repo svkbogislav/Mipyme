@@ -14190,6 +14190,7 @@ function _renderDeudasExtra() {
   if (!box) return;
   const tarjetas = (state.config.cuentas || []).filter(c => c.tipo === 'tarjeta').map(c => ({ ...c, deuda: Math.max(0, -calcularSaldoCuenta(c.id)) }));
   const creditos = _creditosDetectados();
+  creditos.forEach(c => { c._sinCuota = _creditoSinCuotaPara(c); });
   _creditosDetectadosCache = creditos;
   const personal = esPerfilPersonal();
   let html = '';
@@ -14205,7 +14206,7 @@ function _renderDeudasExtra() {
       <td style="text-align:right"><button class="btn sm ghost" onclick="editarCuenta('${t.id}')">Editar</button></td>
     </tr>`).join('')}</tbody></table></div>` : ''}
   </div>`;
-  const creditosReg = (state.deudas || []).filter(d => Number(d.cuota_mensual) > 0 && saldoPendienteDeuda(d) > 0);
+  const creditosReg = (state.deudas || []).filter(d => saldoPendienteDeuda(d) > 0 && (Number(d.cuota_mensual) > 0 || _pareceCredito(d)));
   html += `<div class="card" style="margin-bottom:14px">
     <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap">
       <div><h3 style="margin:0">🏦 Créditos de consumo y préstamos</h3><div class="card-sub" style="margin-top:2px">${creditosReg.length ? `Debes <strong>${clp(creditosReg.reduce((a, d) => a + saldoPendienteDeuda(d), 0))}</strong> en ${creditosReg.length} crédito${creditosReg.length === 1 ? '' : 's'} · cuotas por ${clp(creditosReg.reduce((a, d) => a + Number(d.cuota_mensual || 0), 0))}/mes. Las cuotas que pasan por tu banco se descuentan solas.` : 'Regístralos con lo que debes hoy y la cuota mensual. Las cuotas que pasan por tu banco se descuentan solas.'}</div></div>
@@ -14219,7 +14220,7 @@ function _renderDeudasExtra() {
         <td class="num">${clp(c.monto)}</td>
         <td>${c.diaMes}</td>
         <td style="color:var(--text-muted)">${c.veces}× en ${c.meses} meses</td>
-        <td style="text-align:right"><button class="btn sm primary" onclick="_crearDeudaDesdeCargo(${i})">Registrar como ${personal ? 'crédito' : 'deuda'}</button></td>
+        <td style="text-align:right">${c._sinCuota ? `<button class="btn sm primary" onclick="_asignarCuotaACredito(${i})">Es la cuota de ${escapeHtml(c._sinCuota.acreedor || 'tu crédito')}</button> ` : ''}<button class="btn sm ${c._sinCuota ? 'ghost' : 'primary'}" onclick="_crearDeudaDesdeCargo(${i})">${c._sinCuota ? 'Es otro crédito' : `Registrar como ${personal ? 'crédito' : 'deuda'}`}</button></td>
       </tr>`).join('')}</tbody></table></div>`;
   }
   html += `</div>`;
@@ -14267,6 +14268,31 @@ function abrirModalCredito() {
   document.getElementById('modalDeudaTitulo').textContent = 'Nuevo crédito';
   document.getElementById('deudaDescripcion').value = 'Crédito de consumo';
   toast('Pon el banco, lo que debes hoy y la cuota mensual. La tasa es opcional.', '');
+}
+// ¿La deuda parece un crédito bancario? (sin cuota aún, p. ej. registrado a mano)
+function _pareceCredito(d) {
+  const t = `${d.acreedor || ''} ${d.descripcion || ''}`;
+  return /BANCO|SANTANDER|BICE|BCI|ITA[UÚ]|SCOTIA|ESTADO|FALABELLA|RIPLEY|CR[EÉ]DITO|PR[EÉ]STAMO|CONSUMO|HIPOTEC/i.test(t);
+}
+// Crédito ya registrado sin cuota al que probablemente corresponde un cargo
+// detectado: mismo banco que la cuenta donde se cobra la cuota.
+function _creditoSinCuotaPara(cargo) {
+  const cta = (state.config.cuentas || []).find(x => x.id === cargo.account_id);
+  const banco = String((cta && (cta.banco || cta.nombre)) || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const cands = (state.deudas || []).filter(d => saldoPendienteDeuda(d) > 0 && !(Number(d.cuota_mensual) > 0) && _pareceCredito(d));
+  const norm = (t) => String(t || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return cands.find(d => banco && (norm(d.acreedor).includes(banco.replace(/^BANCO /, '')) || banco.includes(norm(d.acreedor).replace(/^BANCO /, '')))) || (cands.length === 1 ? cands[0] : null);
+}
+function _asignarCuotaACredito(i) {
+  const c = _creditosDetectadosCache[i];
+  if (!c || !c._sinCuota) return;
+  const d = (state.deudas || []).find(x => x.id === c._sinCuota.id);
+  if (!d) return;
+  d.cuota_mensual = c.monto;
+  d.dia_pago = c.diaMes || d.dia_pago || null;
+  saveState();
+  toast(`Listo: ${d.acreedor} tiene cuota de ${clp(c.monto)} el día ${d.dia_pago}. Las próximas se descuentan solas.`, 'success');
+  renderDeudas();
 }
 // Abre el modal de deuda con la cuota detectada ya puesta; falta el saldo total.
 function _crearDeudaDesdeCargo(i) {
