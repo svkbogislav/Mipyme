@@ -210,6 +210,19 @@ function ventanas(since, until, maxDias) {
   return out;
 }
 
+// Mercado Pago informa la hora en −04:00 y Chile en verano está en −03:00:
+// lo que pasa entre las 00:00 y la 01:00 caía en el día anterior. La fecha
+// del movimiento es la de Santiago.
+function fechaChile(raw) {
+  const s = String(raw || '');
+  const d = new Date(s);
+  if (!/T\d{2}:\d{2}/.test(s) || isNaN(d.getTime())) return s.slice(0, 10);
+  try {
+    const f = d.toLocaleDateString('en-CA', { timeZone: 'America/Santiago' });
+    return /^\d{4}-\d{2}-\d{2}$/.test(f) ? f : s.slice(0, 10);
+  } catch (e) { return s.slice(0, 10); }
+}
+
 // ¿La fecha ISO cae a ±36 h del día YYYY-MM-DD? MP devuelve begin/end_date
 // con huso (GMT-4 o Z), así que comparar el string recortado fallaba.
 function cercaDia(iso, ymd) {
@@ -425,8 +438,9 @@ function normalizar(rows, { incluirRetiros = false } = {}) {
     const monto = moneda === 'CLP' ? Math.round(neto) : neto;
     if (!monto) continue;
     const fechaRaw = r.TRANSACTION_DATE || r.SETTLEMENT_DATE || '';
-    const fecha = String(fechaRaw).slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) continue;
+    const fechaId = String(fechaRaw).slice(0, 10); // solo para el id (no cambia entre versiones)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaId)) continue;
+    const fecha = fechaChile(fechaRaw);
     const origen = r.POI_BANK_NAME || r.POI_WALLET_NAME || r.ISSUER_NAME || '';
     const metodo = r.PAYMENT_METHOD_TYPE ? String(r.PAYMENT_METHOD_TYPE).replace(/_/g, ' ') : '';
     const detalle = !vacio(r.DESCRIPTION) ? r.DESCRIPTION : (!vacio(r.EXTERNAL_REFERENCE) ? r.EXTERNAL_REFERENCE : '');
@@ -443,7 +457,7 @@ function normalizar(rows, { incluirRetiros = false } = {}) {
     if (origen) partes.push(String(origen).slice(0, 60));
     else if (metodo) partes.push(metodo);
     if (canal) partes.push(String(canal).slice(0, 40));
-    const id = `mp_${r.SOURCE_ID || r.EXTERNAL_REFERENCE || fecha}_${tipo}_${Math.abs(monto)}`;
+    const id = `mp_${r.SOURCE_ID || r.EXTERNAL_REFERENCE || fechaId}_${tipo}_${Math.abs(monto)}`;
     out.push({
       id,
       fecha,

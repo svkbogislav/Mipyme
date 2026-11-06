@@ -11228,6 +11228,43 @@ function renderFintocBancos() {
 }
 // Trae movimientos nuevos de UNA cuenta y los pasa al modal de cartola.
 let _fintocSyncEnCurso = false;
+// Fecha real de un movimiento del banco. Fintoc entrega la fecha contable
+// (post_date), que suele ser el día hábil siguiente cuando compras o te
+// transfieren de noche o en fin de semana. Se usa, en orden: la fecha de la
+// transacción, la que el banco escribe en la glosa ("El29/10/2026") y, si no
+// hay otra, la contable. Nunca después de la contable ni más de 7 días antes.
+function _fechaEnGlosa(texto) {
+  const m = String(texto || '').match(/\b[Ee]l ?(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
+  return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : '';
+}
+function _fechaRealMov(m) {
+  const contable = String((m && m.post_date) || '').slice(0, 10);
+  const ok = (f) => /^\d{4}-\d{2}-\d{2}$/.test(f) && (!contable || (f <= contable && _diasEntre(f, contable) <= 7));
+  const tx = String((m && m.transaction_date) || '').slice(0, 10);
+  const glosa = _fechaEnGlosa(m && m.description);
+  return (ok(tx) && tx) || (ok(glosa) && glosa) || contable || tx || null;
+}
+// Movimientos que ya estaban en la app con la fecha contable: si el banco
+// ahora informa la fecha real, se corrige el registro (gasto, ingreso o
+// traspaso) siempre que siga con la fecha contable que puso la app.
+function _corregirFechasVistas(movs, appCuentaId) {
+  let n = 0;
+  (movs || []).forEach(m => {
+    const contable = String(m.post_date || '').slice(0, 10);
+    const real = _fechaRealMov(m);
+    if (!real || !contable || real === contable) return;
+    const desc = (m.description + (m.comment ? ` · ${m.comment}` : '')).slice(0, 250);
+    const monto = Math.round(m.amount);
+    const c = (state.conciliaciones || []).find(x => x.account_id === appCuentaId && x.cartola_fecha === contable
+      && Number(x.cartola_monto) === monto && x.cartola_descripcion === desc && !x.fecha_real);
+    if (!c) return;
+    const lista = c.ref_type === 'gasto' ? state.gastos : (c.ref_type === 'venta' ? state.ventasManuales : (c.ref_type === 'transferencia' ? state.transferencias : null));
+    const ref = (lista || []).find(x => x.id === c.ref_id);
+    if (!ref || String(ref.fecha || '').slice(0, 10) !== contable) return;
+    ref.fecha = real; c.fecha_real = real; n++;
+  });
+  return n;
+}
 async function sincronizarFintocCuenta(linkId, accId) {
   if (!_fintocDisponible()) { toast('Solo funciona en la app de escritorio', 'error'); return; }
   if (_fintocSyncEnCurso) return;
@@ -11255,7 +11292,7 @@ async function sincronizarFintocCuenta(linkId, accId) {
     }
     const movs = nuevos.map(m => ({
       _id: uid(),
-      fecha: m.post_date || m.transaction_date,
+      fecha: _fechaRealMov(m),
       descripcion: (m.description + (m.comment ? ` · ${m.comment}` : '')).slice(0, 250),
       monto: Math.round(m.amount), // negativo = cargo, positivo = abono (igual que la cartola)
       _raw: { fintoc_id: m.id, type: m.type, reference_id: m.reference_id }
@@ -11297,7 +11334,7 @@ async function sincronizarFintocTodo(silencioso, opts) {
   if (!silencioso) toast('Sincronizando bancos…', '');
   const vistos = _fintocVistos();
   const ahoraISO = new Date().toISOString();
-  let total = 0, cruzados = 0, creados = 0, porClasificar = 0, cuotas = 0;
+  let total = 0, cruzados = 0, creados = 0, porClasificar = 0, cuotas = 0, cambioFechas = false;
   const porBanco = [];
   const errores = [];
   try {
@@ -11319,11 +11356,12 @@ async function sincronizarFintocTodo(silencioso, opts) {
         try { r = await window.electronAPI.fintocMovements({ sk: cfg.sk, linkToken: l.token, accountId: c.accId, since }); }
         catch (e) { r = { ok: false, error: e.message }; }
         if (!r || !r.ok) { errores.push(`${l.label}: ${r && r.error ? r.error : 'sin respuesta'}`); continue; }
+        try { if (_corregirFechasVistas((r.movements || []).filter(m => m.id && vistos[m.id] && m.amount), appCuentaId)) cambioFechas = true; } catch (e) { console.error('Fechas Fintoc:', e); }
         const nuevos = (r.movements || []).filter(m => m.id && !vistos[m.id] && m.amount);
         if (!nuevos.length) { c.lastSync = ahoraISO; continue; }
         const movs = nuevos.map(m => ({
           _id: uid(),
-          fecha: m.post_date || m.transaction_date,
+          fecha: _fechaRealMov(m),
           descripcion: (m.description + (m.comment ? ` · ${m.comment}` : '')).slice(0, 250),
           monto: Math.round(m.amount),
           _raw: { fintoc_id: m.id, type: m.type, reference_id: m.reference_id, contraparte: m.contraparte || '' }
@@ -11363,6 +11401,7 @@ async function sincronizarFintocTodo(silencioso, opts) {
     try { conciliarCuentasPropias(); } catch (e) { console.error(e); }
     _mpAplicarDestinoRetiros();
     saveState();
+    if (cambioFechas && !(total > 0)) try { refreshVistaActiva(); } catch (e) { console.error(e); }
     if (total > 0) {
       if (!sinAviso) toast(`Bancos sincronizados: ${total} movimiento${total === 1 ? '' : 's'} nuevo${total === 1 ? '' : 's'} (${porBanco.join(' · ')})${cuotas ? ` · ${_txtCuotas(cuotas)} en Mis deudas` : ''}${porClasificar ? ` · ${porClasificar} por clasificar en Gastos` : ''}`, 'success');
       try { refreshVistaActiva(); } catch (e) { console.error(e); }
@@ -12348,6 +12387,21 @@ function _esGiroLinea(mov) {
   return !!(mov && mov.monto > 0 && RE_GIRO_LINEA.test(String(mov.descripcion || '')));
 }
 // Giros de línea que quedaron como ingreso en versiones anteriores: se quitan. Una vez.
+// Gastos e ingresos del banco guardados con la fecha contable (día siguiente)
+// cuando la glosa dice la fecha real ("Cargo por Compra en X El29/10/2026").
+function migrarFechasRealesV1() {
+  if (state.config._fechasRealesV1) return;
+  let n = 0;
+  [state.gastos || [], state.ventasManuales || []].forEach(lista => lista.forEach(x => {
+    const real = _fechaEnGlosa(x.descripcion);
+    const guardada = String(x.fecha || '').slice(0, 10);
+    if (!real || !guardada || real >= guardada || _diasEntre(real, guardada) > 7) return;
+    x.fecha = real; n++;
+  }));
+  state.config._fechasRealesV1 = true;
+  saveState();
+  if (n) console.log('[migración] movimientos con su fecha real: ' + n);
+}
 function migrarGirosLineaV1() {
   if (state.config._girosLineaV1) return;
   const ids = new Set((state.ventasManuales || []).filter(v => v.origen !== 'mercadopago' && RE_GIRO_LINEA.test(String(v.descripcion || v.concepto || ''))).map(v => v.id));
@@ -18873,6 +18927,7 @@ function init() {
   migrarCategoriasPersonalV2();
   migrarSuscripcionesV1();
   migrarCuentasBancoV1();
+  migrarFechasRealesV1();
   migrarMpTransitoV1();
   migrarMpTransitoV2();
   migrarGirosLineaV1();
