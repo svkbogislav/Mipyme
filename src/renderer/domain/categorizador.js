@@ -8,7 +8,8 @@
 //
 // 100% offline y determinista — no se envía ninguna glosa bancaria afuera.
 //
-// API: window.Categorizador = { sugerir, aprender, normalizar, claveComercio }
+// API: window.Categorizador = { sugerir, aprender, normalizar, claveComercio,
+//   extraerComercio, esCompraSinDetalle }
 
 (function () {
   'use strict';
@@ -25,10 +26,41 @@
   // Prefijos de transferencia/medios que NO identifican al comercio.
   const PREFIJOS = /\b(TEF|TRANSFERENCIA|TRANSF|TRASPASO|PAGO|PAC|PAT|COMPRA|GIRO|ABONO|CARGO|DEPOSITO|DEPOSITO EN EFECTIVO|REDCOMPRA|WEBPAY|PAGO AUTOMATICO|PAGO DE CUENTA|PAGO ELECTRONICO|N\/C|N\/D|RECAUDACION)\b/g;
 
+  // Compra con tarjeta de débito donde el banco no dice el comercio
+  // ("Cargo por Compra en Comercio Nac."). No se puede adivinar qué fue.
+  const RX_COMPRA_SIN_DETALLE = /\b(CARGO POR )?COMPRA (EN )?COMERCIO (NAC|NACIONAL|INT|INTERNACIONAL|EXTRANJERO)\b\.?\s*$/;
+  // Pago con el saldo de Mercado Pago: el informe no dice en qué comercio.
+  const RX_PAGO_SALDO_MP = /\bPAGO CON SALDO DE MERCADO ?PAGO\b/;
+  // ¿La glosa no dice dónde fue el gasto? Entonces no se aprende de ella:
+  // clasificar una no dice nada de las demás.
+  function esCompraSinDetalle(glosa) {
+    const n = normalizar(glosa);
+    return RX_COMPRA_SIN_DETALLE.test(n) || RX_PAGO_SALDO_MP.test(n);
+  }
+
+  // Saca el nombre del comercio de las glosas que lo traen:
+  //   "Cargo por Compra en UNIMARC LAS TRANQ El29/10/2026 a las 20:04…" → "UNIMARC LAS TRANQ"
+  //   "Pago:entel Oneclick Pc" → "ENTEL ONECLICK PC"
+  //   "COMPRA NAC LIDER EXPRESS" → "LIDER EXPRESS"
+  // Devuelve '' si la glosa no trae comercio.
+  function extraerComercio(glosa) {
+    const n = normalizar(glosa);
+    if (!n || esCompraSinDetalle(glosa)) return '';
+    let m = n.match(/\bCOMPRA (?:EN |NAC(?:IONAL)? |INT(?:ERNACIONAL)? )(.+?)(?:\s+EL ?\d{1,2}\/\d{1,2}\/\d{2,4}.*|,.*|\s+MONTO.*)?$/);
+    if (m && m[1] && !/^COMERCIO\b/.test(m[1])) return m[1].trim();
+    m = n.match(/^(?:PAGO|PAC|PAT|CARGO):\s*(.+)$/);
+    if (m && m[1]) return m[1].trim();
+    return '';
+  }
+
   // Extrae una "clave de comercio" estable de la glosa: saca prefijos,
   // números/fechas/RUTs y deja las primeras palabras significativas.
+  // Una compra sin comercio no tiene clave: así no se aprende ni se agrupa
+  // (si no, todas las "Compra en Comercio Nac." serían el mismo comercio).
   function claveComercio(glosa) {
-    let s = normalizar(glosa);
+    if (RX_COMPRA_SIN_DETALLE.test(normalizar(glosa))) return '';
+    const comercio = extraerComercio(glosa);
+    let s = comercio || normalizar(glosa);
     s = s.replace(PREFIJOS, ' ');
     s = s.replace(/\b\d[\d.\-\/]*\b/g, ' '); // números, fechas, RUTs
     s = s.replace(/[^A-Z\s]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -76,8 +108,8 @@
   // "Intereses línea de crédito" es comisión/interés, no cuota de deuda.
   const REGLAS_PERSONAL = [
     { re: /\b(PAGO ?TC|CARGO POR PAGO TC|T\.? ?CREDITO|TARJ\.? ?(DE )?CREDITO|TARJETA DE CREDITO|PAGO TARJETA|PAGO TARJ|CMR|TARJETA)\b/, cat: 'Pago tarjeta de crédito', tipo: 'gasto' },
-    { re: /\b(CARGO POR COMPRA|COMPRA EN COMERCIO|COMPRA NAC|COMPRA INTERNACIONAL|COMPRA TARJETA|COMPRA DEBITO|REDCOMPRA)\b/, cat: 'Compras (tiendas y online)', tipo: 'gasto' },
     { re: /\bDEVOLUCION A CLIENTE\b/, cat: 'Otros', tipo: 'gasto' },
+    { re: /\b(SEGDES|DESGRAVAMEN|PRIMA SEG\w*|SEGURO DESGRAVAMEN)\b/, cat: 'Seguros', tipo: 'gasto' },
     { re: /\b(COMISION|COMISIONES|MANTENCION|COSTO MANTENCION|INTERES|INTERESES|IMPUESTO|ITE|SOBREGIRO|CARGO POR (SERVICIO|MANTENCION|ADMINISTRACION|USO)|COBRO SERVICIO)\b/, cat: 'Comisiones e intereses bancarios', tipo: 'gasto' },
     { re: /\b(PRESTAMO|PAGO PRESTAMO|CREDITO DE CONSUMO|CRED CONSUMO|CUOTA|LINEA DE CRED\w*|AMORTIZACION|CREDITO AUTOMOTRIZ)\b/, cat: 'Deudas / Créditos', tipo: 'gasto' },
     { re: /\b(DIVIDENDO|HIPOTECARI[OA]|ARRIENDO|ARRENDAMIENTO|GASTOS COMUNES|GGCC|CONDOMINIO|COMUNIDAD EDIFICIO|ADMINISTRACION EDIFICIO)\b/, cat: 'Vivienda (arriendo/dividendo)', tipo: 'gasto' },
@@ -85,7 +117,7 @@
     { re: /\b(APPLE|ITUNES|ICLOUD|NETFLIX|SPOTIFY|DISNEY|HBO|MAX\b|AMAZON PRIME|PRIME VIDEO|YOUTUBE|GOOGLE|ANTHROPIC|CLAUDE|OPENAI|CHATGPT|MICROSOFT|ADOBE|CANVA|NOTION|DROPBOX|GITHUB|PLAYSTATION|XBOX|NINTENDO|PATREON|TWITCH|CRUNCHYROLL|PARAMOUNT|STAR\+?|DEEZER|TIDAL|STRAVA|DUOLINGO|MIDJOURNEY|CURSOR|VERCEL|FLY\.IO|HEROKU|GODADDY|NAMECHEAP|NIC CHILE)\b/, cat: 'Suscripciones y apps', tipo: 'gasto' },
     { re: /\b(UBER EATS|PEDIDOSYA|PEDIDOS YA|RAPPI|JUSTO|STARBUCKS|MCDONALD|MC DONALD|BURGER KING|DOMINO|PAPA JOHN|SUBWAY|KFC|WENDY|DUNKIN|JUAN MAESTRO|DOGGIS|SUSHI|PIZZA|RESTAURANT|RESTAURANTE|RESTORAN|CAFE|CAFETERIA|BAR\b|PUB\b|FUENTE ALEMANA|TELEPIZZA|NIU SUSHI)\b/, cat: 'Restaurantes y delivery', tipo: 'gasto' },
     { re: /\b(LIDER|JUMBO|SANTA ISABEL|UNIMARC|TOTTUS|ACUENTA|A CUENTA|MAYORISTA 10|ALVI|OK MARKET|OXXO|SPID|CORNERSHOP|SUPERMERCADO|SUPER BODEGA|ALMACEN|MINIMARKET|PANADERIA|CARNICERIA|VERDULERIA|FERIA|LA VEGA|EMPORIO)\b/, cat: 'Alimentación', tipo: 'gasto' },
-    { re: /\b(UBER|CABIFY|DIDI|BEAT|COPEC|SHELL|ENEX|PETROBRAS|ARAMCO|TERPEL|BIP!?|METRO\b|RED MOVILIDAD|AUTOPISTA|COSTANERA NORTE|VESPUCIO|TAG\b|PEAJE|ESTACIONAMIENTO|PARKING|SABA|SAFERPARK|EFE\b|TURBUS|PULLMAN|LATAM|SKY AIRLINE|JETSMART|AUTOMOVIL CLUB|PERMISO CIRCULACION|REVISION TECNICA)\b/, cat: 'Transporte', tipo: 'gasto' },
+    { re: /\b(UBER|CABIFY|DIDI|BEAT|LIME|BIRD|RECARGA TRANSPORTE|TRANSPORTE PUBLICO|COPEC|SHELL|ENEX|PETROBRAS|ARAMCO|TERPEL|BIP!?|METRO\b|RED MOVILIDAD|AUTOPISTA|COSTANERA NORTE|VESPUCIO|TAG\b|PEAJE|ESTACIONAMIENTO|PARKING|SABA|SAFERPARK|EFE\b|TURBUS|PULLMAN|LATAM|SKY AIRLINE|JETSMART|AUTOMOVIL CLUB|PERMISO CIRCULACION|REVISION TECNICA)\b/, cat: 'Transporte', tipo: 'gasto' },
     { re: /\b(ENEL|CGE|SAESA|FRONTEL|CHILQUINTA|AGUAS ANDINAS|ESVAL|ESSBIO|NUEVOSUR|AGUAS DEL|SMAPA|METROGAS|LIPIGAS|ABASTIBLE|GASCO|ENTEL|MOVISTAR|CLARO|WOM|VTR|GTD|MUNDO PACIFICO|TELSUR|DIRECTV|ONECLICK)\b/, cat: 'Servicios (luz/agua/internet)', tipo: 'gasto' },
     { re: /\b(FARMACIA|CRUZ VERDE|AHUMADA|SALCOBRAND|DR SIMI|DR\. SIMI|CLINICA|HOSPITAL|ISAPRE|FONASA|DENTAL|DENTISTA|LABORATORIO|MEDICO|REDSALUD|INTEGRAMEDICA|BUPA|COLMENA|CONSALUD|BANMEDICA|VIDA TRES|CRUZ BLANCA|NUEVA MASVIDA|OPTICA|KINESIOLOG|PSICOLOG|VETERINARI)\b/, cat: 'Salud', tipo: 'gasto' },
     { re: /\b(UNIVERSIDAD|COLEGIO|UDD|PUC\b|UC\b|USACH|UCHILE|DUOC|INACAP|INSTITUTO|CURSO|UDEMY|COURSERA|PLATZI|MATRICULA|ARANCEL|JARDIN INFANTIL|PREUNIVERSITARIO|LIBRERIA|ANTARTICA)\b/, cat: 'Educación', tipo: 'gasto' },
@@ -94,6 +126,10 @@
     { re: /\b(DEPOSITO A PLAZO|DAP\b|FONDO MUTUO|FONDOS MUTUOS|FFMM|APV|INVERSION|FINTUAL|RACIONAL|BTG|SOYFOCUS|TENPO INVERSION|AHORRO)\b/, cat: 'Ahorro', tipo: 'gasto' },
     { re: /\b(TRANSF|TRANSFERENCIA|TRASPASO|TEF) A\b|\bTRANSF A:|\bTRASPASO A:|\bTRANSFERENCIA A:/, cat: 'Transferencias a personas', tipo: 'gasto' }
   ];
+
+  // Compra con tarjeta en un comercio con nombre que ninguna regla reconoce:
+  // es una compra en una tienda (el nombre queda a la vista para corregirlo).
+  const REGLA_COMPRA_CON_COMERCIO = { re: /\b(CARGO POR COMPRA|COMPRA EN|COMPRA NAC|COMPRA INTERNACIONAL|COMPRA TARJETA|COMPRA DEBITO|REDCOMPRA)\b/, cat: 'Compras (tiendas y online)', tipo: 'gasto' };
 
   function reglasPara(state) {
     const personal = !!(state && state.config && state.config.perfil === 'personal');
@@ -111,13 +147,19 @@
       return { categoria: aprendidas[clave], fuente: 'aprendido' };
     }
 
-    // 2) Reglas base
+    // 2) Reglas base. Primero contra el nombre del comercio (si la glosa lo
+    // trae), así "Compra en UNIMARC" es Alimentación y no una compra genérica.
     const norm = normalizar(glosa);
-    for (const r of reglasPara(state)) {
-      const aplicaTipo = r.tipo === 'ambos'
-        || (esIngreso && r.tipo === 'venta')
-        || (!esIngreso && r.tipo === 'gasto');
-      if (aplicaTipo && r.re.test(norm)) {
+    const comercio = extraerComercio(glosa);
+    const aplica = (r) => r.tipo === 'ambos' || (esIngreso && r.tipo === 'venta') || (!esIngreso && r.tipo === 'gasto');
+    const reglas = reglasPara(state);
+    if (comercio) {
+      for (const r of reglas) {
+        if (aplica(r) && r.re.test(comercio)) return { categoria: r.cat, fuente: 'regla' };
+      }
+    }
+    for (const r of reglas) {
+      if (aplica(r) && r.re.test(norm)) {
         return { categoria: r.cat, fuente: 'regla' };
       }
     }
@@ -125,6 +167,12 @@
     if (!esIngreso && window.CargosRegulares) {
       const r = window.CargosRegulares.sugerirCategoria(glosa, monto, state);
       if (r) return r;
+    }
+    // 4) Compra en un comercio con nombre que no reconozco: tienda.
+    //    Sin nombre ("Comercio Nac.") no se adivina: queda por clasificar.
+    const personal = !!(state && state.config && state.config.perfil === 'personal');
+    if (!esIngreso && personal && comercio && REGLA_COMPRA_CON_COMERCIO.re.test(norm)) {
+      return { categoria: REGLA_COMPRA_CON_COMERCIO.cat, fuente: 'regla' };
     }
     return null;
   }
@@ -135,11 +183,12 @@
     if (!state || !state.config) return;
     const cat = String(categoria || '').trim();
     if (!cat || cat === 'Por clasificar') return;
+    if (esCompraSinDetalle(glosa)) return;
     const clave = claveComercio(glosa);
     if (!clave) return;
     if (!state.config.reglasCategorias) state.config.reglasCategorias = {};
     state.config.reglasCategorias[clave] = cat;
   }
 
-  window.Categorizador = { sugerir, aprender, normalizar, claveComercio, REGLAS_BASE, REGLAS_PERSONAL };
+  window.Categorizador = { sugerir, aprender, normalizar, claveComercio, extraerComercio, esCompraSinDetalle, REGLAS_BASE, REGLAS_PERSONAL };
 })();

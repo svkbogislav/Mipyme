@@ -240,7 +240,8 @@
     const alertasGasto = [];
     const ymsProm = meses.map(x => x.ym);
     Object.entries(catPM[hoyYM] || {}).forEach(([cat, monto]) => {
-      if (cat === CAT_TARJETA || cat === CAT_DEUDAS) return;
+      // Pagos (tarjeta, cuotas), traspasos a tus cuentas y lo sin clasificar no son "en qué gastas".
+      if (cat === CAT_TARJETA || cat === CAT_DEUDAS || cat === 'Traspasos a tus otras cuentas' || cat === 'Por clasificar') return;
       const promCat = ymsProm.length ? ymsProm.reduce((s, ym) => s + n((catPM[ym] || {})[cat]), 0) / ymsProm.length : 0;
       if (monto > promCat * 1.5 && monto - promCat > 100000) alertasGasto.push({ categoria: cat, monto, promedio: promCat, veces: promCat > 0 ? monto / promCat : null });
     });

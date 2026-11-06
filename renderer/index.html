@@ -1326,10 +1326,15 @@
 
       <!-- Categorías donut (half-width) -->
       <div class="card dash-widget half" data-widget-key="chartCategorias" id="cardChartCategorias">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:14px">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:wrap">
             <div>
-              <h3 style="margin:0">Gastos por categoría</h3>
-              <div style="font-size:12px; color:var(--text-muted); margin-top:2px">Distribución de tus egresos</div>
+              <h3 id="catTitulo" style="margin:0">Gastos por categoría</h3>
+              <div id="catSub" style="font-size:12px; color:var(--text-muted); margin-top:2px">Distribución de tus egresos</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px">
+            <div id="catVistaToggle" data-personal-only style="display:flex; gap:2px; padding:2px; border-radius:8px; background:var(--surface-2)">
+              <button class="btn sm" data-vista="tipo" onclick="_catSetVista('tipo')" style="font-size:11px; padding:3px 8px">Por tipo</button>
+              <button class="btn sm" data-vista="categoria" onclick="_catSetVista('categoria')" style="font-size:11px; padding:3px 8px">Por categoría</button>
             </div>
             <select id="selCategoriasPeriod" style="width:auto; min-width:110px; font-size:12px; padding:4px 8px" onchange="actualizarConfigDashboard('categoriasPeriod', this.value)">
               <option value="period">Período</option>
@@ -1338,6 +1343,7 @@
               <option value="last90">90 días</option>
               <option value="all">Todo</option>
             </select>
+            </div>
           </div>
           <div class="chart-wrap short"><canvas id="chartCategorias"></canvas></div>
       </div><!-- /cardChartCategorias -->
@@ -3560,6 +3566,18 @@
     <div id="diaMovLista"></div>
     <div class="modal-actions">
       <button class="btn" onclick="cerrarMovimientosDia()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL CLASIFICAR GASTOS (perfil personal) ===== -->
+<div class="modal-overlay" id="modalClasificar" onclick="if(event.target===this) cerrarClasificarGastos()">
+  <div class="modal" style="max-width:720px; max-height:86vh; overflow-y:auto">
+    <h3 style="margin-bottom:4px">Clasificar gastos</h3>
+    <div id="clasifResumen" style="font-size:13px; color:var(--text-muted); margin-bottom:12px; line-height:1.45"></div>
+    <div id="clasifLista"></div>
+    <div class="modal-actions">
+      <button class="btn primary" onclick="cerrarClasificarGastos()">Listo</button>
     </div>
   </div>
 </div>
@@ -6773,9 +6791,239 @@ function resolverPeriodoChart(local, periodoGlobal) {
   return periodoGlobal;
 }
 
+// Layout estilo Akaunting: donut a la izquierda, leyenda con barras y % a la
+// derecha. Reorganiza el card al grid donut+leyenda si aún no está. Devuelve
+// la leyenda (o null).
+function _akDonutGrid(card, canvas) {
+  if (!card) return null;
+  let legend = card.querySelector('.ak-donut-legend');
+  if (!card.querySelector('.ak-donut-host')) {
+    const wrap = card.querySelector('.chart-wrap');
+    if (wrap) {
+      const grid = document.createElement('div');
+      grid.className = 'ak-donut-grid';
+      grid.style.cssText = 'display:grid; grid-template-columns: minmax(150px, 180px) 1fr; gap:14px; align-items:center';
+      const chartHost = document.createElement('div');
+      chartHost.className = 'ak-donut-host';
+      chartHost.style.cssText = 'position:relative; height:180px';
+      chartHost.appendChild(canvas);
+      legend = document.createElement('div');
+      legend.className = 'ak-donut-legend';
+      legend.style.cssText = 'display:flex; flex-direction:column; gap:8px; max-height:360px; overflow-y:auto';
+      wrap.replaceWith(grid);
+      grid.appendChild(chartHost);
+      grid.appendChild(legend);
+    }
+  }
+  const grid = card.querySelector('.ak-donut-grid');
+  if (grid && !legend) {
+    legend = document.createElement('div');
+    legend.className = 'ak-donut-legend';
+    legend.style.cssText = 'display:flex; flex-direction:column; gap:8px; max-height:360px; overflow-y:auto';
+    grid.appendChild(legend);
+  }
+  return legend;
+}
+
+/* ── Gastos por tipo (perfil personal) ──────────────────────────────────
+   Agrupa las categorías en tipos (lo esencial, gustos, deudas, tarjetas…)
+   para ver en qué se va la plata de verdad. Los traspasos a tus otras
+   cuentas no son gasto: van al pie, igual que lo que falta clasificar. */
+let _catPeriodo = 'period';
+let _catTipoAbierto = null;
+const _CAT_TIPO_COLOR = { esencial: '#6FBA88', gustos: '#A786D9', deudas: '#EF7B85', tarjetas: '#E89C5C', personas: '#7BBFD4', ahorro: '#5C5BA1', otras: '#D9A4C5', sin: '#9CA3AF', propias: '#5BA8A0' };
+function _catVista() { return (getDashCfg().categoriasVista === 'categoria') ? 'categoria' : 'tipo'; }
+function _catSetVista(v) { actualizarConfigDashboard('categoriasVista', v === 'categoria' ? 'categoria' : 'tipo'); }
+function _catNoGasto(cat) { return !!(window.Categorias && Categorias.tipoDeCategoria && Categorias.tipoDeCategoria(cat).noGasto); }
+function _catHeaderUI() {
+  const personal = esPerfilPersonal();
+  const vista = _catVista();
+  const t = document.getElementById('catTitulo'), sub = document.getElementById('catSub');
+  if (t) t.textContent = personal ? (vista === 'tipo' ? 'En qué se te va la plata' : 'Gastos por categoría') : 'Gastos por categoría';
+  if (sub) sub.textContent = personal ? (vista === 'tipo' ? 'Tus gastos agrupados por tipo' : 'Tus gastos por categoría') : 'Distribución de tus egresos';
+  document.querySelectorAll('#catVistaToggle button').forEach(b => {
+    const on = b.dataset.vista === vista;
+    b.classList.toggle('primary', on);
+    b.classList.toggle('ghost', !on);
+  });
+}
+// Gastos del período agrupados por tipo → { key: { tipo, total, n, cats: { cat: monto } } }
+function _gastosPorTipo(periodo) {
+  const out = {};
+  (state.gastos || []).filter(g => filtroPeriodo(g.fecha, periodo)).forEach(g => {
+    const cat = g.categoria || 'Por clasificar';
+    const t = Categorias.tipoDeCategoria(cat);
+    const x = out[t.key] || (out[t.key] = { tipo: t, total: 0, n: 0, cats: {} });
+    const m = Number(g.monto || 0);
+    x.total += m; x.n++;
+    x.cats[cat] = (x.cats[cat] || 0) + m;
+  });
+  return out;
+}
+// Pie del widget (perfil personal): lo que falta clasificar, los pagos de
+// tarjeta sin detalle y lo que pasaste a tus otras cuentas.
+function _catPieUI(periodo) {
+  const card = document.getElementById('cardChartCategorias');
+  if (!card) return;
+  let pie = card.querySelector('.cat-pie');
+  if (!esPerfilPersonal() || !window.Categorias || !Categorias.tipoDeCategoria) { if (pie) pie.remove(); return; }
+  if (!pie) { pie = document.createElement('div'); pie.className = 'cat-pie'; card.appendChild(pie); }
+  const pt = _gastosPorTipo(periodo);
+  const filas = [];
+  const sin = pt.sin;
+  if (sin && sin.n) filas.push(`<div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; background:var(--warning-soft)">
+      <div style="flex:1; font-size:12px; color:var(--warning-text); line-height:1.4"><strong>${clp(sin.total)} sin clasificar</strong> (${sin.n} gasto${sin.n === 1 ? '' : 's'}): el banco no dice en qué fue.</div>
+      <button class="btn sm primary" onclick="abrirClasificarGastos()" style="white-space:nowrap">Clasificar →</button></div>`);
+  if (pt.tarjetas && pt.tarjetas.total > 0) filas.push(`<div style="font-size:11px; color:var(--text-muted); line-height:1.45">Los pagos de tarjeta (${clp(pt.tarjetas.total)}) son compras que hiciste con tarjeta de crédito: el detalle de en qué fue está en el estado de cuenta.</div>`);
+  if (pt.propias && pt.propias.total > 0) filas.push(`<div style="font-size:11px; color:var(--text-muted); line-height:1.45">Además pasaste ${clp(pt.propias.total)} a tus otras cuentas: no es gasto, no lo cuento arriba.</div>`);
+  pie.style.cssText = filas.length ? 'display:flex; flex-direction:column; gap:8px; margin-top:14px; padding-top:12px; border-top:1px solid var(--border)' : 'display:none';
+  pie.innerHTML = filas.join('');
+}
+function _catToggleTipo(key) {
+  _catTipoAbierto = _catTipoAbierto === key ? null : key;
+  renderChartCategorias(_catPeriodo);
+}
+function _renderGastosPorTipo(periodo) {
+  const canvas = document.getElementById('chartCategorias');
+  const card = document.getElementById('cardChartCategorias');
+  charts.categorias?.destroy();
+  const pt = _gastosPorTipo(periodo);
+  const filas = Object.values(pt).filter(x => !x.tipo.noGasto && x.total > 0).sort((a, b) => b.total - a.total);
+  const total = filas.reduce((s, x) => s + x.total, 0);
+  _catPieUI(periodo);
+  if (!filas.length) {
+    toggleEmpty(canvas, true, 'Sin gastos en este período');
+    const lg = card?.querySelector('.ak-donut-legend');
+    if (lg) lg.remove();
+    return;
+  }
+  toggleEmpty(canvas, false);
+  const legend = _akDonutGrid(card, canvas);
+  const color = (x) => _CAT_TIPO_COLOR[x.tipo.key] || '#9CA3AF';
+  if (legend) {
+    legend.innerHTML = filas.map(x => {
+      const pct = total > 0 ? x.total / total : 0;
+      const cats = Object.entries(x.cats).sort((a, b) => b[1] - a[1]);
+      const abierto = _catTipoAbierto === x.tipo.key;
+      // Con una sola categoría, repetir su nombre no aporta: se dice cuántos gastos son.
+      const resumen = cats.length === 1 ? `${x.n} gasto${x.n === 1 ? '' : 's'}` : cats.slice(0, 3).map(([c, m]) => `${escapeHtml(c.replace(/ \(.*\)$/, ''))} ${clp(m)}`).join(' · ');
+      return `<div onclick="_catToggleTipo('${x.tipo.key}')" title="${escapeHtml(x.tipo.desc || '')}" style="font-size:12px; cursor:pointer; padding:4px 6px; margin:0 -6px; border-radius:6px; ${abierto ? 'background:var(--surface-2);' : ''}">
+          <div style="display:flex; justify-content:space-between; gap:6px; margin-bottom:3px; align-items:center">
+            <div style="display:flex; align-items:center; gap:6px; min-width:0">
+              <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${color(x)}; flex-shrink:0"></span>
+              <span style="font-weight:600; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${escapeHtml(x.tipo.label)}</span>
+            </div>
+            <span style="white-space:nowrap; color:var(--text)"><strong>${(pct * 100).toFixed(0)}%</strong> <span style="color:var(--text-muted)">${clp(x.total)}</span></span>
+          </div>
+          <div style="height:4px; background:var(--surface-2); border-radius:2px; overflow:hidden">
+            <div style="height:100%; width:${(pct * 100).toFixed(1)}%; background:${color(x)}; border-radius:2px"></div>
+          </div>
+          ${abierto
+            ? `<div style="margin-top:6px; display:flex; flex-direction:column; gap:3px">${cats.map(([c, m]) => `<div style="display:flex; justify-content:space-between; gap:8px; font-size:11px"><span style="color:var(--text)">${escapeHtml(c)}</span><span style="color:var(--text-muted); white-space:nowrap">${clp(m)}</span></div>`).join('')}</div>`
+            : `<div style="font-size:10px; color:var(--text-muted); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${resumen}${cats.length > 3 ? ` · +${cats.length - 3}` : ''}</div>`}
+        </div>`;
+    }).join('');
+  }
+  charts.categorias = createChart('chartCategorias', () => ({
+    type: 'doughnut',
+    data: {
+      labels: filas.map(x => x.tipo.label),
+      datasets: [{ data: filas.map(x => x.total), backgroundColor: filas.map(color), borderWidth: 3, borderColor: '#fff', hoverBorderWidth: 4, hoverOffset: 6 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      onClick: (evt, els) => { if (els && els.length) _catToggleTipo(filas[els[0].index].tipo.key); },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(31, 36, 51, 0.95)', titleColor: '#fff', bodyColor: '#e5e7eb',
+          padding: 10, cornerRadius: 8, displayColors: true, boxPadding: 4,
+          callbacks: { label: ctx => ` ${ctx.label}: ${clp(ctx.parsed)} (${total > 0 ? (ctx.parsed / total * 100).toFixed(1) : 0}%)` }
+        }
+      },
+      cutout: '68%'
+    }
+  }));
+}
+
+/* ── Clasificar gastos (modal) ─────────────────────────────────────────
+   Lista lo que está "Por clasificar" en el período del gráfico (o en los
+   últimos 90 días si ahí no hay nada). Al elegir una categoría se guarda, la
+   app aprende el comercio y la aplica a los parecidos. */
+let _clasifCambios = 0;
+// Glosa del banco en palabras simples.
+function _glosaLegible(g) {
+  const t = String(g.descripcion || g.proveedor || '').trim();
+  if (window.Categorizador && Categorizador.esCompraSinDetalle(t)) return /MERCADO ?PAGO/i.test(t) ? 'Pago con saldo de Mercado Pago: no dice dónde' : 'Compra con débito: el banco no dice dónde';
+  const com = window.Categorizador ? Categorizador.extraerComercio(t) : '';
+  if (com && /COMPRA/i.test(t)) return `Compra en ${com}`;
+  return t.replace(/^Mercado Pago · /, '').replace(/ · [0-9a-f]{8}-[0-9a-f-]{20,}.*$/i, '').replace(/ · available money.*$/i, '').slice(0, 70) || 'Gasto';
+}
+function _gastosPorClasificar() {
+  const sinCat = (g) => !g.auto_estimado && ['Por clasificar', 'Otros', 'Sin categoría', ''].includes(g.categoria || '');
+  let lista = (state.gastos || []).filter(g => sinCat(g) && filtroPeriodo(g.fecha, _catPeriodo));
+  let enPeriodo = true;
+  if (!lista.length) {
+    const desde = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+    lista = (state.gastos || []).filter(g => sinCat(g) && String(g.fecha || '') >= desde);
+    enPeriodo = false;
+  }
+  return { lista: lista.sort((a, b) => Number(b.monto || 0) - Number(a.monto || 0)), enPeriodo };
+}
+function abrirClasificarGastos() {
+  _clasifCambios = 0;
+  _renderClasificar();
+  document.getElementById('modalClasificar').classList.add('show');
+}
+function cerrarClasificarGastos() {
+  document.getElementById('modalClasificar').classList.remove('show');
+  if (_clasifCambios) {
+    try { renderDashboard(); } catch (e) { console.error(e); }
+    if (document.getElementById('view-gastos')?.classList.contains('active')) renderGastos();
+  }
+}
+function _renderClasificar() {
+  const { lista, enPeriodo } = _gastosPorClasificar();
+  const total = lista.reduce((s, g) => s + Number(g.monto || 0), 0);
+  const cats = (state.config.categorias || []).filter(c => c !== 'Por clasificar');
+  const cuentas = Object.fromEntries((state.config.cuentas || []).map(c => [c.id, c.nombre]));
+  document.getElementById('clasifResumen').innerHTML = lista.length
+    ? `${lista.length} gasto${lista.length === 1 ? '' : 's'} por ${clp(total)}${enPeriodo ? '' : ' en los últimos 90 días'}. Elige en qué fue cada uno: cuando el comercio se repite, la app lo aprende y clasifica los parecidos. Si no recuerdas una compra, busca la fecha y el monto en la app de tu banco.`
+    : 'No te quedan gastos por clasificar.';
+  document.getElementById('clasifLista').innerHTML = lista.map(g => `
+    <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--border)">
+      <div style="width:52px; flex-shrink:0; font-size:11px; color:var(--text-muted)">${escapeHtml(_fechaCorta(g.fecha))}</div>
+      <div style="flex:1; min-width:0">
+        <div style="font-size:13px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${escapeHtml(_glosaLegible(g))}</div>
+        <div style="font-size:11px; color:var(--text-muted)">${escapeHtml(cuentas[g.account_id || state.config.cuenta_default_id] || '')}</div>
+      </div>
+      <div style="font-size:13px; font-weight:600; white-space:nowrap">${clp(g.monto)}</div>
+      <select onchange="_clasificarGasto('${g.id}', this.value)" style="width:auto; max-width:200px; font-size:12px; padding:4px 6px">
+        <option value="">Elegir…</option>
+        ${cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}
+      </select>
+    </div>`).join('');
+}
+function _clasificarGasto(id, cat) {
+  if (!cat) return;
+  const g = (state.gastos || []).find(x => x.id === id);
+  if (!g) return;
+  g.categoria = cat;
+  const n = _aprenderCategoria(g);
+  _clasifCambios += 1 + n;
+  saveState();
+  toast(n ? `Listo · y ${n} parecido${n === 1 ? '' : 's'} también a "${cat}"` : `Listo: "${cat}"`, 'success');
+  _renderClasificar();
+}
+
 function renderChartCategorias(periodo) {
+  _catPeriodo = periodo;
+  _catHeaderUI();
+  if (esPerfilPersonal() && _catVista() === 'tipo') return _renderGastosPorTipo(periodo);
   const map = {};
   state.gastos.filter(g => filtroPeriodo(g.fecha, periodo)).forEach(g => {
+    // Perfil personal: los traspasos a tus otras cuentas no son gasto (van al pie).
+    if (esPerfilPersonal() && _catNoGasto(g.categoria)) return;
     map[g.categoria || 'Sin categoría'] = (map[g.categoria || 'Sin categoría'] || 0) + Number(g.monto || 0);
   });
   const entries = Object.entries(map).sort((a, b) => b[1] - a[1]);
@@ -6787,6 +7035,7 @@ function renderChartCategorias(periodo) {
   const card = document.getElementById('cardChartCategorias');
   charts.categorias?.destroy();
 
+  _catPieUI(periodo);
   if (data.length === 0) {
     toggleEmpty(canvas, true, 'Sin gastos en este período');
     // Limpiar leyenda lateral si existe
@@ -6795,30 +7044,7 @@ function renderChartCategorias(periodo) {
     return;
   }
   toggleEmpty(canvas, false);
-
-  // Layout estilo Akaunting: donut a la izquierda, leyenda con barras y % a la derecha.
-  // Reorganizar el contenido del card al grid donut+legend si aún no está.
-  let chartHost = card.querySelector('.ak-donut-host');
-  let legend = card.querySelector('.ak-donut-legend');
-  if (!chartHost) {
-    const wrap = card.querySelector('.chart-wrap');
-    if (wrap) {
-      // Crear contenedor flex
-      const grid = document.createElement('div');
-      grid.className = 'ak-donut-grid';
-      grid.style.cssText = 'display:grid; grid-template-columns: minmax(150px, 180px) 1fr; gap:14px; align-items:center';
-      chartHost = document.createElement('div');
-      chartHost.className = 'ak-donut-host';
-      chartHost.style.cssText = 'position:relative; height:180px';
-      chartHost.appendChild(canvas);
-      legend = document.createElement('div');
-      legend.className = 'ak-donut-legend';
-      legend.style.cssText = 'display:flex; flex-direction:column; gap:8px; max-height:200px; overflow-y:auto';
-      wrap.replaceWith(grid);
-      grid.appendChild(chartHost);
-      grid.appendChild(legend);
-    }
-  }
+  const legend = _akDonutGrid(card, canvas);
 
   // Render leyenda con barras horizontales (Akaunting style)
   if (legend) {
@@ -7992,6 +8218,7 @@ function guardarGasto() {
   }
 
   // Caso 2: gasto único (nuevo o editando uno existente)
+  const catAnterior = id ? ((state.gastos.find(g => g.id === id) || {}).categoria || '') : null;
   const obj = {
     id: id || uid(),
     fecha,
@@ -8012,9 +8239,11 @@ function guardarGasto() {
   } else {
     state.gastos.push(obj);
   }
+  // Corregiste la categoría: la app la aprende para ese comercio.
+  const parecidos = (id && catAnterior !== categoria) ? _aprenderCategoria(obj) : 0;
   saveState();
   cerrarModal();
-  toast('Gasto guardado', 'success');
+  toast(parecidos ? `Gasto guardado · y ${parecidos} parecido${parecidos === 1 ? '' : 's'} pasaron a "${categoria}"` : 'Gasto guardado', 'success');
   renderGastos();
   if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
   if (document.getElementById('view-cashflow').classList.contains('active')) renderCashflow();
@@ -12327,8 +12556,42 @@ function _sugerirCatConc(mov) {
   if (!mov) return null;
   if (mov.monto >= 0) return _sugerirTipoIngresoConc(mov);
   if (!window.Categorizador) return null;
+  // Transferencia a ti mismo, a una cuenta que no está en la app: no es gasto.
+  if (_esTraspasoATiMismo(mov.descripcion)) return 'Traspasos a tus otras cuentas';
   const s = window.Categorizador.sugerir(mov.descripcion, mov.monto, state);
   return (s && s.categoria) || null;
+}
+// "Traspaso A:Sebastian Bogislav Von": transferencia a tu propio nombre.
+// (Un pago de tarjeta también dice "traspaso", pero no lleva tu nombre.)
+function _esTraspasoATiMismo(glosa) {
+  if (!esPerfilPersonal()) return false;
+  const t = String(glosa || '');
+  if (!/\b(TRANSF\w*|TRASPASO|TEF)\b/i.test(t)) return false;
+  if (/T\.? ?CR[EÉ]DITO|TARJ/i.test(t)) return false;
+  return _esNombrePropio(t);
+}
+
+// Aprende la categoría que elegiste para un comercio y la aplica a los gastos
+// parecidos que todavía no tienen una categoría propia (por clasificar o
+// compra genérica). Devuelve cuántos cambió.
+const _CATS_REEMPLAZABLES = new Set(['Por clasificar', 'Compras (tiendas y online)', 'Otros', '']);
+function _aprenderCategoria(g) {
+  if (!g || !window.Categorizador) return 0;
+  const cat = g.categoria;
+  if (!cat || cat === 'Por clasificar') return 0;
+  const glosa = g.descripcion || g.proveedor || '';
+  if (Categorizador.esCompraSinDetalle(glosa)) return 0; // no dice dónde: no hay qué aprender
+  const clave = Categorizador.claveComercio(glosa);
+  if (!clave) return 0;
+  Categorizador.aprender(glosa, cat, state);
+  let n = 0;
+  (state.gastos || []).forEach(x => {
+    if (x === g || x.id === g.id || x.auto_estimado || x.recurring_id) return;
+    if (!_CATS_REEMPLAZABLES.has(x.categoria || '') || x.categoria === cat) return;
+    if (Categorizador.claveComercio(x.descripcion || x.proveedor || '') !== clave) return;
+    x.categoria = cat; n++;
+  });
+  return n;
 }
 
 // Tipos de ingreso (perfil personal y Mercado Pago): de dónde entra la plata.
@@ -12606,6 +12869,41 @@ function _mpAjustarSaldo() {
 // cuente como plata que sigue ahí. Una vez por perfil.
 // "Cargo por Compra en Comercio Nac." (BICE) quedaba como comisión por la
 // regla CARGO POR: pasa a Compras. Una vez por perfil.
+// Clasificación por comercio (v1.0.183): las compras con débito sin nombre
+// del comercio dejan de contar como "Compras" (no se sabe qué fueron), las
+// que traen el comercio se clasifican por él (UNIMARC → Alimentación) y las
+// transferencias a tu propio nombre pasan a "Traspasos a tus otras cuentas".
+// Solo toca categorías puestas por la app (Compras / Por clasificar /
+// Transferencias a personas), nunca pagos de deudas ni gastos periódicos.
+function migrarClasificacionV5() {
+  if (state.config._catsV5) return;
+  if (!esPerfilPersonal() || !window.Categorizador) { state.config._catsV5 = true; return; }
+  const NUEVA = 'Traspasos a tus otras cuentas';
+  if (!Array.isArray(state.config.categorias)) state.config.categorias = [];
+  const cats = state.config.categorias;
+  if (!cats.includes(NUEVA)) {
+    const i = cats.indexOf('Ahorro') >= 0 ? cats.indexOf('Ahorro') : cats.indexOf('Otros');
+    if (i >= 0) cats.splice(i, 0, NUEVA); else cats.push(NUEVA);
+  }
+  let n = 0;
+  (state.gastos || []).forEach(g => {
+    if (g.auto_estimado || g.recurring_id) return;
+    const glosa = g.descripcion || g.proveedor || '';
+    if (/^(Pago deuda|Cuota de crédito) — /.test(glosa)) return;
+    const cat = g.categoria || '';
+    if (cat === 'Transferencias a personas') {
+      if (_esTraspasoATiMismo(glosa)) { g.categoria = NUEVA; n++; }
+      return;
+    }
+    if (cat !== 'Compras (tiendas y online)' && cat !== 'Por clasificar') return;
+    const sug = Categorizador.sugerir(glosa, -Math.abs(Number(g.monto || 0)), state);
+    if (sug && (sug.fuente === 'regla' || sug.fuente === 'aprendido') && sug.categoria && sug.categoria !== cat) { g.categoria = sug.categoria; n++; return; }
+    if (cat === 'Compras (tiendas y online)' && Categorizador.esCompraSinDetalle(glosa)) { g.categoria = 'Por clasificar'; n++; }
+  });
+  state.config._catsV5 = true;
+  saveState();
+  if (n) console.log('[migración] gastos reclasificados por comercio: ' + n);
+}
 function migrarComprasV3() {
   if (state.config._catsV3 && state.config._catsV4) return;
   if (!esPerfilPersonal()) { state.config._catsV3 = true; state.config._catsV4 = true; return; }
@@ -18934,6 +19232,7 @@ function init() {
   migrarComprasV3();
   if (!state.config._conciliarPropiosV2) { try { conciliarCuentasPropias(); } catch (e) { console.error(e); } state.config._conciliarPropiosV1 = true; state.config._conciliarPropiosV2 = true; saveState(); }
   migrarAportesNegocioV1();
+  migrarClasificacionV5();
   _mpAplicarDestinoRetiros();
   // Si el saldo calculado de Mercado Pago quedó negativo (los retiros salen
   // pero la app no conoce el saldo con que partió), se pide el saldo real una vez.

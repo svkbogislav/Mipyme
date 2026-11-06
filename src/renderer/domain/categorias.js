@@ -107,10 +107,42 @@
       'Pago tarjeta de crédito',
       'Comisiones e intereses bancarios',
       'Transferencias a personas',
+      'Traspasos a tus otras cuentas',
       'Ahorro',
       'Otros'
     ]
   };
+
+  // Tipos de gasto (perfil personal): agrupan las categorías en lo que
+  // importa para decidir. Inspirado en 50/30/20: lo esencial, los gustos,
+  // lo que se va en deudas y lo que ahorras. "noGasto": plata que no se
+  // consume (sigue siendo tuya en otra cuenta), se muestra aparte.
+  const TIPOS_GASTO_PERSONAL = [
+    { key: 'esencial', label: 'Lo esencial', desc: 'vivienda, comida, transporte, cuentas, salud y educación',
+      cats: ['Vivienda (arriendo/dividendo)', 'Alimentación', 'Transporte', 'Servicios (luz/agua/internet)', 'Salud', 'Seguros', 'Educación'] },
+    { key: 'gustos', label: 'Gustos y estilo de vida', desc: 'restaurantes, compras, panoramas y suscripciones',
+      cats: ['Restaurantes y delivery', 'Compras (tiendas y online)', 'Ocio / Entretención', 'Suscripciones y apps'] },
+    { key: 'deudas', label: 'Deudas y costos del banco', desc: 'cuotas de créditos, intereses y comisiones',
+      cats: ['Deudas / Créditos', 'Comisiones e intereses bancarios'] },
+    { key: 'tarjetas', label: 'Pagos de tarjeta', desc: 'lo que compraste con tarjeta de crédito; el detalle está en el estado de cuenta',
+      cats: ['Pago tarjeta de crédito'] },
+    { key: 'personas', label: 'Transferencias a personas', desc: 'plata que le mandaste a otras personas',
+      cats: ['Transferencias a personas'] },
+    { key: 'ahorro', label: 'Ahorro', desc: 'depósitos, fondos e inversiones',
+      cats: ['Ahorro'] },
+    { key: 'sin', label: 'Sin clasificar', desc: 'el banco no dice en qué fue: clasifícalos',
+      cats: ['Por clasificar', 'Otros', 'Sin categoría', ''] },
+    { key: 'propias', label: 'A tus otras cuentas', desc: 'traspasos a cuentas tuyas que no están en la app: no es gasto', noGasto: true,
+      cats: ['Traspasos a tus otras cuentas'] },
+  ];
+  // Una categoría que creaste tú (no está en ningún tipo) se muestra en
+  // "Otras categorías tuyas", sin adivinar si es esencial o gusto.
+  const TIPO_OTRAS = { key: 'otras', label: 'Otras categorías tuyas', desc: 'categorías que creaste tú', cats: [] };
+  function tipoDeCategoria(cat) {
+    const c = String(cat || '');
+    return TIPOS_GASTO_PERSONAL.find(t => t.cats.includes(c)) || TIPO_OTRAS;
+  }
+  function getTiposGasto() { return TIPOS_GASTO_PERSONAL.concat([TIPO_OTRAS]); }
 
   // % de presupuesto recomendado por categoría según rubro. La suma puede no
   // llegar a 100 — lo que sobra es la utilidad esperada. Son referencias, no
@@ -192,6 +224,9 @@
 
   window.Categorias = {
     TIPOS_NEGOCIO,
+    TIPOS_GASTO_PERSONAL,
+    tipoDeCategoria,
+    getTiposGasto,
     getCategoriasPorTipo,
     getPresupuestoPorTipo,
     getTipoLabel,
