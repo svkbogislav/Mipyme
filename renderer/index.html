@@ -1149,9 +1149,9 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
             Personalizar
           </button>
-          <button class="btn primary" onclick="solicitarActualizacion()" title="Trae datos frescos de Shopify">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5"/></svg>
-            Actualizar datos
+          <button class="btn primary" id="btnActualizarDatos" onclick="solicitarActualizacion()" title="Trae lo nuevo de todo lo que tienes conectado: bancos, Mercado Pago y Shopify">
+            <svg id="btnActualizarDatosIco" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5"/></svg>
+            <span id="btnActualizarDatosTxt">Actualizar datos</span>
           </button>
           <button class="btn ghost" onclick="recargarShopify()" title="Cargar JSON" style="font-size:12px">
             Cargar JSON
@@ -8882,10 +8882,90 @@ function cargarArchivoShopify(ev) {
   ev.target.value = '';
 }
 
-// Botón "Actualizar datos": en Electron llama directo a Shopify; en navegador copia mensaje al chat.
+// Botón "Actualizar datos": trae lo nuevo de todo lo que este perfil tiene
+// conectado (bancos vía Fintoc, Mercado Pago, precios de inversiones y, en un
+// emprendimiento, Shopify) y deja un solo aviso con el resultado.
+// En navegador copia el mensaje al chat.
+let _actualizandoTodo = false;
+function _btnActualizarEstado(txt) {
+  const b = document.getElementById('btnActualizarDatos');
+  const t = document.getElementById('btnActualizarDatosTxt');
+  const ico = document.getElementById('btnActualizarDatosIco');
+  if (b) b.disabled = !!txt;
+  if (t) t.textContent = txt || 'Actualizar datos';
+  if (ico) ico.style.animation = txt ? 'spin 1s linear infinite' : '';
+}
+function _plural(n, uno, varios) { return `${n} ${n === 1 ? uno : varios}`; }
+async function actualizarTodo() {
+  if (_actualizandoTodo) { toast('Ya estoy actualizando tus datos…', ''); return; }
+  const f = state.config.fintoc;
+  const m = state.config.mercadopago;
+  const hayBancos = !!(f && f.sk && Array.isArray(f.links) && f.links.length && _fintocDisponible());
+  const hayMP = !!(m && m.token && _mpDisponible());
+  const hayInv = esPerfilPersonal() && _inversiones().length > 0;
+  let hayShopify = false;
+  if (!esPerfilPersonal()) {
+    try { hayShopify = !!(await window.electronAPI.shopifyStatus(obtenerCredsShopify())).configured; }
+    catch (e) { console.error('Shopify status:', e); }
+  }
+  if (!hayBancos && !hayMP && !hayShopify) {
+    if (!esPerfilPersonal()) return await actualizarViaElectron(); // ofrece configurar Shopify
+    if (confirm('Todavía no conectas tus bancos ni Mercado Pago, así que no hay nada que traer.\n\n¿Abrir Configuración para conectarlos?')) irAConfiguracion();
+    return;
+  }
+  _actualizandoTodo = true;
+  const partes = [];
+  let fallas = 0, fuentes = 0, revision = 0;
+  try {
+    if (hayShopify) {
+      fuentes++;
+      _btnActualizarEstado('Shopify…');
+      const r = await actualizarViaElectron({ sinAviso: true });
+      if (!r || r.error) { fallas++; partes.push('Shopify no respondió'); }
+      else partes.push(r.nuevos ? `Shopify ${_plural(r.nuevos, 'pedido nuevo', 'pedidos nuevos')}` : 'Shopify al día');
+    }
+    if (hayBancos) {
+      fuentes++;
+      _btnActualizarEstado('Bancos…');
+      const r = await sincronizarFintocTodo(true, { sinAviso: true });
+      if (!r) { fallas++; partes.push('bancos no respondieron'); }
+      else if (r.enCurso) partes.push('bancos ya se estaban actualizando');
+      else {
+        let t = r.nuevos ? `bancos ${_plural(r.nuevos, 'movimiento nuevo', 'movimientos nuevos')}` : 'bancos al día';
+        if (r.porClasificar) t += ` (${r.porClasificar} por clasificar en Gastos)`;
+        if (r.errores) t += ', algún banco no respondió';
+        partes.push(t);
+      }
+    }
+    if (hayMP) {
+      fuentes++;
+      _btnActualizarEstado('Mercado Pago…');
+      // La primera sincronización de MP siempre se revisa a mano; después se aplica sola.
+      const r = await sincronizarMercadoPago(!!m.lastSync, { sinAviso: true });
+      if (!r) { fallas++; partes.push('Mercado Pago no respondió'); }
+      else if (r.enCurso) partes.push('Mercado Pago ya se estaba actualizando');
+      else if (r.revision) { revision = r.revision; partes.push(`Mercado Pago ${_plural(r.revision, 'movimiento', 'movimientos')} para revisar`); }
+      else if (r.pendiente) partes.push('Mercado Pago sigue preparando el informe, lo traigo en la próxima');
+      else if (r.error) { fallas++; partes.push('Mercado Pago no respondió'); }
+      else partes.push(r.nuevos ? `Mercado Pago ${_plural(r.nuevos, 'movimiento nuevo', 'movimientos nuevos')}` : 'Mercado Pago al día');
+    }
+    if (hayInv) {
+      _btnActualizarEstado('Inversiones…');
+      try { await actualizarPreciosInversiones(true); } catch (e) { console.error('Inversiones:', e); }
+    }
+  } finally {
+    _actualizandoTodo = false;
+    _btnActualizarEstado('');
+  }
+  try { refreshVistaActiva(); } catch (e) { console.error(e); }
+  if (revision) return; // la ventana de revisión de MP ya quedó abierta con su aviso
+  const msg = partes.length ? partes.join(' · ') : 'Listo';
+  const kind = fallas && fallas === fuentes ? 'error' : 'success';
+  toast((kind === 'success' ? '✓ ' : '') + msg.charAt(0).toUpperCase() + msg.slice(1), kind, 6000);
+}
 async function solicitarActualizacion() {
   if (window.electronAPI && window.electronAPI.isElectron) {
-    return await actualizarViaElectron();
+    return await actualizarTodo();
   }
   const mensaje = 'Actualiza la app financiera con mis datos más recientes de Shopify (pedidos detallados de los últimos 60 días + agregados mensuales históricos).';
   try {
@@ -8904,11 +8984,13 @@ function obtenerCredsShopify() {
 }
 
 // Llama directamente a Shopify vía el proceso main de Electron (sin CORS, token nunca cruza al renderer)
-async function actualizarViaElectron() {
+async function actualizarViaElectron(opts) {
+  const sinAviso = !!(opts && opts.sinAviso);
   // Pasamos las credenciales del negocio activo. Si no están, main usa .env como fallback.
   const creds = obtenerCredsShopify();
   const status = await window.electronAPI.shopifyStatus(creds);
   if (!status.configured) {
+    if (sinAviso) return null;
     if (confirm(
       'Este negocio no tiene Shopify configurado.\n\n' +
       'Ve a Configuración → Conexión Shopify y agrega tu tienda + access token.\n\n' +
@@ -8922,7 +9004,7 @@ async function actualizarViaElectron() {
     }
     return;
   }
-  toast('Conectando con Shopify…', '');
+  if (!sinAviso) toast('Conectando con Shopify…', '');
   const t0 = Date.now();
   try {
     const data = await window.electronAPI.refreshShopify(creds);
@@ -8949,6 +9031,7 @@ async function actualizarViaElectron() {
     try { sincronizarCostosEstimados(); } catch {}
     const segs = ((Date.now() - t0) / 1000).toFixed(1);
     const nuevosEnCache = cacheNuevo.length - cachePrev.length;
+    if (sinAviso) return { nuevos: Math.max(0, nuevosEnCache), pedidos: (data.orders || []).length };
     const cacheInfo = nuevosEnCache > 0 ? ` · +${nuevosEnCache} al cache (${cacheNuevo.length} total)` : ` · ${cacheNuevo.length} en cache`;
     toast(`✓ Actualizado · ${data.orders.length} pedidos${cacheInfo} · ${segs}s`, 'success');
     if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
@@ -8956,7 +9039,9 @@ async function actualizarViaElectron() {
     if (document.getElementById('view-cashflow').classList.contains('active')) renderCashflow();
     if (document.getElementById('view-config').classList.contains('active')) renderConfig();
   } catch (err) {
-    toast('Error al actualizar: ' + (err && err.message ? err.message : String(err)), 'error');
+    console.error('Shopify refresh:', err);
+    if (sinAviso) return { error: true };
+    toast('No pude actualizar Shopify. Revisa la conexión en Configuración.', 'error');
   }
 }
 
@@ -9374,12 +9459,12 @@ function createChart(canvasId, configFn) {
     return null;
   }
 }
-function toast(msg, kind = '') {
+function toast(msg, kind = '', ms = 2600) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = 'toast show ' + kind;
   clearTimeout(t._tid);
-  t._tid = setTimeout(() => t.classList.remove('show'), 2600);
+  t._tid = setTimeout(() => t.classList.remove('show'), ms);
 }
 
 /* =================================================================
@@ -11095,11 +11180,12 @@ function _fintocSetAuto(v) {
 // nuevos sin abrir la revisión. Lo que no cruza con algo existente se crea
 // con la categoría que sugiere el categorizador (o "Por clasificar").
 // Cada cuenta genera su propio lote (retirable en Cuentas → Cartolas).
-async function sincronizarFintocTodo(silencioso) {
+async function sincronizarFintocTodo(silencioso, opts) {
+  const sinAviso = !!(opts && opts.sinAviso);
   if (!_fintocDisponible()) { if (!silencioso) toast('Solo funciona en la app de escritorio', 'error'); return; }
   const cfg = _fintocCfg();
   if (!cfg.sk || !cfg.links.length) { if (!silencioso) toast('Primero conecta un banco en Configuración', 'error'); return; }
-  if (_fintocSyncEnCurso) return;
+  if (_fintocSyncEnCurso) return { enCurso: true };
   _fintocSyncEnCurso = true;
   _fintocAsegurarCuentas();
   if (!silencioso) toast('Sincronizando bancos…', '');
@@ -11172,7 +11258,7 @@ async function sincronizarFintocTodo(silencioso) {
     _mpAplicarDestinoRetiros();
     saveState();
     if (total > 0) {
-      toast(`Bancos sincronizados: ${total} movimiento${total === 1 ? '' : 's'} nuevo${total === 1 ? '' : 's'} (${porBanco.join(' · ')})${cuotas ? ` · ${_txtCuotas(cuotas)} en Mis deudas` : ''}${porClasificar ? ` · ${porClasificar} por clasificar en Gastos` : ''}`, 'success');
+      if (!sinAviso) toast(`Bancos sincronizados: ${total} movimiento${total === 1 ? '' : 's'} nuevo${total === 1 ? '' : 's'} (${porBanco.join(' · ')})${cuotas ? ` · ${_txtCuotas(cuotas)} en Mis deudas` : ''}${porClasificar ? ` · ${porClasificar} por clasificar en Gastos` : ''}`, 'success');
       try { refreshVistaActiva(); } catch (e) { console.error(e); }
     } else if (!silencioso) {
       toast(errores.length ? 'Sin movimientos nuevos (con errores en algún banco)' : 'Bancos al día: sin movimientos nuevos', errores.length ? 'error' : 'success');
@@ -11181,6 +11267,7 @@ async function sincronizarFintocTodo(silencioso) {
       console.error('Fintoc auto-sync:', errores);
       if (!silencioso) _fintocEstado(errores.join(' | '), 'err');
     }
+    return { nuevos: total, cuotas, porClasificar, errores: errores.length };
   } finally {
     _fintocSyncEnCurso = false;
     try { renderFintocBancos(); } catch (e) {}
@@ -11425,12 +11512,13 @@ function _mpSince(cfg) {
 let _mpSyncEnCurso = false;
 // silencioso=false: abre la revisión (paso 2 del modal de cartola).
 // silencioso=true: aplica solo (auto al abrir la app), en un lote retirable.
-async function sincronizarMercadoPago(silencioso) {
+async function sincronizarMercadoPago(silencioso, opts) {
+  const sinAviso = !!(opts && opts.sinAviso);
   if (!_mpDisponible()) { if (!silencioso) toast('Solo funciona en la app de escritorio', 'error'); return; }
   const cfg = _mpCfg();
   if (!cfg.token) { if (!silencioso) toast('Primero conecta Mercado Pago en Configuración', 'error'); return; }
   if (silencioso && !cfg.lastSync) return; // la primera siempre se revisa a mano
-  if (_mpSyncEnCurso) { if (!silencioso) toast('Ya estoy pidiendo el informe a Mercado Pago. Espera un momento: cuando llegue se abre la revisión sola.', ''); return; }
+  if (_mpSyncEnCurso) { if (!silencioso && !sinAviso) toast('Ya estoy pidiendo el informe a Mercado Pago. Espera un momento: cuando llegue se abre la revisión sola.', ''); return { enCurso: true }; }
   const appCuentaId = cfg.appCuentaId || _mpSugerirAppCuenta();
   if (!appCuentaId) { if (!silencioso) toast('Crea una cuenta en Cuentas para registrar lo de Mercado Pago', 'error'); return; }
   _mpSyncEnCurso = true;
@@ -11448,12 +11536,12 @@ async function sincronizarMercadoPago(silencioso) {
       cfg.ultimo = { at: ahoraISO, ok: false, error: (r && r.error) || 'No pude leer Mercado Pago', detalle: (r && r.detalle) || '' };
       // Informe que MP aún genera: se recuerda para retomarlo en el próximo intento.
       if (r && r.pendiente) cfg.pendienteInforme = r.pendiente;
-      if (silencioso) { cfg.lastAutoSync = ahoraISO; saveState(); return; }
+      if (silencioso) { cfg.lastAutoSync = ahoraISO; saveState(); return { error: true, pendiente: !!(r && r.pendiente) }; }
       saveState();
       const msg = cfg.ultimo.error;
-      toast(msg, 'error');
+      if (!sinAviso) toast(msg, 'error');
       _mpEstado(msg, 'err', r && r.detalle);
-      return;
+      return { error: true, pendiente: !!(r && r.pendiente) };
     }
     const nuevos = _mpMovsNuevos(r);
     delete cfg.pendienteInforme;
@@ -11476,7 +11564,7 @@ async function sincronizarMercadoPago(silencioso) {
         toast((r.vacio ? 'Mercado Pago devolvió un informe vacío para ese período' : 'Mercado Pago al día: sin movimientos nuevos') + txtRend, 'success');
         _mpEstado(r.vacio ? `El informe del ${r.since || '…'} al ${r.until || '…'} vino vacío: Mercado Pago no registra movimientos en ese período.` : `Informe leído (${r.filas || 0} fila${r.filas === 1 ? '' : 's'}): no hay movimientos nuevos que registrar.`, 'ok');
       }
-      return;
+      return { nuevos: 0, rend: rend.monto };
     }
     const ids = nuevos.map(m => m._raw.mp_id);
     if (!silencioso) {
@@ -11491,7 +11579,7 @@ async function sincronizarMercadoPago(silencioso) {
       document.getElementById('btnConcConfirmar').style.display = '';
       _cargarMovimientosEnConciliacion({ movimientos: nuevos }, null, { _mp: { ids, label: 'Mercado Pago' } });
       toast(`${nuevos.length} movimiento${nuevos.length === 1 ? '' : 's'} nuevo${nuevos.length === 1 ? '' : 's'} de Mercado Pago. Revisa y confirma.${txtRend}`, 'success');
-      return;
+      return { revision: nuevos.length };
     }
     // Automático: aplicar sin preguntar. Lo que no cruza se crea con la
     // categoría sugerida (o "Por clasificar"). Lote retirable en Cuentas.
@@ -11523,8 +11611,9 @@ async function sincronizarMercadoPago(silencioso) {
     cfg.lastSync = ahoraISO; cfg.lastAutoSync = ahoraISO;
     cfg.ultimo.pendientes = 0; cfg.ultimo.confirmados = ap + cr;
     saveState();
-    toast(`Mercado Pago: ${nuevos.length} movimiento${nuevos.length === 1 ? '' : 's'} nuevo${nuevos.length === 1 ? '' : 's'} (${ap} cruzado${ap === 1 ? '' : 's'}, ${cr} creado${cr === 1 ? '' : 's'})${pc ? ` · ${pc} por clasificar` : ''}${txtRend}`, 'success');
+    if (!sinAviso) toast(`Mercado Pago: ${nuevos.length} movimiento${nuevos.length === 1 ? '' : 's'} nuevo${nuevos.length === 1 ? '' : 's'} (${ap} cruzado${ap === 1 ? '' : 's'}, ${cr} creado${cr === 1 ? '' : 's'})${pc ? ` · ${pc} por clasificar` : ''}${txtRend}`, 'success');
     try { refreshVistaActiva(); } catch (e) { console.error(e); }
+    return { nuevos: nuevos.length, porClasificar: pc, rend: rend.monto };
   } finally {
     _mpSyncEnCurso = false;
     try { renderMercadoPagoCfg(); } catch (e) {}
