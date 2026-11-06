@@ -11473,26 +11473,85 @@ function _fechaRealMov(m) {
   const glosa = _fechaEnGlosa(m && m.description);
   return (ok(tx) && tx) || (ok(glosa) && glosa) || contable || tx || null;
 }
-// Movimientos que ya estaban en la app con la fecha contable: si el banco
-// ahora informa la fecha real, se corrige el registro (gasto, ingreso o
-// traspaso) siempre que siga con la fecha contable que puso la app.
-function _corregirFechasVistas(movs, appCuentaId) {
+// Movimientos que el banco vuelve a informar. Algunos bancos (BICE) asientan
+// la compra con débito como "Cargo por Compra en Comercio Nac." y días después
+// completan la glosa con el comercio y la fecha real. Se actualiza el registro
+// de la app (fecha, glosa y categoría si seguía por clasificar), nunca lo que
+// el usuario ya cambió a mano.
+function _sinDetalleGlosa(t) { return !!(window.Categorizador && Categorizador.esCompraSinDetalle(t)); }
+function _glosaMov(m) { return (m.description + (m.comment ? ` · ${m.comment}` : '')).slice(0, 250); }
+function _aplicarMovActualizado(c, m) {
+  const lista = c.ref_type === 'gasto' ? state.gastos : (c.ref_type === 'venta' ? state.ventasManuales : (c.ref_type === 'transferencia' ? state.transferencias : null));
+  const ref = (lista || []).find(x => x.id === c.ref_id);
+  if (!ref) return false;
+  let cambio = false;
+  const real = _fechaRealMov(m);
+  const fechaRef = String(ref.fecha || '').slice(0, 10);
+  if (real && real !== fechaRef && fechaRef === String(c.cartola_fecha || '').slice(0, 10)) {
+    ref.fecha = real; c.fecha_real = real; cambio = true;
+  }
+  const desc = _glosaMov(m);
+  const viejo = c.cartola_descripcion;
+  if (desc && desc !== viejo && _sinDetalleGlosa(viejo) && !_sinDetalleGlosa(desc)) {
+    if (!ref.descripcion || ref.descripcion === viejo) ref.descripcion = desc;
+    if (ref.proveedor === viejo) ref.proveedor = desc;
+    c.cartola_descripcion = desc;
+    // "Compras" en una glosa sin comercio era la categoría automática de versiones anteriores.
+    if (c.ref_type === 'gasto' && (!ref.categoria || ref.categoria === 'Por clasificar' || ref.categoria === 'Compras (tiendas y online)')) {
+      const cat = _sugerirCatConc({ descripcion: desc, monto: Math.round(m.amount) });
+      if (cat) ref.categoria = cat;
+    }
+    cambio = true;
+  }
+  return cambio;
+}
+// Movimientos ya vistos: se ubica su registro por el id del banco (o, en los
+// guardados antes de tener id, por monto + fecha + glosa) y se actualiza.
+function _actualizarMovsVistos(movs, appCuentaId) {
   let n = 0;
+  const usadas = new Set();
+  const conc = state.conciliaciones || [];
   (movs || []).forEach(m => {
     const contable = String(m.post_date || '').slice(0, 10);
     const real = _fechaRealMov(m);
-    if (!real || !contable || real === contable) return;
-    const desc = (m.description + (m.comment ? ` · ${m.comment}` : '')).slice(0, 250);
+    const desc = _glosaMov(m);
     const monto = Math.round(m.amount);
-    const c = (state.conciliaciones || []).find(x => x.account_id === appCuentaId && x.cartola_fecha === contable
-      && Number(x.cartola_monto) === monto && x.cartola_descripcion === desc && !x.fecha_real);
+    let c = conc.find(x => x.fintoc_id === m.id);
+    if (!c) {
+      const cands = conc.filter(x => !x.fintoc_id && !usadas.has(x) && x.account_id === appCuentaId
+        && Number(x.cartola_monto) === monto && (x.cartola_fecha === contable || x.cartola_fecha === real));
+      c = cands.find(x => x.cartola_descripcion === desc)
+        || (!_sinDetalleGlosa(desc) ? cands.find(x => _sinDetalleGlosa(x.cartola_descripcion)) : null);
+      if (c) c.fintoc_id = m.id;
+    }
     if (!c) return;
-    const lista = c.ref_type === 'gasto' ? state.gastos : (c.ref_type === 'venta' ? state.ventasManuales : (c.ref_type === 'transferencia' ? state.transferencias : null));
-    const ref = (lista || []).find(x => x.id === c.ref_id);
-    if (!ref || String(ref.fecha || '').slice(0, 10) !== contable) return;
-    ref.fecha = real; c.fecha_real = real; n++;
+    usadas.add(c);
+    if (_aplicarMovActualizado(c, m)) n++;
   });
   return n;
+}
+// Si el banco reemplaza la compra "Comercio Nac." por otra con el comercio
+// (id nuevo), se actualiza el registro existente en vez de crear un
+// duplicado. Solo si el movimiento genérico ya no viene en la respuesta.
+function _reemplazarGenericos(nuevos, todos, appCuentaId, since) {
+  const out = new Set();
+  const ids = new Set((todos || []).map(m => m.id));
+  const usadas = new Set();
+  (nuevos || []).forEach(m => {
+    const monto = Math.round(m.amount);
+    if (!(monto < 0) || _sinDetalleGlosa(_glosaMov(m))) return;
+    const real = _fechaRealMov(m);
+    if (!real) return;
+    const c = (state.conciliaciones || []).find(x => !usadas.has(x) && x.account_id === appCuentaId
+      && x.fintoc_id && !ids.has(x.fintoc_id) && Number(x.cartola_monto) === monto && _sinDetalleGlosa(x.cartola_descripcion)
+      && String(x.cartola_fecha || '') >= since && x.cartola_fecha >= real && _diasEntre(real, x.cartola_fecha) <= 7);
+    if (!c) return;
+    usadas.add(c);
+    c.fintoc_id = m.id;
+    _aplicarMovActualizado(c, m);
+    out.add(m.id);
+  });
+  return out;
 }
 async function sincronizarFintocCuenta(linkId, accId) {
   if (!_fintocDisponible()) { toast('Solo funciona en la app de escritorio', 'error'); return; }
@@ -11508,7 +11567,7 @@ async function sincronizarFintocCuenta(linkId, accId) {
     // Primera vez: 90 días. Después: desde la última sync menos 7 días (el
     // dedupe por id evita repetidos).
     const base = c.lastSync ? new Date(c.lastSync) : new Date(Date.now() - 90 * 86400000);
-    if (c.lastSync) base.setDate(base.getDate() - 7);
+    if (c.lastSync) base.setDate(base.getDate() - 14); // re-mira 14 días: el banco completa glosas y fechas después
     const since = base.toISOString().slice(0, 10);
     const r = await window.electronAPI.fintocMovements({ sk: cfg.sk, linkToken: l.token, accountId: accId, since });
     if (!r || !r.ok) { toast(r && r.error ? r.error : 'No pude leer movimientos', 'error'); return; }
@@ -11579,14 +11638,18 @@ async function sincronizarFintocTodo(silencioso, opts) {
         const appCuentaId = c.appCuentaId || state.config.cuenta_default_id;
         if (!appCuentaId) continue;
         const base = c.lastSync ? new Date(c.lastSync) : new Date(Date.now() - 90 * 86400000);
-        if (c.lastSync) base.setDate(base.getDate() - 7);
+        if (c.lastSync) base.setDate(base.getDate() - 14); // re-mira 14 días: el banco completa glosas y fechas después
         const since = base.toISOString().slice(0, 10);
         let r;
         try { r = await window.electronAPI.fintocMovements({ sk: cfg.sk, linkToken: l.token, accountId: c.accId, since }); }
         catch (e) { r = { ok: false, error: e.message }; }
         if (!r || !r.ok) { errores.push(`${l.label}: ${r && r.error ? r.error : 'sin respuesta'}`); continue; }
-        try { if (_corregirFechasVistas((r.movements || []).filter(m => m.id && vistos[m.id] && m.amount), appCuentaId)) cambioFechas = true; } catch (e) { console.error('Fechas Fintoc:', e); }
-        const nuevos = (r.movements || []).filter(m => m.id && !vistos[m.id] && m.amount);
+        try { if (_actualizarMovsVistos((r.movements || []).filter(m => m.id && vistos[m.id] && m.amount), appCuentaId)) cambioFechas = true; } catch (e) { console.error('Fechas Fintoc:', e); }
+        let nuevos = (r.movements || []).filter(m => m.id && !vistos[m.id] && m.amount);
+        try {
+          const repl = _reemplazarGenericos(nuevos, r.movements || [], appCuentaId, since);
+          if (repl.size) { cambioFechas = true; repl.forEach(id => { vistos[id] = 1; }); nuevos = nuevos.filter(m => !repl.has(m.id)); }
+        } catch (e) { console.error('Glosas Fintoc:', e); }
         if (!nuevos.length) { c.lastSync = ahoraISO; continue; }
         const movs = nuevos.map(m => ({
           _id: uid(),

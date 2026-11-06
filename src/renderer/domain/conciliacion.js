@@ -725,6 +725,7 @@
       cartola_fecha: mov.fecha,
       cartola_descripcion: mov.descripcion,
       cartola_monto: mov.monto,
+      fintoc_id: (mov._raw && mov._raw.fintoc_id) || null, // para reconocerlo si el banco lo vuelve a informar
       auto_creado: true,
       lote: lote || null,
       created_at: new Date().toISOString()
@@ -762,6 +763,7 @@
       cartola_fecha: mov.fecha,
       cartola_descripcion: mov.descripcion,
       cartola_monto: mov.monto,
+      fintoc_id: (mov._raw && mov._raw.fintoc_id) || null, // para reconocerlo si el banco lo vuelve a informar
       lote: lote || null,
       created_at: new Date().toISOString()
     });
@@ -802,6 +804,7 @@
         cartola_fecha: mov.fecha,
         cartola_descripcion: mov.descripcion,
         cartola_monto: mov.monto,
+        fintoc_id: (mov._raw && mov._raw.fintoc_id) || null, // para reconocerlo si el banco lo vuelve a informar
         auto_creado: true,
         lote: lote || null,
         created_at: new Date().toISOString()
@@ -839,6 +842,7 @@
         cartola_fecha: mov.fecha,
         cartola_descripcion: mov.descripcion,
         cartola_monto: mov.monto,
+        fintoc_id: (mov._raw && mov._raw.fintoc_id) || null, // para reconocerlo si el banco lo vuelve a informar
         auto_creado: true,
         lote: lote || null,
         created_at: new Date().toISOString()
