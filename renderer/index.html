@@ -1224,19 +1224,22 @@
         <div id="runwayInterpretation" style="font-size:13px; color:var(--text); margin-top:14px; padding-top:12px; border-top:1px solid var(--border); line-height:1.55"></div>
       </div>
 
-      <!-- Salud financiera (solo modo personal): diagnóstico + qué hacer ahora -->
+      <!-- Salud financiera (solo modo personal): diagnóstico, qué hacer, próximos 30 días y plan -->
       <div id="saludCard" class="card dash-widget full" data-widget-key="salud" data-personal-only style="padding:18px 20px; display:none">
         <div style="display:flex; align-items:flex-start; gap:16px; flex-wrap:wrap">
-          <div id="saludScoreBox" style="min-width:120px; text-align:center; padding:12px 10px; border-radius:12px; background:var(--surface-2)">
+          <div id="saludScoreBox" style="min-width:130px; text-align:center; padding:12px 10px; border-radius:12px; background:var(--surface-2)">
             <div style="font-size:11px; color:var(--text-muted); font-weight:600; letter-spacing:.3px">TU SALUD FINANCIERA</div>
             <div id="saludScore" style="font-size:38px; font-weight:800; line-height:1.1; margin-top:4px">—</div>
             <div id="saludScoreLbl" style="font-size:12px; font-weight:600; margin-top:2px">sin datos</div>
           </div>
-          <div style="flex:1; min-width:260px">
-            <div id="saludIndicadores" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:8px"></div>
-          </div>
+          <div id="saludDx" style="flex:1; min-width:260px"></div>
         </div>
-        <div id="saludAcciones" style="margin-top:14px"></div>
+        <div id="saludIndicadores" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:8px; margin-top:14px"></div>
+        <div id="saludAcciones" style="margin-top:16px"></div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:16px; margin-top:16px">
+          <div id="saludProximos"></div>
+          <div id="saludPlan"></div>
+        </div>
       </div>
 
       <div class="dash-widget full" data-widget-key="kpis" id="kpiGridWidget">
@@ -3606,6 +3609,10 @@
         <input id="cuentaCupo" type="text" inputmode="numeric" data-clp="true" step="1" placeholder="0" />
       </div>
     </div>
+    <div id="cuentaTasaWrap" style="display:none; margin-bottom:10px">
+      <label>Interés mensual de la tarjeta (%) <span style="color:var(--text-muted); font-weight:400">opcional · sale en tu estado de cuenta como "tasa de interés mensual"</span></label>
+      <input id="cuentaTasaMensual" type="text" inputmode="decimal" placeholder="Ej: 2,9" style="max-width:160px" />
+    </div>
     <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-top:10px">
       <input type="checkbox" id="cuentaDefault" style="width:auto; margin:0" />
       Marcar como cuenta predeterminada (se usa por defecto al registrar gastos)
@@ -4623,6 +4630,7 @@
 <script src="../src/renderer/domain/categorizador.js"></script>
 <script src="../src/renderer/domain/mp-retiros.js"></script>
 <script src="../src/renderer/domain/cargos-regulares.js"></script>
+<script src="../src/renderer/domain/plan-financiero.js"></script>
 <script src="../src/renderer/domain/dte-xml.js"></script>
 <!-- pdf.js (legacy UMD) para leer facturas en PDF. Expone window.pdfjsLib. -->
 <script src="../node_modules/pdfjs-dist/legacy/build/pdf.min.js"></script>
@@ -5383,13 +5391,11 @@ function renderDashboard() {
 /* =================================================================
    SALUD FINANCIERA (modo personal) — diagnóstico + qué hacer ahora
    -----------------------------------------------------------------
-   5 indicadores con semáforo y un puntaje 0-100:
-     1. Tasa de ahorro      = (ingreso − gasto) / ingreso, promedio 3 meses
-     2. Fondo de emergencia = caja líquida / gasto mensual  → meses cubiertos
-     3. Carga de deuda      = cuotas mensuales / ingreso (o saldo / ingreso anual)
-     4. Presupuesto         = gasto variable del ciclo / libre tras sobres
-     5. Patrimonio          = neto vs foto del mes anterior
-   Y hasta 3 acciones concretas, ordenadas por urgencia, cada una con botón.
+   El cálculo vive en src/renderer/domain/plan-financiero.js (PlanFinanciero).
+   Muestra: puntaje + diagnóstico en una frase, datos que faltan para que los
+   números sean exactos, 5 indicadores (te sobra al mes, colchón, deudas,
+   tarjetas, patrimonio), hasta 3 acciones, los próximos 30 días (pagos que
+   se repiten e ingresos que llegan cada mes) y el plan paso a paso.
    ================================================================= */
 function _saludSemaforo(nivel) {
   // nivel: 'ok' | 'warn' | 'bad' | 'na'
@@ -5402,204 +5408,302 @@ function _saludSemaforo(nivel) {
   return m[nivel] || m.na;
 }
 
+function _clpS(x) { return (x < 0 ? '−' : '') + clp(Math.abs(x)); }
+function _clpCorto(x) {
+  const a = Math.abs(Number(x) || 0), s = x < 0 ? '−' : '';
+  if (a >= 1e6) return `${s}$${(a / 1e6).toFixed(1).replace('.', ',')}M`;
+  if (a >= 1e4) return `${s}$${Math.round(a / 1000)}k`;
+  return s + clp(a);
+}
+function _fechaCorta(ymd) {
+  const d = new Date(String(ymd).slice(0, 10) + 'T12:00:00');
+  return isNaN(d) ? '' : d.toLocaleDateString('es-CL', { day: 'numeric', month: 'short' }).replace('.', '');
+}
+function _hoyLocalYMD() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+// Nombre corto y sin jerga de un movimiento que se repite.
+function _planNombre(p) {
+  let t = String(p.nombre || '').replace(/^Mercado Pago · /, '').replace(/ · bank transfer$/i, '').replace(/[:\s]+$/, '');
+  if (/^Pago con saldo de Mercado/i.test(t)) t = 'Pago con saldo de Mercado Pago';
+  if (/^apple\.com/i.test(t)) t = 'Apple (suscripción)';
+  if (/^Comision Admin/i.test(t)) t = 'Comisión de mantención de cuenta';
+  if (/^Recarga transporte/i.test(t)) t = 'Recarga transporte';
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+let _saludUltimo = null;
 function _saludDatos() {
-  const vpm = ventasPorMes();
-  const ingresoMes = ingresoPromedio(3);
-  const gastoMes = gastoPromedio(3, null);
-  const caja = Cuentas.calcularCajaLiquidaTotal(state, vpm);
-  const deudas = (state.deudas || []).filter(d => saldoPendienteDeuda(d) > 0);
-  const deudaTotal = deudas.reduce((s, d) => s + saldoPendienteDeuda(d), 0) + _deudaTarjetasTotal();
-  const cuotas = deudas.reduce((s, d) => s + Number(d.cuota_mensual || 0), 0);
-
-  // Fijos mensualizados + sobres → libre del ciclo
-  const hoyYM = nuevoMesActualYM();
-  const recs = (state.config.recurrentes || []).filter(r => !r.hasta || String(r.hasta).slice(0, 7) >= hoyYM);
-  const fijos = recs.reduce((s, r) => s + montoMensualRecurrente(r), 0);
-  const ciclo = (typeof cicloPresupuesto === 'function') ? cicloPresupuesto() : null;
-  const pp = state.config.personalPlan || {};
-  const semanas = ciclo ? ciclo.diasTotal / 7 : 30 / 7;
-  const sobres = Number(pp.inversiones || 0) + Number(pp.mesadaSemanal || 0) * semanas + Number(pp.cajaChica || 0);
-  const libre = Math.max(0, ingresoMes - fijos - sobres);
-  let gastadoVar = 0;
-  if (ciclo) {
-    (state.gastos || []).forEach(g => {
-      if (g.recurring_id || g.auto_estimado) return;
-      const f = String(g.fecha || '').slice(0, 10);
-      if (f && f >= ciclo.inicio && f <= ciclo.fin) gastadoVar += Number(g.monto || 0);
-    });
-  }
-
-  // Categoría donde más se va la plata variable (3 meses)
-  let topCat = null, topCatMonto = 0;
-  (state.config.categorias || []).forEach(c => {
-    const m = gastoPromedio(3, c, { excluirRecurrentes: true });
-    if (m > topCatMonto) { topCatMonto = m; topCat = c; }
-  });
-
-  const pat = (typeof _patrimonioActual === 'function') ? _patrimonioActual() : { neto: 0, inversiones: 0 };
-  // La foto del mes en curso se refresca acá (antes solo al visitar Patrimonio,
-  // y quedaba vieja). Se compara contra la última foto de un mes ANTERIOR.
+  const pat = (typeof _patrimonioActual === 'function') ? _patrimonioActual() : { neto: 0, activos: 0, pasivos: 0, inversiones: 0 };
+  // La foto del mes en curso se refresca acá; se compara contra la del mes pasado.
   if (typeof _snapshotPatrimonio === 'function') { try { _snapshotPatrimonio(pat); } catch (e) { console.error(e); } }
-  const snaps = state.config.patrimonioSnaps || [];
-  const ymActual = nuevoMesActualYM();
-  const prevSnap = snaps.filter(sn => sn && sn.ym && sn.ym < ymActual).sort((a, b) => a.ym.localeCompare(b.ym)).pop() || null;
-  const prevNeto = prevSnap ? prevSnap.neto : null;
-  const prevYm = prevSnap ? prevSnap.ym : null;
-
-  // Deuda prioritaria: mayor tasa; empate → menor saldo (se liquida antes)
-  const deudaPrioritaria = deudas.slice().sort((a, b) =>
-    (Number(b.tasa_anual || 0) - Number(a.tasa_anual || 0)) || (saldoPendienteDeuda(a) - saldoPendienteDeuda(b)))[0] || null;
-
-  return {
-    ingresoMes, gastoMes, caja, deudas, deudaTotal, cuotas, fijos, sobres, libre, gastadoVar, ciclo,
-    topCat, topCatMonto, pat, prevNeto, prevYm, deudaPrioritaria,
-    metas: (typeof _metas === 'function') ? _metas() : [],
-  };
+  const r = PlanFinanciero.calcular({
+    state,
+    hoy: _hoyLocalYMD(),
+    saldoCuenta: calcularSaldoCuenta,
+    saldoDeuda: saldoPendienteDeuda,
+    proximoPago: Deudas.proximoPago,
+    ingresosPorMes: ventasPorMes(),
+    cargos: window.CargosRegulares ? CargosRegulares.detectar(state) : [],
+    creditoSinCuotaPara: _creditoSinCuotaPara,
+    patrimonio: pat,
+    snaps: state.config.patrimonioSnaps || [],
+  });
+  r.pat = pat;
+  r.metas = (typeof _metas === 'function') ? _metas() : [];
+  _saludUltimo = r;
+  return r;
 }
 
 function renderSaludFinanciera() {
   const card = document.getElementById('saludCard');
   if (!card) return;
-  if (!esPerfilPersonal()) { card.style.display = 'none'; return; }
+  if (!esPerfilPersonal() || !window.PlanFinanciero) { card.style.display = 'none'; return; }
   card.style.display = '';
+  let d;
+  try { d = _saludDatos(); }
+  catch (e) { console.error('Salud financiera:', e); card.style.display = 'none'; return; }
+  const ind = d.indicadores;
+  const go = (view) => `document.querySelector('.nav-item[data-view=${view}]')?.click()`;
 
-  const d = _saludDatos();
-  const ind = [];   // { label, valor, nivel, detalle, pts (0-20) | null }
-
-  // 1. Tasa de ahorro
-  if (d.ingresoMes > 0) {
-    const r = (d.ingresoMes - d.gastoMes) / d.ingresoMes;
-    const nivel = r >= 0.20 ? 'ok' : (r >= 0.10 ? 'warn' : 'bad');
-    const pts = r >= 0.20 ? 20 : (r >= 0.10 ? 12 : (r >= 0 ? 6 : 0));
-    ind.push({ label: 'Tasa de ahorro', valor: `${(r * 100).toFixed(0)}%`, nivel, detalle: r >= 0 ? `guardas ${clp(d.ingresoMes - d.gastoMes)}/mes` : `gastas ${clp(d.gastoMes - d.ingresoMes)}/mes de más`, pts, r });
-  } else ind.push({ label: 'Tasa de ahorro', valor: '—', nivel: 'na', detalle: 'registra tus ingresos', pts: null });
-
-  // 2. Fondo de emergencia
-  if (d.gastoMes > 0) {
-    const meses = d.caja / d.gastoMes;
-    const nivel = meses >= 3 ? 'ok' : (meses >= 1 ? 'warn' : 'bad');
-    const pts = meses >= 3 ? 20 : (meses >= 1 ? 12 : (meses >= 0.5 ? 6 : 0));
-    ind.push({ label: 'Fondo de emergencia', valor: `${meses.toFixed(1)} meses`, nivel, detalle: `${clp(d.caja)} en cuentas`, pts, meses });
-  } else ind.push({ label: 'Fondo de emergencia', valor: '—', nivel: 'na', detalle: 'registra tus gastos', pts: null });
-
-  // 3. Carga de deuda
-  if (d.ingresoMes > 0) {
-    if (d.deudaTotal <= 0) {
-      ind.push({ label: 'Carga de deuda', valor: '0%', nivel: 'ok', detalle: 'sin deudas pendientes', pts: 20, carga: 0 });
-    } else if (d.cuotas > 0) {
-      const c = d.cuotas / d.ingresoMes;
-      const nivel = c < 0.20 ? 'ok' : (c <= 0.35 ? 'warn' : 'bad');
-      const pts = c < 0.20 ? 16 : (c <= 0.35 ? 10 : 3);
-      ind.push({ label: 'Carga de deuda', valor: `${(c * 100).toFixed(0)}%`, nivel, detalle: `${clp(d.cuotas)}/mes en cuotas`, pts, carga: c });
-    } else {
-      const c = d.deudaTotal / (d.ingresoMes * 12);
-      const nivel = c < 0.10 ? 'ok' : (c < 0.30 ? 'warn' : 'bad');
-      const pts = c < 0.10 ? 20 : (c < 0.30 ? 14 : (c < 0.60 ? 8 : 3));
-      ind.push({ label: 'Carga de deuda', valor: `${(c * 100).toFixed(0)}%`, nivel, detalle: `debes ${clp(d.deudaTotal)} (de tu ingreso anual)`, pts, carga: c });
-    }
-  } else ind.push({ label: 'Carga de deuda', valor: '—', nivel: 'na', detalle: 'registra tus ingresos', pts: null });
-
-  // 4. Presupuesto del ciclo
-  if (d.libre > 0 && d.ciclo) {
-    const p = d.gastadoVar / d.libre;
-    const nivel = p < 0.8 ? 'ok' : (p <= 1 ? 'warn' : 'bad');
-    const pts = p < 0.8 ? 20 : (p <= 1 ? 12 : 4);
-    ind.push({ label: 'Presupuesto del ciclo', valor: `${(p * 100).toFixed(0)}%`, nivel, detalle: `${clp(d.gastadoVar)} de ${clp(d.libre)} libre`, pts, p });
-  } else ind.push({ label: 'Presupuesto del ciclo', valor: '—', nivel: 'na', detalle: 'define sobres en Presupuesto', pts: null });
-
-  // 5. Patrimonio
-  if (d.prevNeto != null) {
-    const delta = d.pat.neto - d.prevNeto;
-    const nivel = delta > 0 ? 'ok' : (delta === 0 ? 'warn' : 'bad');
-    const pts = delta > 0 ? 20 : (delta === 0 ? 12 : 6);
-    const mesAnt = (() => { const d0 = new Date(); d0.setDate(1); d0.setMonth(d0.getMonth() - 1); return `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}`; })();
-    const contra = d.prevYm === mesAnt ? 'vs mes pasado' : `vs ${fmtMes.format(new Date(d.prevYm + '-02'))}`;
-    ind.push({ label: 'Patrimonio neto', valor: clp(d.pat.neto), nivel, detalle: `${delta >= 0 ? '+' : ''}${clp(delta)} ${contra}`, pts });
-  } else ind.push({ label: 'Patrimonio neto', valor: clp(d.pat.neto), nivel: 'na', detalle: 'primera foto — compara el próximo mes', pts: null });
-
-  // Puntaje: promedio de los indicadores con datos
-  const conDatos = ind.filter(i => i.pts != null);
-  const score = conDatos.length ? Math.round(conDatos.reduce((s, i) => s + i.pts, 0) / (conDatos.length * 20) * 100) : null;
+  // ── Puntaje ──
   const scoreEl = document.getElementById('saludScore');
   const scoreLbl = document.getElementById('saludScoreLbl');
   const scoreBox = document.getElementById('saludScoreBox');
-  if (score == null) {
+  if (d.score == null) {
     scoreEl.textContent = '—'; scoreEl.style.color = 'var(--text-muted)';
     scoreLbl.textContent = 'faltan datos'; scoreLbl.style.color = 'var(--text-muted)';
     scoreBox.style.background = 'var(--surface-2)';
   } else {
-    const nivel = score >= 75 ? 'ok' : (score >= 45 ? 'warn' : 'bad');
+    const nivel = d.score >= 75 ? 'ok' : (d.score >= 45 ? 'warn' : 'bad');
     const sem = _saludSemaforo(nivel);
-    scoreEl.textContent = String(score); scoreEl.style.color = sem.fg;
-    scoreLbl.textContent = score >= 75 ? 'Sólida' : (score >= 45 ? 'En orden, con pendientes' : 'Hay que ordenarse');
+    scoreEl.textContent = (d.aprox ? '≈' : '') + d.score; scoreEl.style.color = sem.fg;
+    scoreLbl.textContent = d.score >= 75 ? 'Sólida' : (d.score >= 45 ? 'Con pendientes' : 'Hay que ordenarse');
     scoreLbl.style.color = sem.fg;
     scoreBox.style.background = sem.bg;
   }
 
-  document.getElementById('saludIndicadores').innerHTML = ind.map(i => {
+  // ── Diagnóstico + datos por completar ──
+  const semDx = _saludSemaforo(d.diagnostico.nivel);
+  const datosBtn = (x) => {
+    switch (x.clave) {
+      case 'negocio': return `<button class="btn sm" onclick="_planCrearCuentaNegocio()">Crear cuenta del negocio</button> <button class="btn ghost sm" onclick="_planTodoPersonal()">Todo es mío</button>`;
+      case 'saldo': return `<button class="btn sm" onclick="_planAjustarSaldo('${x.cuentaId}')">Escribir saldo real</button>`;
+      case 'cuota': return `<button class="btn sm" onclick="_planAsignarCuota('${x.deudaId}', ${Number(x.monto) || 0}, ${Number(x.dia) || 0})">Asignar ${escapeHtml(clp(x.monto))}</button>`;
+      case 'credito': case 'tasaDeuda': return `<button class="btn sm" onclick="${go('deudas')}">Mis deudas</button>`;
+      case 'cupo': case 'tasaTarjeta': return `<button class="btn sm" onclick="_planEditarTarjeta('${x.cuentaId}', '${x.clave}')">${x.clave === 'cupo' ? 'Poner cupo' : 'Poner interés'}</button>`;
+      case 'clasificar': return `<button class="btn sm" onclick="${go('gastos')}">Clasificar</button>`;
+      default: return '';
+    }
+  };
+  const datosFila = (x) => `<div style="display:flex; align-items:center; gap:10px; padding:7px 0; border-top:1px solid var(--border)">
+      <div style="flex:1; min-width:0"><div style="font-size:12px; font-weight:600; color:var(--text)">${escapeHtml(x.titulo)}</div>
+      <div style="font-size:11px; color:var(--text-muted); line-height:1.4">${escapeHtml(x.detalle)}</div></div>
+      <div style="flex-shrink:0; white-space:nowrap">${datosBtn(x)}</div></div>`;
+  const verTodos = !!(state.config.dashboard && state.config.dashboard.saludDatosTodos);
+  const datosVis = verTodos ? d.datos : d.datos.slice(0, 3);
+  document.getElementById('saludDx').innerHTML = `
+    <div style="font-size:15px; font-weight:700; color:${semDx.fg}; line-height:1.4">${escapeHtml(d.diagnostico.texto)}</div>
+    ${d.diagnostico.foco ? `<div style="font-size:13px; color:var(--text-muted); margin-top:4px">Lo primero ahora: <strong style="color:var(--text)">${escapeHtml(d.diagnostico.foco.charAt(0).toLowerCase() + d.diagnostico.foco.slice(1))}</strong>.</div>` : ''}
+    ${d.datos.length ? `<div style="margin-top:10px; padding:4px 12px 2px; border-radius:10px; background:var(--surface-2)">
+      <div style="font-size:11px; font-weight:700; color:var(--text-muted); letter-spacing:.3px; padding:6px 0">${d.aprox ? 'NÚMEROS APROXIMADOS: COMPLETA ESTO Y QUEDAN EXACTOS' : 'PARA AFINAR EL DIAGNÓSTICO'}</div>
+      ${datosVis.map(datosFila).join('')}
+      ${d.datos.length > 3 ? `<div style="padding:6px 0; border-top:1px solid var(--border)"><button class="btn ghost sm" onclick="_planVerTodosDatos(${verTodos ? 'false' : 'true'})">${verTodos ? 'Ver menos' : `Ver ${d.datos.length - 3} más`}</button></div>` : ''}
+    </div>` : ''}`;
+
+  // ── Indicadores ──
+  const tiles = [];
+  const mesTxt = (ym) => fmtMes.format(new Date(ym + '-02')).replace(/\.? de \d{4}$/, '').replace(/\.$/, '').slice(0, 3);
+  if (ind.resultado.pts != null) {
+    const r = ind.resultado.r;
+    tiles.push({ label: d.resultadoMes >= 0 ? 'Te sobra al mes' : 'Te falta al mes', nivel: ind.resultado.nivel,
+      valor: `${d.resultadoMes >= 0 ? '+' : '−'}${_clpCorto(Math.abs(d.resultadoMes))}`,
+      detalle: `${Math.round(Math.abs(r) * 100)}% de lo que te entra · ${d.meses.map(m => `${mesTxt(m.ym)} ${m.resultado >= 0 ? '+' : ''}${_clpCorto(m.resultado)}`).join(' · ')}` });
+  } else tiles.push({ label: 'Te sobra al mes', nivel: 'na', valor: '—', detalle: 'registra tus ingresos' });
+  if (ind.colchon.pts != null) {
+    const dias = Math.round(d.liquidez.diasColchon);
+    tiles.push({ label: 'Colchón', nivel: ind.colchon.nivel,
+      valor: d.liquidez.mesesColchon < 1 ? `${dias} día${dias === 1 ? '' : 's'}` : `${d.liquidez.mesesColchon.toFixed(1).replace('.', ',')} meses`,
+      detalle: `${clp(d.liquidez.disponible)} disponibles · gastas ${_clpCorto(d.gastoMes)}/mes` });
+  } else tiles.push({ label: 'Colchón', nivel: 'na', valor: '—', detalle: 'registra tus gastos' });
+  if (ind.deuda.pts != null) {
+    tiles.push({ label: 'Deudas', nivel: ind.deuda.nivel, valor: d.deudaTotal > 0 ? _clpCorto(d.deudaTotal) : 'Sin deudas',
+      detalle: d.deudaTotal > 0 ? `cuotas ${_clpCorto(d.cuotasMes)}/mes (${Math.round((ind.deuda.carga || 0) * 100)}% de lo que entra) · ${(ind.deuda.stock * 12).toFixed(1).replace('.', ',')} meses de ingreso` : 'nada pendiente' });
+  } else tiles.push({ label: 'Deudas', nivel: 'na', valor: d.deudaTotal > 0 ? _clpCorto(d.deudaTotal) : '—', detalle: 'registra tus ingresos' });
+  if (d.tarjetas.length) {
+    const sobre = d.tarjetas.filter(t => t.uso != null && t.uso > 1).length;
+    tiles.push({ label: 'Tarjetas', nivel: ind.tarjetas.nivel,
+      valor: d.usoTarjetas != null ? `${Math.round(d.usoTarjetas * 100)}% del cupo` : _clpCorto(d.deudaTarjetas),
+      detalle: `debes ${_clpCorto(d.deudaTarjetas)}${sobre ? ` · ${sobre} sobre el cupo` : ''}${d.interesTarjetasMes != null ? ` · ~${_clpCorto(d.interesTarjetasMes)}/mes en intereses` : ''}` });
+  }
+  const pt = ind.patrimonio;
+  tiles.push({ label: 'Patrimonio neto', nivel: pt.nivel, valor: _clpCorto(d.pat.neto),
+    detalle: pt.comparable ? `${pt.delta >= 0 ? '+' : '−'}${_clpCorto(Math.abs(pt.delta))} vs el mes pasado` : (pt.motivo === 'cambio' ? 'registraste deudas o tarjetas nuevas: lo comparo desde el próximo mes' : 'punto de partida: lo comparo el próximo mes') });
+  document.getElementById('saludIndicadores').innerHTML = tiles.map(i => {
     const sem = _saludSemaforo(i.nivel);
     return `<div style="padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:var(--surface)">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:6px">
         <span style="font-size:11px; color:var(--text-muted); font-weight:600">${escapeHtml(i.label)}</span>
-        <span style="font-size:10px; padding:1px 7px; border-radius:99px; background:${sem.bg}; color:${sem.fg}; font-weight:600">${sem.txt}</span>
+        ${i.nivel !== 'na' ? `<span style="font-size:10px; padding:1px 7px; border-radius:99px; background:${sem.bg}; color:${sem.fg}; font-weight:600">${sem.txt}</span>` : ''}
       </div>
       <div style="font-size:18px; font-weight:700; margin-top:2px; color:${i.nivel === 'na' ? 'var(--text-muted)' : 'var(--text)'}">${escapeHtml(i.valor)}</div>
-      <div style="font-size:11px; color:var(--text-muted); margin-top:1px">${escapeHtml(i.detalle)}</div>
+      <div style="font-size:11px; color:var(--text-muted); margin-top:1px; line-height:1.4">${escapeHtml(i.detalle)}</div>
     </div>`;
   }).join('');
 
   // ── Qué hacer ahora: hasta 3 acciones, por urgencia ──
   const acc = [];
-  const go = (view) => `document.querySelector('.nav-item[data-view=${view}]')?.click()`;
-  const ahorro = ind.find(i => i.label === 'Tasa de ahorro');
-  const fondo = ind.find(i => i.label === 'Fondo de emergencia');
-  const presu = ind.find(i => i.label === 'Presupuesto del ciclo');
-
-  if (d.ingresoMes <= 0) {
-    acc.push({ nivel: 'warn', titulo: 'Registra tu sueldo como ingreso recurrente', detalle: 'Sin ingresos no puedo diagnosticar nada. Ingresos → Nuevo ingreso → marca "Repetir periódicamente".', cta: 'Ir a Ingresos', accion: go('ventas') });
+  if (d.ingresoMes <= 0) acc.push({ nivel: 'warn', titulo: 'Registra lo que te entra cada mes', detalle: 'Sin ingresos no puedo diagnosticar nada. Conecta tus bancos o agrega tus ingresos a mano.', cta: 'Ir a Ingresos', accion: go('ventas') });
+  if (d.minimo < 0) acc.push({ nivel: 'bad', titulo: `Te faltan ${clp(-d.minimo)} para tus pagos${d.fechaMinimo ? ` hacia el ${_fechaCorta(d.fechaMinimo)}` : ''}`, detalle: 'Si no alcanza, paga primero la cuota de tus créditos y el mínimo de las tarjetas: atrasarte suma intereses y multas.', cta: null, accion: null });
+  if (d.hayAtrasadas) acc.push({ nivel: 'bad', titulo: 'Tienes una cuota atrasada', detalle: 'Pagarla hoy evita intereses de mora y que te reporten.', cta: 'Mis deudas', accion: go('deudas') });
+  const t1 = d.ordenTarjetas[0];
+  if (t1 && (ind.tarjetas.nivel === 'bad')) {
+    const usoTxt = t1.uso != null ? (t1.uso > 1 ? `Está sobre el cupo: debes ${clp(t1.deuda)} de ${clp(t1.cupo)}.` : `Está al ${Math.round(t1.uso * 100)}% del cupo.`) : `Debes ${clp(t1.deuda)}.`;
+    const costo = d.interesTarjetasMes != null ? `Tus tarjetas te cuestan ~${clp(d.interesTarjetasMes)} al mes en intereses.` : 'Mientras estén al tope pagas intereses sobre todo lo que debes.';
+    acc.push({ nivel: 'bad', titulo: `Deja de usar las tarjetas y paga primero ${t1.nombre}`, detalle: `${usoTxt} ${costo} Lo del día a día, con débito.`, cta: 'Mis deudas', accion: go('deudas') });
   }
-  if (ahorro && ahorro.pts != null && ahorro.r < 0) {
-    acc.push({ nivel: 'bad', titulo: `Gastas ${clp(d.gastoMes - d.ingresoMes)}/mes más de lo que ganas`, detalle: d.topCat ? `Donde más se te va: ${d.topCat} (${clp(d.topCatMonto)}/mes). Empieza recortando ahí.` : 'Revisa tus gastos del mes y recorta lo que no es esencial.', cta: 'Ver gastos', accion: go('gastos') });
+  if (ind.resultado.r != null && ind.resultado.r < 0) {
+    acc.push({ nivel: 'bad', titulo: `Gastas ${clp(-d.resultadoMes)} al mes más de lo que te entra`, detalle: 'Revisa en Gastos dónde se va y recorta lo que no es esencial.', cta: 'Ver gastos', accion: go('gastos') });
   }
-  if (presu && presu.pts != null && presu.p > 1) {
-    acc.push({ nivel: 'bad', titulo: `Te pasaste del presupuesto del ciclo por ${clp(d.gastadoVar - d.libre)}`, detalle: 'Lo que gastes de acá al fin del ciclo sale de tu ahorro. Frena lo variable.', cta: 'Ver presupuesto', accion: go('presupuesto') });
+  const ag = d.alertasGasto[0];
+  if (ag) acc.push({ nivel: 'warn', titulo: `Este mes llevas ${clp(ag.monto)} en ${ag.categoria}`, detalle: `Tu promedio es ${clp(ag.promedio)} al mes. Revisa si fue algo puntual o si hay que frenar.`, cta: 'Ver gastos', accion: go('gastos') });
+  const pa = d.pasoActual;
+  if (pa && (pa.clave === 'colchon' || pa.clave === 'fondo') && pa.meta > 0) {
+    const falta = Math.max(0, pa.meta - pa.actual);
+    const meta = d.metas.find(m => /emergencia|colch/i.test(m.nombre || ''));
+    const objetivoFondo = Math.round(d.gastoMes * 3);
+    acc.push({ nivel: 'warn', titulo: `Junta ${clp(falta)} para tu ${pa.clave === 'colchon' ? 'colchón' : 'fondo de emergencia'}`,
+      detalle: pa.clave === 'colchon' ? 'Apártalo apenas te entre plata, en una cuenta que no uses para el día a día. Es para no volver a la tarjeta ante un imprevisto.' : 'Aporta algo fijo cada mes, apenas te paguen.',
+      cta: meta ? 'Ver metas' : 'Crear meta', accion: meta ? go('metas') : `crearMetaFondoEmergencia(${objetivoFondo})` });
   }
-  if (d.deudaPrioritaria) {
-    const dp = d.deudaPrioritaria;
-    const tasaTxt = dp.tasa_anual != null && dp.tasa_anual !== '' ? ` al ${Number(dp.tasa_anual)}% anual` : '';
-    const nivel = (ind.find(i => i.label === 'Carga de deuda') || {}).nivel === 'bad' ? 'bad' : 'warn';
-    acc.push({ nivel, titulo: `Paga primero: ${dp.acreedor || 'tu deuda'}${tasaTxt}`, detalle: dp.tasa_anual != null && dp.tasa_anual !== '' ? `Es la más cara (${clp(saldoPendienteDeuda(dp))} pendientes). Cada peso extra ahí ahorra más interés que en cualquier otra.` : `Ponle el interés anual a tus deudas en "Mis deudas" y te armo el orden óptimo para salir de ellas.`, cta: 'Mis deudas', accion: go('deudas') });
-  }
-  if (fondo && fondo.pts != null && fondo.meses < 3 && d.gastoMes > 0) {
-    const objetivo = Math.round(d.gastoMes * 3);
-    const yaHay = d.metas.find(m => /emergencia/i.test(m.nombre || ''));
-    acc.push({ nivel: fondo.meses < 1 ? 'bad' : 'warn', titulo: `Fondo de emergencia: tienes ${fondo.meses.toFixed(1)} meses, apunta a 3`, detalle: `Son ${clp(objetivo)} (3 × tu gasto mensual). ${yaHay ? 'Ya tienes la meta creada: sigue aportando.' : 'Crea la meta y apórtale algo cada mes, aunque sea poco.'}`, cta: yaHay ? 'Ver metas' : 'Crear meta', accion: yaHay ? go('metas') : `crearMetaFondoEmergencia(${objetivo})` });
-  }
-  if (ahorro && ahorro.pts != null && ahorro.r >= 0 && ahorro.r < 0.10 && d.ingresoMes > 0) {
-    const sugerido = Math.round(d.ingresoMes * 0.10);
-    acc.push({ nivel: 'warn', titulo: `Tu ahorro es ${(ahorro.r * 100).toFixed(0)}% — apunta al 10% para empezar`, detalle: `Pon ${clp(sugerido)}/mes en el sobre "Ahorro / Inversiones" apenas te paguen. Lo que no ves, no lo gastas.`, cta: 'Ajustar sobres', accion: go('presupuesto') });
-  }
-  if (d.gastoMes > 0 && d.caja > d.gastoMes * 6 && (d.pat.inversiones || 0) === 0 && d.deudaTotal === 0) {
-    const exceso = Math.round(d.caja - d.gastoMes * 6);
-    acc.push({ nivel: 'warn', titulo: `Tienes ${clp(exceso)} parados en cuentas`, detalle: 'Más de 6 meses de gastos en caja pierde valor con la inflación. Considera depósito a plazo, fondo mutuo o acciones y regístralo en Patrimonio → Inversiones.', cta: 'Ver patrimonio', accion: go('patrimonio') });
-  }
-  if (!acc.length && score != null) {
-    acc.push({ nivel: 'ok', titulo: 'Vas bien. Mantén el ritmo.', detalle: 'Revisa esta tarjeta una vez al mes, idealmente el día después de que te paguen.', cta: null, accion: null });
-  }
+  if (!acc.length && d.score != null) acc.push({ nivel: 'ok', titulo: 'Vas bien. Mantén el ritmo.', detalle: 'Revisa esta tarjeta una vez al mes, idealmente el día después de que te paguen.', cta: null, accion: null });
   const top3 = acc.sort((a, b) => ({ bad: 0, warn: 1, ok: 2 }[a.nivel] - { bad: 0, warn: 1, ok: 2 }[b.nivel])).slice(0, 3);
-  document.getElementById('saludAcciones').innerHTML = `
-    <div style="font-size:12px; color:var(--text-muted); font-weight:600; margin-bottom:8px">QUÉ HACER AHORA</div>
+  const titulo = (t) => `<div style="font-size:12px; color:var(--text-muted); font-weight:700; letter-spacing:.3px; margin-bottom:8px">${t}</div>`;
+  document.getElementById('saludAcciones').innerHTML = top3.length ? `${titulo('QUÉ HACER AHORA')}
     <div style="display:flex; flex-direction:column; gap:8px">${top3.map((a, i) => {
       const sem = _saludSemaforo(a.nivel);
-      return `<div style="display:flex; align-items:flex-start; gap:12px; padding:10px 12px; border-radius:10px; background:${sem.bg}; border:1px solid ${sem.fg}22">
-        <div style="width:24px; height:24px; border-radius:50%; background:${sem.fg}; color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0">${i + 1}</div>
+      return `<div style="display:flex; align-items:flex-start; gap:12px; padding:10px 12px; border-radius:10px; background:${sem.bg}">
+        <div style="width:24px; height:24px; border-radius:50%; background:${sem.fg}; color:var(--surface); font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0">${i + 1}</div>
         <div style="flex:1; min-width:0">
           <div style="font-size:13px; font-weight:600; color:${sem.fg}">${escapeHtml(a.titulo)}</div>
           <div style="font-size:12px; color:var(--text); margin-top:2px; line-height:1.45">${escapeHtml(a.detalle)}</div>
         </div>
         ${a.cta ? `<button class="btn sm" onclick="${a.accion}" style="flex-shrink:0; white-space:nowrap">${escapeHtml(a.cta)} →</button>` : ''}
       </div>`;
-    }).join('')}</div>`;
+    }).join('')}</div>` : '';
+
+  // ── Próximos 30 días ──
+  const filas = [];
+  const chicos = d.proximos.filter(p => p.tipo === 'regular' && Math.abs(p.monto) < 20000);
+  const agrupar = d.proximos.length > 8 && chicos.length > 1;
+  d.proximos.forEach(p => {
+    if (agrupar && chicos.includes(p)) return;
+    filas.push({ fecha: p.fecha, nombre: p.tipo === 'ingreso' ? `Te entra: ${_planNombre(p)}` : _planNombre(p), monto: p.monto, ingreso: p.tipo === 'ingreso', nota: p.tipo === 'ingreso' ? `llega cerca del ${p.diaMes} cada mes` : (p.atrasada ? 'atrasada' : (p.fecha < d.hoy ? 'por estos días' : '')) });
+  });
+  if (agrupar) filas.push({ fecha: chicos[0].fecha, nombre: `Suscripciones y cargos chicos (${chicos.length})`, monto: chicos.reduce((s, p) => s + p.monto, 0), nota: chicos.map(_planNombre).filter((v, i, a) => a.indexOf(v) === i).slice(0, 3).join(', ') });
+  filas.sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const fila = (izq, der, opts = {}) => `<div style="display:flex; align-items:baseline; gap:10px; padding:6px 0; ${opts.borde === false ? '' : 'border-top:1px solid var(--border);'}">
+    <div style="width:46px; flex-shrink:0; font-size:11px; color:var(--text-muted)">${opts.fecha || ''}</div>
+    <div style="flex:1; min-width:0; font-size:12px; ${opts.fuerte ? 'font-weight:700;' : ''}">${izq}</div>
+    <div style="font-size:12px; font-weight:${opts.fuerte ? 700 : 600}; white-space:nowrap; color:${opts.color || 'var(--text)'}">${der}</div></div>`;
+  const colorMin = d.minimo < 0 ? 'var(--danger-text)' : 'var(--text)';
+  document.getElementById('saludProximos').innerHTML = `${titulo('PRÓXIMOS 30 DÍAS')}
+    <div style="border:1px solid var(--border); border-radius:10px; padding:4px 12px 8px">
+      ${fila('Hoy tienes', clp(d.liquidez.disponible), { fuerte: true, borde: false })}
+      ${filas.length ? filas.map(f => fila(`${escapeHtml(f.nombre)}${f.nota ? `<div style="font-size:10px; color:var(--text-muted)">${escapeHtml(f.nota)}</div>` : ''}`, `${f.monto > 0 ? '+' : '−'}${clp(Math.abs(f.monto))}`, { fecha: _fechaCorta(f.fecha), color: f.ingreso ? 'var(--success-text)' : 'var(--text)' })).join('') : fila('<span style="color:var(--text-muted)">No veo pagos fijos ni ingresos que se repitan en los próximos 30 días.</span>', '')}
+      ${d.tarjetasMes > 0 ? fila(`Pago de tarjetas<div style="font-size:10px; color:var(--text-muted)">lo que sueles pagarles al mes</div>`, `−${clp(d.tarjetasMes)}`, { fecha: 'mes' }) : ''}
+      ${fila(d.quedaria >= 0 ? 'Te quedarían' : 'Te faltarían', clp(Math.abs(d.quedaria)), { fuerte: true, color: d.quedaria < 0 ? 'var(--danger-text)' : 'var(--success-text)' })}
+      <div style="font-size:11px; color:${colorMin}; margin-top:6px; line-height:1.45">${d.minimo < 0 ? `Ojo: hacia el ${_fechaCorta(d.fechaMinimo)} te faltan ${clp(-d.minimo)} antes de que entre plata.` : `Tu punto más bajo: ${clp(d.minimo)}${d.fechaMinimo ? ` el ${_fechaCorta(d.fechaMinimo)}` : ' hoy'}.`} Solo cuento lo que se repite cada mes: no incluye gastos del día a día.</div>
+    </div>`;
+
+  // ── Tu plan, paso a paso ──
+  const pasoLinea = (p) => {
+    if (p.clave === 'colchon' || p.clave === 'fondo') return p.meta > 0 ? `${clp(p.actual)} de ${clp(p.meta)}` : 'registra tus gastos';
+    if (p.clave === 'tarjetas') return p.deuda > 0 ? `${_clpCorto(p.deuda)} en ${p.orden.length} tarjeta${p.orden.length === 1 ? '' : 's'}` : 'sin deuda en tarjetas';
+    if (p.clave === 'creditos') return p.creditos.length ? p.creditos.map(c => `${c.acreedor} ${_clpCorto(c.saldo)}`).join(' · ') : '';
+    return '';
+  };
+  const pasoDetalle = (p) => {
+    if (p.clave === 'mes') return escapeHtml(p.detalle || '');
+    if (p.clave === 'colchon' || p.clave === 'fondo') {
+      const pct = p.meta > 0 ? Math.min(100, Math.round(p.actual / p.meta * 100)) : 0;
+      return `<div style="height:6px; background:var(--surface-2); border-radius:99px; overflow:hidden; margin:6px 0 4px"><div style="height:100%; width:${pct}%; background:var(--primary)"></div></div>
+        ${pct}% · ${p.clave === 'colchon' ? 'lo justo para no volver a la tarjeta ante un imprevisto. Después, todo lo que sobre va a las tarjetas.' : '3 meses de gastos: te protege si dejas de recibir ingresos.'}`;
+    }
+    if (p.clave === 'tarjetas') return `Págalas en este orden ${p.conTasa ? '(primero la de mayor interés)' : '(primero la que está sobre el cupo y luego la más usada; con el interés de cada una las ordeno por costo)'}:
+      <ol style="margin:4px 0 0; padding-left:18px">${p.orden.map(t => `<li>${escapeHtml(t.nombre)}: ${clp(t.deuda)}${t.uso != null ? ` · ${Math.round(t.uso * 100)}% del cupo` : ''}${t.tasaM != null ? ` · ${String(t.tasaM).replace('.', ',')}% mensual` : ''}</li>`).join('')}</ol>`;
+    if (p.clave === 'creditos') return p.creditos.length ? 'Paga la cuota al día y, si te sobra, abona al crédito de mayor interés. Cuando termines, lo que pagabas va a inversión.' : 'Lo que te sobre cada mes, a inversión de largo plazo.';
+    return '';
+  };
+  document.getElementById('saludPlan').innerHTML = `${titulo('TU PLAN, PASO A PASO')}
+    <div style="border:1px solid var(--border); border-radius:10px; padding:6px 12px">
+    ${d.pasos.map((p, i) => {
+      const ahora = p.estado === 'ahora', hecho = p.estado === 'hecho';
+      const circ = hecho ? `<div style="width:22px; height:22px; border-radius:50%; background:var(--success-soft); color:var(--success-text); font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center">✓</div>`
+        : `<div style="width:22px; height:22px; border-radius:50%; ${ahora ? 'background:var(--primary); color:var(--surface);' : 'border:1px solid var(--border); color:var(--text-muted);'} font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center">${i + 1}</div>`;
+      return `<div style="display:flex; gap:10px; padding:8px 0; ${i ? 'border-top:1px solid var(--border);' : ''} ${ahora ? '' : 'opacity:.75'}">
+        <div style="flex-shrink:0">${circ}</div>
+        <div style="flex:1; min-width:0">
+          <div style="font-size:13px; font-weight:${ahora ? 700 : 600}; ${hecho ? 'color:var(--text-muted);' : ''}">${escapeHtml(p.titulo)}${ahora ? ' <span style="font-size:10px; padding:1px 7px; border-radius:99px; background:var(--primary-soft); color:var(--primary); font-weight:700; vertical-align:middle">AHORA</span>' : ''}</div>
+          ${pasoLinea(p) ? `<div style="font-size:11px; color:var(--text-muted)">${escapeHtml(pasoLinea(p))}</div>` : ''}
+          ${ahora ? `<div style="font-size:12px; color:var(--text); margin-top:4px; line-height:1.45">${pasoDetalle(p)}</div>` : ''}
+        </div></div>`;
+    }).join('')}
+    </div>`;
+}
+
+// ── Acciones de "Tu salud financiera" ──
+function _planVerTodosDatos(v) {
+  if (!state.config.dashboard) state.config.dashboard = {};
+  state.config.dashboard.saludDatosTodos = !!v;
+  saveState();
+  renderSaludFinanciera();
+}
+function _planTodoPersonal() {
+  const mp = state.config.mercadopago;
+  if (!mp) return;
+  mp.todoPersonal = true;
+  saveState();
+  toast('Listo: cuento todo lo que entra a Mercado Pago como ingreso tuyo', 'success');
+  renderSaludFinanciera();
+}
+function _planCrearCuentaNegocio() {
+  abrirModalCuenta('banco');
+  document.getElementById('modalCuentaTitulo').textContent = 'Cuenta de tu negocio';
+  document.getElementById('cuentaOtraEntidad').checked = true;
+}
+function _planAjustarSaldo(cuentaId) {
+  const cta = (state.config.cuentas || []).find(c => c.id === cuentaId);
+  const mp = state.config.mercadopago || {};
+  if (cta && cta.tipo === 'mercadopago' && mp.appCuentaId === cuentaId) {
+    irAConfiguracion('conexiones');
+    setTimeout(() => {
+      const inp = document.getElementById('mpSaldoReal');
+      if (!inp) return;
+      const det = inp.closest('details'); if (det) det.open = true;
+      inp.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      inp.focus();
+    }, 350);
+    return;
+  }
+  editarCuenta(cuentaId);
+}
+function _planAsignarCuota(deudaId, monto, dia) {
+  const d = (state.deudas || []).find(x => x.id === deudaId);
+  if (!d || !(monto > 0)) return;
+  d.cuota_mensual = monto;
+  if (dia >= 1 && dia <= 31) d.dia_pago = dia;
+  saveState();
+  toast(`Listo: ${d.acreedor} tiene cuota de ${clp(monto)}${d.dia_pago ? ` el día ${d.dia_pago}` : ''}`, 'success');
+  renderSaludFinanciera();
+}
+function _planEditarTarjeta(cuentaId, que) {
+  editarCuenta(cuentaId);
+  setTimeout(() => {
+    const el = document.getElementById(que === 'cupo' ? 'cuentaCupo' : 'cuentaTasaMensual');
+    if (el) el.focus();
+  }, 150);
 }
 
 // Crea la meta "Fondo de emergencia" con el objetivo sugerido y abre Metas.
@@ -9988,6 +10092,8 @@ function _snapshotPatrimonio(p) {
   const snaps = state.config.patrimonioSnaps;
   const i = snaps.findIndex(s => s.ym === ym);
   const snap = { ym, activos: Math.round(p.activos), pasivos: Math.round(p.pasivos), neto: Math.round(p.neto) };
+  // Firma de deudas y tarjetas registradas: si cambia, comparar meses mentiría.
+  if (window.PlanFinanciero) { try { snap.firma = PlanFinanciero.firmaPasivos(state, calcularSaldoCuenta, saldoPendienteDeuda); } catch (e) { console.error(e); } }
   if (i >= 0) snaps[i] = snap; else snaps.push(snap);
   snaps.sort((a, b) => a.ym.localeCompare(b.ym));
   if (snaps.length > 36) state.config.patrimonioSnaps = snaps.slice(-36);
@@ -13125,6 +13231,13 @@ function _cuentaTipoUI() {
   document.getElementById('cuentaSaldoLbl').textContent = tarjeta ? 'Deuda actual de la tarjeta (CLP)' : 'Saldo inicial (CLP)';
   document.getElementById('cuentaSaldoHint').style.display = tarjeta ? '' : 'none';
   document.getElementById('cuentaCupoWrap').style.display = tarjeta ? '' : 'none';
+  document.getElementById('cuentaTasaWrap').style.display = tarjeta ? '' : 'none';
+}
+// "2,9" o "2.9" → 2.9; vacío o inválido → null.
+function _leerTasaTarjeta() {
+  const v = String(document.getElementById('cuentaTasaMensual').value || '').trim().replace('%', '').replace(',', '.');
+  const n = parseFloat(v);
+  return v && isFinite(n) && n >= 0 && n < 100 ? n : null;
 }
 function abrirModalCuenta(tipo) {
   document.getElementById('modalCuentaTitulo').textContent = tipo === 'tarjeta' ? 'Nueva tarjeta de crédito' : 'Nueva cuenta';
@@ -13133,6 +13246,7 @@ function abrirModalCuenta(tipo) {
   document.getElementById('cuentaTipo').value = tipo === 'tarjeta' ? 'tarjeta' : 'banco';
   _poblarBancosCuenta('');
   document.getElementById('cuentaCupo').value = '';
+  document.getElementById('cuentaTasaMensual').value = '';
   _cuentaTipoUI();
   document.getElementById('cuentaSaldo').value = '0';
   document.getElementById('cuentaColor').value = '#4f46e5';
@@ -13157,6 +13271,7 @@ function editarCuenta(id) {
   document.getElementById('cuentaTipo').value = c.tipo || 'caja';
   _poblarBancosCuenta(c.banco || '');
   Forms.setearMontoCLP(document.getElementById('cuentaCupo'), c.cupo || 0);
+  document.getElementById('cuentaTasaMensual').value = c.tasa_mensual != null && c.tasa_mensual !== '' ? String(c.tasa_mensual).replace('.', ',') : '';
   _cuentaTipoUI();
   Forms.setearMontoCLP(document.getElementById('cuentaSaldo'), c.tipo === 'tarjeta' ? Math.abs(Number(c.saldo_inicial || 0)) : c.saldo_inicial);
   document.getElementById('cuentaColor').value = c.color || '#4f46e5';
@@ -13205,7 +13320,8 @@ function guardarCuenta() {
     excluir_del_total: !!document.getElementById('cuentaExcluirTotal').checked || !!document.getElementById('cuentaOtraEntidad').checked,
     otra_entidad: !!document.getElementById('cuentaOtraEntidad').checked,
     banco: _leerBancoCuenta(),
-    cupo: tipo === 'tarjeta' ? (Forms.parsearCLP(document.getElementById('cuentaCupo').value) || null) : null
+    cupo: tipo === 'tarjeta' ? (Forms.parsearCLP(document.getElementById('cuentaCupo').value) || null) : null,
+    tasa_mensual: tipo === 'tarjeta' ? _leerTasaTarjeta() : null
   });
   // Una tarjeta registrada a mano no tiene "saldo según el banco".
   if (tipo === 'tarjeta' && !obj.fintoc_acc) { delete obj.saldo_banco; delete obj.saldo_banco_at; }
